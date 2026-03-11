@@ -1,0 +1,72 @@
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Menu {
+  id        String   @id @default(uuid())
+  sourceUrl String?
+  text      String?
+  recipes   Recipe[]
+  rfps      RFP[]
+}
+
+model Recipe {
+  id           String       @id @default(uuid())
+  name         String
+  menuId       String
+  menu         Menu         @relation(fields: [menuId], references: [id])
+  ingredients  Ingredient[]
+}
+
+model Ingredient {
+  id               String            @id @default(uuid())
+  name             String
+  quantity         Float?
+  unit             String?
+  recipeId         String
+  recipe           Recipe            @relation(fields: [recipeId], references: [id])
+  pricingTrends    PricingTrend[]
+}
+
+model PricingTrend {
+  id           String     @id @default(uuid())
+  ingredientId String
+  price        Float
+  date         DateTime
+  source       String     // e.g., USDA
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id])
+}
+
+model Distributor {
+  id          String   @id @default(uuid())
+  name        String
+  contactName String?
+  email       String   // This will be a mock email but we treat it as real
+  location    String
+  rfps        RFP[]
+}
+
+model RFP {
+  id            String      @id @default(uuid())
+  menuId        String
+  menu          Menu        @relation(fields: [menuId], references: [id])
+  distributorId String
+  status        String      // PENDING, SENT, REPLIED
+  sentAt        DateTime?
+  createdAt     DateTime    @default(now())
+  distributor   Distributor @relation(fields: [distributorId], references: [id])
+  quotes        Quote[]
+}
+
+model Quote {
+  id        String   @id @default(uuid())
+  rfpId     String
+  price     Float
+  details   String?
+  rfp       RFP      @relation(fields: [rfpId], references: [id])
+}

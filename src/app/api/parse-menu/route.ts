@@ -130,28 +130,40 @@ export async function POST(req: Request) {
             );
         }
 
-        // If the user gave a URL, fetch its content server-side (Groq cannot browse the web)
-        let menuContent = menuText || '';
-        if (sourceUrl && !menuText) {
+        // Detect if the user input is a URL (it may arrive as either menuText or sourceUrl)
+        const rawInput = menuText || sourceUrl || '';
+        const isUrl = /^https?:\/\//i.test(rawInput.trim());
+
+        let menuContent = rawInput;
+
+        if (isUrl) {
             try {
-                const urlRes = await fetch(sourceUrl, {
-                    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AutoRFP/1.0)' },
-                    signal: AbortSignal.timeout(10000)
+                console.log(`Fetching menu content from URL: ${rawInput.trim()}`);
+                const urlRes = await fetch(rawInput.trim(), {
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                        'Accept-Language': 'en-US,en;q=0.5',
+                    },
+                    signal: AbortSignal.timeout(12000)
                 });
-                if (!urlRes.ok) throw new Error(`HTTP ${urlRes.status} from ${sourceUrl}`);
+                if (!urlRes.ok) throw new Error(`HTTP ${urlRes.status} from ${rawInput.trim()}`);
                 const html = await urlRes.text();
-                // Strip HTML tags, collapse whitespace, keep readable text
+                // Strip scripts, styles, and all HTML tags — keep human-readable text
                 menuContent = html
                     .replace(/<script[\s\S]*?<\/script>/gi, '')
                     .replace(/<style[\s\S]*?<\/style>/gi, '')
+                    .replace(/<nav[\s\S]*?<\/nav>/gi, '')
+                    .replace(/<footer[\s\S]*?<\/footer>/gi, '')
+                    .replace(/<header[\s\S]*?<\/header>/gi, '')
                     .replace(/<[^>]+>/g, ' ')
                     .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').replace(/&#\d+;/g, '')
                     .replace(/\s{2,}/g, ' ')
                     .trim()
-                    .slice(0, 12000); // cap at 12k chars to stay within token limit
-                console.log(`Fetched ${menuContent.length} chars from ${sourceUrl}`);
+                    .slice(0, 14000); // 14k chars fits comfortably in llama-3.3-70b context
+                console.log(`Fetched ${menuContent.length} chars of menu text from URL`);
             } catch (fetchErr: any) {
-                console.warn(`Failed to fetch URL content: ${fetchErr.message}. Falling back to mock data.`);
+                console.warn(`Failed to fetch URL: ${fetchErr.message}. Will use mock data.`);
                 menuContent = '';
             }
         }

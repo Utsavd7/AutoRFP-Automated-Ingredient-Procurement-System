@@ -16,8 +16,85 @@ This project implements a full end-to-end pipeline covering the following steps:
 
 - **Frontend**: Next.js 15 (App Router), React, Tailwind CSS, Recharts, Lucide Icons.
 - **Backend**: Next.js API Routes (Serverless Functions)
-- **Database**: SQLite (via Prisma ORM v5)
+- **Database**: PostgreSQL (via Prisma ORM v5)
 - **AI**: Google Generative AI SDK (`@google/genai`)
+
+## System Architecture
+
+```mermaid
+graph TD
+    User((User)) -->|Browser| Frontend[Next.js Frontend]
+    Frontend -->|API Routes| Backend[Next.js API Layer]
+    Backend -->|ORM| Prisma[Prisma Client]
+    Prisma -->|Query| DB[(PostgreSQL Database)]
+    
+    subgraph "External Integration"
+        Backend -->|Recipe Extraction| Gemini[Google Gemini AI]
+        Backend -->|Map Search| GooglePlaces[Google Places API]
+        Backend -->|Market Data| USDASim[USDA Pricing Simulation]
+    end
+    
+    subgraph "Procurement Flow"
+        Backend -->|Email RFP| Vendors[Vendor Email System]
+        Vendors -->|Submit Quote| QuotePortal[Vendor Portal]
+        QuotePortal -->|Update| Backend
+    end
+```
+
+## Database Design
+
+AutoRFP uses a robust relational schema tailored for complex recipe management and procurement tracking.
+
+```mermaid
+erDiagram
+    MENU ||--o{ RECIPE : "contains"
+    MENU ||--o{ RFP : "requests"
+    RECIPE ||--o{ INGREDIENT : "consists of"
+    INGREDIENT ||--o{ PRICING_TREND : "has history"
+    DISTRIBUTOR ||--o{ RFP : "receives"
+    RFP ||--o{ QUOTE : "generates"
+
+    MENU {
+        uuid id PK
+        string sourceUrl
+        text text
+    }
+
+    RECIPE {
+        uuid id PK
+        string name
+        uuid menuId FK
+    }
+
+    INGREDIENT {
+        uuid id PK
+        string name
+        float quantity
+        string unit
+        uuid recipeId FK
+    }
+
+    DISTRIBUTOR {
+        uuid id PK
+        string name
+        string location
+        string email
+    }
+
+    RFP {
+        uuid id PK
+        string status
+        uuid menuId FK
+        uuid distributorId FK
+    }
+
+    QUOTE {
+        uuid id PK
+        float price
+        text details
+        uuid rfpId FK
+    }
+```
 
 ## Setup Instructions
 
@@ -38,12 +115,12 @@ This project implements a full end-to-end pipeline covering the following steps:
    | `GEMINI_API_KEY` | ✅ Yes | Menu parsing + AI email quote extraction |
    | `GOOGLE_MAPS_API_KEY` | ⚠️ Optional | Finding real local distributors (falls back to mock data if not set) |
    | `USDA_API_KEY` | ⚠️ Optional | Real ingredient market pricing (falls back to simulation if not set) |
-   | `DATABASE_URL` | ✅ Yes | SQLite database (default value works as-is) |
+   | `DATABASE_URL` | ✅ Yes | PostgreSQL database |
 
    > 📄 See [`.env.sample`](.env.sample) for step-by-step instructions on how to obtain each API key.
 
 3. **Initialize the Database**:
-   Push the schema to the local SQLite database and generate the Prisma client:
+   Push the schema to your PostgreSQL database:
    ```bash
    npx prisma generate
    npx prisma db push
@@ -81,5 +158,5 @@ This is Carmine's NYC's dining menu — a large Italian-American menu with start
 
 - **Email Dispatching**: Real emails are not sent to prevent spamming actual businesses found via Google Maps. Instead, the `send-rfp` route mocks the email payload and handles the internal database state shifts, logging the "email" to the terminal.
 - **USDA API**: The USDA API is notoriously difficult to get immediate access to and often lacks specific restaurant-grade ingredient data. A robust mathematical simulation is used to generate realistic market fluctuations over 6 months instead of returning hardcoded values.
-- **Prisma Edge Compatibility**: Next.js Edge runtime compatibility issues with the latest Prisma client (v7) were circumvented by explicitly using stable version 5.
+- **Prisma**: Optimized for PostgreSQL to provide true relational scale and ACID consistency across all procurement stages.
 - **Robust Demo Mode (NEW)**: If the Gemini API quota is hit or the key is missing, the application automatically triggers a **"Big Data" Mock Mode**. This provides a comprehensive 10-dish menu, detailed simulated vendor conversations, and multifaceted AI recommendations to ensure the demo remains fully functional and visually impressive at all times.

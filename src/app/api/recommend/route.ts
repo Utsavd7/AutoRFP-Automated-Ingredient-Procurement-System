@@ -53,27 +53,58 @@ export async function GET(req: Request) {
             };
         });
 
-        const lowestPrice = Math.min(...quotesSummary.map((q: any) => q.price));
+        // Fetch associated pricing trends for market context
+        const menu = await prisma.menu.findUnique({
+            where: { id: menuId },
+            include: {
+                recipes: {
+                    include: {
+                        ingredients: {
+                            include: { pricingTrends: { orderBy: { date: 'desc' }, take: 1 } }
+                        }
+                    }
+                }
+            }
+        } as any);
 
-        // Ask OpenAI to analyze the quotes holistically and recommend
+        // Aggregate ingredients and their current market price
+        const menuAny = menu as any;
+        const ingredientPricingMap = new Map<string, number>();
+        if (menuAny?.recipes) {
+            for (const recipe of menuAny.recipes) {
+                for (const ing of recipe.ingredients) {
+                    if (ing.pricingTrends?.length > 0) {
+                        const currentPrice = ing.pricingTrends[0].price;
+                        const existing = ingredientPricingMap.get(ing.name) ?? 0;
+                        ingredientPricingMap.set(ing.name, Math.max(existing, currentPrice));
+                    }
+                }
+            }
+        }
+        const marketContext = ingredientPricingMap.size > 0
+            ? `\nCurrent wholesale market prices for key ingredients:\n${Array.from(ingredientPricingMap.entries()).map(([name, price]) => `  - ${name}: $${price.toFixed(2)}/unit`).join('\n')}\nUse this to evaluate whether each vendor's quote is fair relative to actual market conditions.`
+            : '';
+
+        // Ask Groq to analyze the quotes holistically and recommend
         const prompt = `
             You are an expert restaurant procurement advisor. You have received the following quotes from different food wholesale distributors in response to a single RFP (Request for Proposal).
 
             Here are the quotes:
-            \${JSON.stringify(quotesSummary, null, 2)}
+            ${JSON.stringify(quotesSummary, null, 2)}
+            ${marketContext}
             
             Based on these factors:
-            1. Price (lower is better)
+            1. Price (lower is better), assessed against real market rates above
             2. Delivery terms and flexibility (mentioned in details)
             3. Trust and reliability signals in the details
             4. Any red flags (e.g., stock shortages, restrictive conditions)
             
             Provide a final recommendation. Return ONLY a valid JSON object:
             {
-                "recommendedDistributor": "String", // Name of the recommended distributor
-                "reasoning": "String", // 2-3 sentence explanation of why they are the best choice
-                "potentialRisks": "String", // Any risks or caveats to be aware of. Empty string if none.
-                "savings": Number // How much cheaper is the recommended distributor vs the most expensive quote (0 if only one quote)
+                "recommendedDistributor": "String",
+                "reasoning": "String",
+                "potentialRisks": "String",
+                "savings": Number
             }
         `;
 
@@ -104,6 +135,8 @@ export async function GET(req: Request) {
                 savings: savings
             };
         }
+
+        const lowestPrice = Math.min(...quotesSummary.map((q: any) => q.price));
 
         return NextResponse.json({
             recommendation,

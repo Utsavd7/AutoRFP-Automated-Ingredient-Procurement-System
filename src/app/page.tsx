@@ -237,7 +237,11 @@ export default function Home() {
         const response = await fetch('/api/simulate-conversation', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ rfpId: rfp.id }),
+          body: JSON.stringify({
+            rfpId: rfp.id,
+            ingredients,
+            pricingData,
+          }),
         });
         const data = await response.json();
         newLogs[rfp.id] = [

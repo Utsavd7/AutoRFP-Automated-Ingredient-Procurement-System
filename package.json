@@ -13,8 +13,12 @@
     "@prisma/client": "^5.22.0",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
+    "imap-simple": "^5.1.0",
+    "imapflow": "^1.2.13",
     "lucide-react": "^0.577.0",
+    "mailparser": "^3.9.4",
     "next": "16.1.6",
+    "nodemailer": "^8.0.2",
     "prisma": "5.22.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
@@ -23,12 +27,17 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/jest": "^30.0.0",
     "@types/node": "^20.19.37",
+    "@types/nodemailer": "^7.0.11",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
+    "jest": "^30.3.0",
+    "jest-environment-node": "^30.3.0",
     "tailwindcss": "^4",
+    "ts-jest": "^29.4.6",
     "typescript": "^5"
   }
 }

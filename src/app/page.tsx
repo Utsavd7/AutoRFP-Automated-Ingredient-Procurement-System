@@ -35,6 +35,8 @@ export default function Home() {
   const [followUpEmail, setFollowUpEmail] = useState('');
   const [recommendation, setRecommendation] = useState<any>(null);
   const [loadingRecommendation, setLoadingRecommendation] = useState(false);
+  const [conversationLogs, setConversationLogs] = useState<Record<string, any[]>>({});
+  const [simulatingConversation, setSimulatingConversation] = useState(false);
 
   const [error, setError] = useState('');
 
@@ -216,6 +218,43 @@ export default function Home() {
       setError(err.message);
     } finally {
       setSimulatingEmail(false);
+    }
+  };
+
+  const handleAutoConversation = async () => {
+    if (sentRFPs.length === 0) return;
+    setSimulatingConversation(true);
+    setError('');
+    const newLogs: Record<string, any[]> = {};
+
+    try {
+      // Run conversations for all SENT (not yet replied) RFPs
+      const unrespondedRFPs = sentRFPs.filter(
+        (rfp) => !quotes.some((q) => q.rfpId === rfp.id)
+      );
+
+      for (const rfp of unrespondedRFPs) {
+        const response = await fetch('/api/simulate-conversation', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rfpId: rfp.id }),
+        });
+        const data = await response.json();
+        newLogs[rfp.id] = [
+          { role: 'system', message: `Simulating conversation with ${rfp.distributorName}...` },
+          ...(data.conversationLog || []),
+          { role: 'system', message: data.message }
+        ];
+      }
+
+      setConversationLogs(newLogs);
+      // Refresh quotes dashboard after all conversations
+      await handleFetchQuotes();
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message);
+    } finally {
+      setSimulatingConversation(false);
     }
   };
 
@@ -580,30 +619,78 @@ export default function Home() {
               </div>
               <div className="flex items-center gap-3">
                 <button
+                  onClick={handleAutoConversation}
+                  disabled={simulatingConversation || quotes.length >= sentRFPs.length}
+                  className={cn(
+                    "flex items-center justify-center gap-2 py-2 px-4 rounded-xl font-medium text-sm transition-all shadow-sm",
+                    simulatingConversation || quotes.length >= sentRFPs.length
+                      ? "bg-neutral-800 text-neutral-500 cursor-not-allowed"
+                      : "bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-600/20 active:scale-[0.98]"
+                  )}
+                >
+                  {simulatingConversation ? (
+                    <><Loader2 className="w-4 h-4 animate-spin" /> Simulating...</>
+                  ) : (
+                    <><Mail className="w-4 h-4" /> Auto-Simulate with Gemini</>
+                  )}
+                </button>
+                <button
                   onClick={() => setShowEmailSimulator(!showEmailSimulator)}
                   className={cn(
                     "flex items-center justify-center gap-2 py-2 px-4 rounded-xl font-medium text-sm transition-all shadow-sm",
-                    showEmailSimulator ? "bg-indigo-600 text-white" : "bg-neutral-800 hover:bg-neutral-700 text-neutral-200"
+                    showEmailSimulator ? "bg-neutral-700 text-white" : "bg-neutral-800 hover:bg-neutral-700 text-neutral-400"
                   )}
                 >
-                  <Mail className="w-4 h-4" /> Simulate Email Reply
+                  Manual
                 </button>
                 <button
                   onClick={handleFetchQuotes}
                   disabled={loadingQuotes}
                   className={cn(
                     "flex items-center justify-center gap-2 py-2 px-4 rounded-xl font-medium text-sm transition-all shadow-sm",
-                    loadingQuotes ? "bg-neutral-800 text-neutral-500" : "bg-neutral-800 hover:bg-neutral-700 text-neutral-200 shadow-neutral-900/50"
+                    loadingQuotes ? "bg-neutral-800 text-neutral-500" : "bg-neutral-800 hover:bg-neutral-700 text-neutral-200"
                   )}
                 >
-                  {loadingQuotes ? (
-                    <><Loader2 className="w-4 h-4 animate-spin" /> Checking...</>
-                  ) : (
-                    <>Refresh Dashboard</>
-                  )}
+                  {loadingQuotes ? <><Loader2 className="w-4 h-4 animate-spin" /> Checking...</> : <>Refresh Dashboard</>}
                 </button>
               </div>
             </div>
+
+            {/* Gemini Conversation Logs */}
+            {Object.keys(conversationLogs).length > 0 && (
+              <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 space-y-5 animate-in fade-in duration-300">
+                <h3 className="text-sm font-semibold text-neutral-300 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-indigo-500 inline-block"></span>
+                  Gemini Conversation Logs
+                </h3>
+                {sentRFPs.map((rfp: any) => {
+                  const logs = conversationLogs[rfp.id];
+                  if (!logs) return null;
+                  return (
+                    <div key={rfp.id} className="space-y-2 border-t border-neutral-800 pt-4 first:border-0 first:pt-0">
+                      <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wider">{rfp.distributorName}</p>
+                      {logs.map((entry: any, i: number) => (
+                        <div key={i} className={cn(
+                          "text-xs rounded-xl px-4 py-3 font-mono whitespace-pre-wrap leading-relaxed",
+                          entry.role === 'AutoRFP Agent'
+                            ? "bg-indigo-950/50 border border-indigo-900/40 text-indigo-200"
+                            : entry.role === 'system'
+                              ? "text-neutral-500 italic px-1"
+                              : "bg-neutral-950 border border-neutral-800 text-neutral-300"
+                        )}>
+                          {entry.role !== 'system' && (
+                            <span className={cn("font-bold block mb-1.5", entry.role === 'AutoRFP Agent' ? "text-indigo-400" : "text-neutral-400")}>
+                              {entry.role}:
+                            </span>
+                          )}
+                          {entry.message}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
 
             {/* Inbound Email Simulator Block */}
             {showEmailSimulator && (

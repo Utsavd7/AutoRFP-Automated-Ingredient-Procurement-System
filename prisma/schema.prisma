@@ -1,36 +1,36 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
 datasource db {
   provider = "sqlite"
   url      = "file:./dev.db"
-}
-
-generator client {
-  provider = "prisma-client-js"
 }
 
 model Menu {
   id        String   @id @default(uuid())
   sourceUrl String?
   text      String?
-  recipes   Recipe[]
   rfps      RFP[]
+  recipes   Recipe[]
 }
 
 model Recipe {
-  id           String       @id @default(uuid())
-  name         String
-  menuId       String
-  menu         Menu         @relation(fields: [menuId], references: [id])
-  ingredients  Ingredient[]
+  id          String       @id @default(uuid())
+  name        String
+  menuId      String
+  ingredients Ingredient[]
+  menu        Menu         @relation(fields: [menuId], references: [id])
 }
 
 model Ingredient {
-  id               String            @id @default(uuid())
-  name             String
-  quantity         Float?
-  unit             String?
-  recipeId         String
-  recipe           Recipe            @relation(fields: [recipeId], references: [id])
-  pricingTrends    PricingTrend[]
+  id            String         @id @default(uuid())
+  name          String
+  quantity      Float?
+  unit          String?
+  recipeId      String
+  recipe        Recipe         @relation(fields: [recipeId], references: [id])
+  pricingTrends PricingTrend[]
 }
 
 model PricingTrend {
@@ -38,15 +38,15 @@ model PricingTrend {
   ingredientId String
   price        Float
   date         DateTime
-  source       String     // e.g., USDA
+  source       String
   ingredient   Ingredient @relation(fields: [ingredientId], references: [id])
 }
 
 model Distributor {
-  id          String   @id @default(uuid())
+  id          String  @id @default(uuid())
   name        String
   contactName String?
-  email       String   // This will be a mock email but we treat it as real
+  email       String
   location    String
   rfps        RFP[]
 }
@@ -54,19 +54,19 @@ model Distributor {
 model RFP {
   id            String      @id @default(uuid())
   menuId        String
-  menu          Menu        @relation(fields: [menuId], references: [id])
   distributorId String
-  status        String      // PENDING, SENT, REPLIED
+  status        String
   sentAt        DateTime?
   createdAt     DateTime    @default(now())
-  distributor   Distributor @relation(fields: [distributorId], references: [id])
   quotes        Quote[]
+  distributor   Distributor @relation(fields: [distributorId], references: [id])
+  menu          Menu        @relation(fields: [menuId], references: [id])
 }
 
 model Quote {
-  id        String   @id @default(uuid())
-  rfpId     String
-  price     Float
-  details   String?
-  rfp       RFP      @relation(fields: [rfpId], references: [id])
+  id      String  @id @default(uuid())
+  rfpId   String
+  price   Float
+  details String?
+  rfp     RFP     @relation(fields: [rfpId], references: [id])
 }

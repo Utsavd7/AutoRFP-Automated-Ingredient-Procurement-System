@@ -72,7 +72,7 @@ The RFP requested: various restaurant ingredients in bulk quantities.
                        Do NOT use placeholder text. Make it feel like a real email.`;
 
                 const vendorResponse = await ai.models.generateContent({
-                    model: 'gemini-2.5-flash',
+                    model: 'gemini-2.0-flash',
                     contents: vendorPrompt,
                 });
 
@@ -95,7 +95,7 @@ The RFP requested: various restaurant ingredients in bulk quantities.
                 `;
 
                 const agentResponse = await ai.models.generateContent({
-                    model: 'gemini-2.5-flash',
+                    model: 'gemini-2.0-flash',
                     contents: agentParsePrompt,
                     config: { responseMimeType: 'application/json' }
                 });

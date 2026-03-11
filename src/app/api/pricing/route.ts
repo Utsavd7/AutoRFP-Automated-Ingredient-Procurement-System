@@ -44,34 +44,43 @@ export async function POST(req: Request) {
         for (const ing of ingredients) {
             if (!ing.name) continue;
 
-            // 1. Check if we already have recent pricing for this exact name (simulated cache)
-            const existingTrend = await prisma.pricingTrend.findFirst({
-                where: { ingredient: { name: ing.name } },
-                orderBy: { date: 'desc' },
+            // 1. Check if we already have recent pricing for this ingredient ID in our DB
+            let trends = [];
+            const existingTrends = await prisma.pricingTrend.findMany({
+                where: { ingredientId: ing.id },
+                orderBy: { date: 'asc' },
             });
 
-            let trends;
-
-            if (existingTrend && new Date(existingTrend.date).getMonth() === new Date().getMonth()) {
-                // Use existing data
-                const allTrends = await prisma.pricingTrend.findMany({
-                    where: { ingredient: { name: ing.name } },
-                    orderBy: { date: 'asc' },
-                });
-                trends = allTrends.map((t: any) => ({ date: t.date.toISOString(), price: t.price, source: t.source }));
+            if (existingTrends.length > 0 && new Date(existingTrends[existingTrends.length - 1].date).getMonth() === new Date().getMonth()) {
+                // Use existing data from DB
+                trends = existingTrends.map((t: any) => ({
+                    date: t.date.toISOString(),
+                    price: t.price,
+                    source: t.source
+                }));
             } else {
                 // 2. Fetch/Generate new fake USDA data
-                trends = generateMockPrice(ing.name);
+                const generatedTrends = generateMockPrice(ing.name);
 
-                // We would normally store this in Prisma here linked to the Ingredient ID,
-                // but since 'ingredients' here is an aggregated list without specific IDs, 
-                // we just return the trends for the UI.
+                // 3. STORE IT IN THE DATABASE (Must-have requirement)
+                if (ing.id) {
+                    await prisma.pricingTrend.createMany({
+                        data: generatedTrends.map(t => ({
+                            ingredientId: ing.id,
+                            price: t.price,
+                            date: new Date(t.date),
+                            source: t.source
+                        }))
+                    });
+                }
+                trends = generatedTrends;
             }
 
             pricingResults.push({
                 name: ing.name,
+                id: ing.id,
                 currentPrice: trends[trends.length - 1].price,
-                unit: 'per lb', // Mocked assumed unit for wholesale
+                unit: 'per lb',
                 history: trends
             });
         }

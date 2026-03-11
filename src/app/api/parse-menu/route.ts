@@ -130,6 +130,32 @@ export async function POST(req: Request) {
             );
         }
 
+        // If the user gave a URL, fetch its content server-side (Groq cannot browse the web)
+        let menuContent = menuText || '';
+        if (sourceUrl && !menuText) {
+            try {
+                const urlRes = await fetch(sourceUrl, {
+                    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AutoRFP/1.0)' },
+                    signal: AbortSignal.timeout(10000)
+                });
+                if (!urlRes.ok) throw new Error(`HTTP ${urlRes.status} from ${sourceUrl}`);
+                const html = await urlRes.text();
+                // Strip HTML tags, collapse whitespace, keep readable text
+                menuContent = html
+                    .replace(/<script[\s\S]*?<\/script>/gi, '')
+                    .replace(/<style[\s\S]*?<\/style>/gi, '')
+                    .replace(/<[^>]+>/g, ' ')
+                    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').replace(/&#\d+;/g, '')
+                    .replace(/\s{2,}/g, ' ')
+                    .trim()
+                    .slice(0, 12000); // cap at 12k chars to stay within token limit
+                console.log(`Fetched ${menuContent.length} chars from ${sourceUrl}`);
+            } catch (fetchErr: any) {
+                console.warn(`Failed to fetch URL content: ${fetchErr.message}. Falling back to mock data.`);
+                menuContent = '';
+            }
+        }
+
         const prompt = `
 You are an expert culinary assistant and a JSON-only API.
 Parse the following restaurant menu and extract every dish into a structured recipe format.
@@ -154,7 +180,7 @@ Output ONLY valid JSON matching this exact schema. No markdown, no explanation, 
 }
 
 Menu:
-${menuText || sourceUrl}
+${menuContent}
 `;
 
         // Call Groq with up to 2 retries for JSON parsing stability

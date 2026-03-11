@@ -37,6 +37,7 @@ This project implements a full end-to-end pipeline covering the following steps:
    |---|---|---|
    | `GEMINI_API_KEY` | ✅ Yes | Menu parsing + AI email quote extraction |
    | `GOOGLE_MAPS_API_KEY` | ⚠️ Optional | Finding real local distributors (falls back to mock data if not set) |
+   | `USDA_API_KEY` | ⚠️ Optional | Real ingredient market pricing (falls back to simulation if not set) |
    | `DATABASE_URL` | ✅ Yes | SQLite database (default value works as-is) |
 
    ---

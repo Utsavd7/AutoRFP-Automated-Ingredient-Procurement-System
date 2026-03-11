@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { PrismaClient } from '@prisma/client';
 
-const ai = process.env.GEMINI_API_KEY
-    ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
+const genAI = process.env.GEMINI_API_KEY
+    ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
     : null;
 
 const prisma = new PrismaClient();
@@ -12,7 +12,7 @@ export async function POST(req: Request) {
     try {
         const { rfpId, emailBody } = await req.json();
 
-        if (!ai) {
+        if (!genAI) {
             return NextResponse.json(
                 { error: 'Gemini API key is missing. Please add GEMINI_API_KEY to your .env file.' },
                 { status: 500 }
@@ -62,15 +62,15 @@ export async function POST(req: Request) {
         `;
 
         // Call Gemini
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.0-flash',
-            contents: prompt,
-            config: {
-                responseMimeType: 'application/json',
-            }
+        const model = genAI.getGenerativeModel({
+            model: 'gemini-1.5-flash',
+            generationConfig: { responseMimeType: 'application/json' }
         });
 
-        const resultText = response.text;
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        const resultText = response.text();
+
         if (!resultText) throw new Error("No response from Gemini.");
 
         const parsed = JSON.parse(resultText);
@@ -89,12 +89,10 @@ export async function POST(req: Request) {
                 Return ONLY the email body text, nothing else. No subject line. No "Dear..." opener needed.
             `;
 
-            const followUpResponse = await ai.models.generateContent({
-                model: 'gemini-2.0-flash',
-                contents: followUpPrompt,
-            });
-
-            const followUpEmail = followUpResponse.text || 'Could you please clarify your total pricing and delivery terms for this order?';
+            const followUpModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+            const followUpResult = await followUpModel.generateContent(followUpPrompt);
+            const followUpResponse = await followUpResult.response;
+            const followUpEmail = followUpResponse.text() || 'Could you please clarify your total pricing and delivery terms for this order?';
 
             // Log the follow-up (in production this would be sent via SMTP/Resend)
             console.log(`\n📧 AUTONOMOUS FOLLOW-UP EMAIL to ${rfp.distributor.email}:\n${followUpEmail}\n`);

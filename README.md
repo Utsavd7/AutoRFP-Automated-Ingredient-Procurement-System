@@ -6,7 +6,7 @@ AutoRFP is a Next.js web application designed to automate the painful process of
 
 This project implements a full end-to-end pipeline covering the following steps:
 
-1. **AI Menu Parsing**: Provide text from a restaurant menu. AutoRFP uses Google's Gemini Flash 2.5 LLM to break the menu down into individual dishes and reverse-engineer the required ingredients and standard restaurant-sized quantities.
+1. **AI Menu Parsing**: Provide text from a restaurant menu. AutoRFP uses OpenAI's GPT-4o to break the menu down into individual dishes and reverse-engineer the required ingredients and standard restaurant-sized quantities.
 2. **Pricing Trends (USDA Simulation)**: Automatically retrieves (simulated) historical pricing trends for the extracted ingredients using realistic randomized market data over the past 6 months. Visualized smoothly with Recharts.
 3. **Local Distributor Search**: Uses the Google Places API to dynamically find nearby wholesale food distributors based on a provided city/zip code (e.g., "Maspeth, NY" or "Brooklyn"). It falls back to beautifully mocked data if an API key is not present.
 4. **Automated RFP Dispatch**: Generates a Request for Proposal (RFP) for the required ingredients and "sends" it safely to the found distributors (the email payload is logged to the Node console for safety).
@@ -17,7 +17,7 @@ This project implements a full end-to-end pipeline covering the following steps:
 - **Frontend**: Next.js 15 (App Router), React, Tailwind CSS, Recharts, Lucide Icons.
 - **Backend**: Next.js API Routes (Serverless Functions)
 - **Database**: PostgreSQL (via Prisma ORM v5)
-- **AI**: Google Generative AI SDK (`@google/genai`)
+- **AI**: OpenAI SDK (`openai`)
 
 ## System Architecture
 
@@ -29,7 +29,7 @@ graph TD
     Prisma -->|Query| DB[(PostgreSQL Database)]
     
     subgraph "External Integration"
-        Backend -->|Recipe Extraction| Gemini[Google Gemini AI]
+        Backend -->|Recipe Extraction| GPT[OpenAI GPT-4o]
         Backend -->|Map Search| GooglePlaces[Google Places API]
         Backend -->|Market Data| USDASim[USDA Pricing Simulation]
     end
@@ -112,7 +112,7 @@ erDiagram
 
    | Variable | Required | Used For |
    |---|---|---|
-   | `GEMINI_API_KEY` | ✅ Yes | Menu parsing + AI email quote extraction |
+   | `OPENAI_API_KEY` | ✅ Yes | Menu parsing + AI email quote extraction |
    | `GOOGLE_MAPS_API_KEY` | ⚠️ Optional | Finding real local distributors (falls back to mock data if not set) |
    | `USDA_API_KEY` | ⚠️ Optional | Real ingredient market pricing (falls back to simulation if not set) |
    | `DATABASE_URL` | ✅ Yes | PostgreSQL database |
@@ -146,7 +146,7 @@ This is Carmine's NYC's dining menu — a large Italian-American menu with start
 
 - `src/app/page.tsx`: The main user-facing dashboard containing the 5-step pipeline UI.
 - `src/app/quote/[rfpId]/page.tsx`: The external-facing vendor portal where distributors can submit their quotes for a specific RFP.
-- `src/app/api/parse-menu/route.ts`: Calls the Gemini LLM to extract and structure recipes.
+- `src/app/api/parse-menu/route.ts`: Calls the OpenAI API to extract and structure recipes.
 - `src/app/api/pricing/route.ts`: Generates simulated 6-month historical USDA pricing data.
 - `src/app/api/distributors/route.ts`: Integrates with the Google Places `searchText` API to find local entities.
 - `src/app/api/send-rfp/route.ts`: Generates the email payload and tracks the RFP status in the DB.
@@ -159,4 +159,4 @@ This is Carmine's NYC's dining menu — a large Italian-American menu with start
 - **Email Dispatching**: Real emails are not sent to prevent spamming actual businesses found via Google Maps. Instead, the `send-rfp` route mocks the email payload and handles the internal database state shifts, logging the "email" to the terminal.
 - **USDA API**: The USDA API is notoriously difficult to get immediate access to and often lacks specific restaurant-grade ingredient data. A robust mathematical simulation is used to generate realistic market fluctuations over 6 months instead of returning hardcoded values.
 - **Prisma**: Optimized for PostgreSQL to provide true relational scale and ACID consistency across all procurement stages.
-- **Robust Demo Mode (NEW)**: If the Gemini API quota is hit or the key is missing, the application automatically triggers a **"Big Data" Mock Mode**. This provides a comprehensive 10-dish menu, detailed simulated vendor conversations, and multifaceted AI recommendations to ensure the demo remains fully functional and visually impressive at all times.
+- **Robust Demo Mode (NEW)**: If the OpenAI API quota is hit or the key is missing, the application automatically triggers a **"Big Data" Mock Mode**. This provides a comprehensive 10-dish menu, detailed simulated vendor conversations, and multifaceted AI recommendations to ensure the demo remains fully functional and visually impressive at all times.

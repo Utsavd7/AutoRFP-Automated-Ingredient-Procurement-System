@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import OpenAI from 'openai';
 import { PrismaClient } from '@prisma/client';
 
-const genAI = process.env.GEMINI_API_KEY
-    ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
+const openai = process.env.OPENAI_API_KEY
+    ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
     : null;
 
 const prisma = new PrismaClient();
@@ -11,13 +11,13 @@ const prisma = new PrismaClient();
 const MAX_TURNS = 3;
 
 // POST /api/simulate-conversation
-// Fully simulates a back-and-forth vendor email conversation using Gemini as both sides
+// Fully simulates a back-and-forth vendor email conversation using OpenAI as both sides
 export async function POST(req: Request) {
     try {
         const { rfpId } = await req.json();
 
-        if (!genAI) {
-            return NextResponse.json({ error: 'GEMINI_API_KEY is missing.' }, { status: 500 });
+        if (!openai) {
+            return NextResponse.json({ error: 'OPENAI_API_KEY is missing.' }, { status: 500 });
         }
 
         if (!rfpId) {
@@ -42,7 +42,7 @@ export async function POST(req: Request) {
 
         // The initial RFP email context (from AutoRFP to vendor)
         const rfpContext = `
-You sent an RFP from AutoRFP procurement system to ${rfp.distributor.name} asking for wholesale ingredient pricing.
+You sent an RFP from AutoRFP procurement system to \${rfp.distributor.name} asking for wholesale ingredient pricing.
 The RFP requested: various restaurant ingredients in bulk quantities.
         `.trim();
 
@@ -54,30 +54,32 @@ The RFP requested: various restaurant ingredients in bulk quantities.
             while (turn < MAX_TURNS && !quoteResult) {
                 turn++;
 
-                // STEP 1: Gemini plays the VENDOR and writes a reply email
+                // STEP 1: OpenAI plays the VENDOR and writes a reply email
                 const vendorPrompt = isFollowUp
-                    ? `You are a real food wholesale vendor (${rfp.distributor.name}). 
+                    ? `You are a real food wholesale vendor (\${rfp.distributor.name}). 
                        AutoRFP has just sent you a follow-up email asking for clarification.
-                       Previous message context: """${lastMessage}"""
+                       Previous message context: """\${lastMessage}"""
                        
                        Now write a realistic, professional vendor reply email that CLEARLY states:
                        - A specific total dollar price (e.g., "$620 for the full order")
                        - Your delivery schedule or lead time
                        Be realistic, somewhat informal, like a real vendor would write.`
-                    : `You are a real food wholesale vendor called ${rfp.distributor.name}, based at ${rfp.distributor.location}.
+                    : `You are a real food wholesale vendor called \${rfp.distributor.name}, based at \${rfp.distributor.location}.
                        A restaurant procurement system called AutoRFP just sent you an RFP (Request for Proposal) for ingredient sourcing.
                        
-                       Write a realistic vendor reply email (${turn === 1 && Math.random() > 0.5 ? 'keep it vague — only mention an approximate price range without a firm total' : 'include a clear total quoted price and delivery terms'}).
+                       Write a realistic vendor reply email (\${turn === 1 && Math.random() > 0.5 ? 'keep it vague — only mention an approximate price range without a firm total' : 'include a clear total quoted price and delivery terms'}).
                        Be professional but conversational, like a real local distributor would write.
                        Do NOT use placeholder text. Make it feel like a real email.`;
 
-                const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-                const vendorResult = await model.generateContent(vendorPrompt);
-                const vendorResponse = await vendorResult.response;
-                const vendorEmail = vendorResponse.text() || 'Thank you for reaching out. We will get back to you shortly.';
+                const vendorResponse = await openai.chat.completions.create({
+                    model: 'gpt-4o',
+                    messages: [{ role: 'user', content: vendorPrompt }]
+                });
+
+                const vendorEmail = vendorResponse.choices[0].message.content || 'Thank you for reaching out. We will get back to you shortly.';
                 conversationLog.push({ role: rfp.distributor.name, message: vendorEmail });
 
-                // STEP 2: Gemini plays the PROCUREMENT AGENT and parses the vendor reply
+                // STEP 2: OpenAI plays the PROCUREMENT AGENT and parses the vendor reply
                 const agentParsePrompt = `
                     You are an expert AI procurement agent. Parse this vendor email and extract:
                     {
@@ -89,24 +91,23 @@ The RFP requested: various restaurant ingredients in bulk quantities.
                     }
                     
                     Vendor email:
-                    """${vendorEmail}"""
+                    """\${vendorEmail}"""
                 `;
 
-                const agentModel = genAI!.getGenerativeModel({
-                    model: 'gemini-2.0-flash',
-                    generationConfig: { responseMimeType: 'application/json' }
+                const agentResponse = await openai.chat.completions.create({
+                    model: 'gpt-4o',
+                    messages: [{ role: 'user', content: agentParsePrompt }],
+                    response_format: { type: 'json_object' }
                 });
 
-                const agentResult = await agentModel.generateContent(agentParsePrompt);
-                const agentResponse = await agentResult.response;
-                const parsed = JSON.parse(agentResponse.text() || '{}');
+                const parsed = JSON.parse(agentResponse.choices[0].message.content || '{}');
 
                 if (parsed.price && !isNaN(Number(parsed.price)) && parsed.confidence !== 'LOW') {
                     // ✅ Valid quote extracted — save it
                     const details = [
-                        parsed.deliveryTerms ? `Delivery: ${parsed.deliveryTerms}` : '',
+                        parsed.deliveryTerms ? `Delivery: \${parsed.deliveryTerms}` : '',
                         parsed.details || '',
-                        `[AI Conversation Turn ${turn}, Confidence: ${parsed.confidence}]`
+                        `[AI Conversation Turn \${turn}, Confidence: \${parsed.confidence}]`
                     ].filter(Boolean).join(' | ');
 
                     const newQuote = await prisma.quote.create({
@@ -121,22 +122,24 @@ The RFP requested: various restaurant ingredients in bulk quantities.
                     quoteResult = newQuote;
                     conversationLog.push({
                         role: 'AutoRFP Agent',
-                        message: `✅ Quote extracted: $${Number(parsed.price).toFixed(2)}. Saved to database.`
+                        message: `✅ Quote extracted: $\${Number(parsed.price).toFixed(2)}. Saved to database.`
                     });
                 } else {
                     // ⚡ Incomplete — generate follow-up
                     const followUpPrompt = `
                         You are a professional procurement manager. A vendor replied but their email is unclear or missing pricing info.
-                        Missing: ${JSON.stringify(parsed.missingInfo?.length ? parsed.missingInfo : ['total price'])}
-                        Their email: """${vendorEmail}"""
+                        Missing: \${JSON.stringify(parsed.missingInfo?.length ? parsed.missingInfo : ['total price'])}
+                        Their email: """\${vendorEmail}"""
                         
                         Write a short, polite follow-up asking for clarification (2-3 sentences only).
                     `;
 
-                    const followUpModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-                    const followUpResult = await followUpModel.generateContent(followUpPrompt);
-                    const followUpResponse = await followUpResult.response;
-                    const followUpEmail = followUpResponse.text() || 'Could you please clarify your total pricing for this order?';
+                    const followUpResponse = await openai.chat.completions.create({
+                        model: 'gpt-4o',
+                        messages: [{ role: 'user', content: followUpPrompt }]
+                    });
+
+                    const followUpEmail = followUpResponse.choices[0].message.content || 'Could you please clarify your total pricing for this order?';
                     conversationLog.push({ role: 'AutoRFP Agent', message: followUpEmail });
 
                     lastMessage = followUpEmail;
@@ -144,7 +147,7 @@ The RFP requested: various restaurant ingredients in bulk quantities.
                 }
             }
         } catch (aiError: any) {
-            console.warn('Gemini API failed during conversation simulation, providing detailed mock conversation:', aiError.message);
+            console.warn('OpenAI API failed during conversation simulation, providing detailed mock conversation:', aiError.message);
 
             // Generate a more robust mock conversation fallback
             const mockBasePrice = Math.floor(Math.random() * (1200 - 800) + 800);

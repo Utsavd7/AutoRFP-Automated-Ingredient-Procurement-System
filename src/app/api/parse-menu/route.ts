@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import OpenAI from 'openai';
 import { PrismaClient } from '@prisma/client';
 
-const genAI = process.env.GEMINI_API_KEY
-    ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
+const openai = process.env.OPENAI_API_KEY
+    ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
     : null;
 
 const prisma = new PrismaClient();
@@ -12,9 +12,9 @@ export async function POST(req: Request) {
     try {
         const { menuText, sourceUrl } = await req.json();
 
-        if (!genAI) {
+        if (!openai) {
             return NextResponse.json(
-                { error: 'Gemini API key is missing. Please add GEMINI_API_KEY to your .env file.' },
+                { error: 'OpenAI API key is missing. Please add OPENAI_API_KEY to your .env file.' },
                 { status: 500 }
             );
         }
@@ -26,7 +26,6 @@ export async function POST(req: Request) {
             );
         }
 
-        // Prepare prompt for Gemini
         const prompt = `
       You are an expert culinary assistant. I will provide you with a restaurant menu (either as text or a URL).
       Your task is to parse this menu and extract every dish into a structured recipe format.
@@ -39,7 +38,7 @@ export async function POST(req: Request) {
          - If the menu only says "Burger", infer standard ingredients (bun, beef patty, lettuce, tomato, cheese).
          - Keep quantities practical (e.g., 0.25 lbs, 1 piece, 2 oz).
 
-      Return the result EXACTLY as a JSON object matching this TypeScript interface, with no additional markdown formatting or text outside the JSON:
+      Return the result EXACTLY as a JSON object matching this TypeScript interface:
 
       {
         "dishes": [
@@ -57,26 +56,24 @@ export async function POST(req: Request) {
       }
 
       Here is the menu:
-      ${menuText || sourceUrl}
+      \${menuText || sourceUrl}
     `;
 
-        // Call Gemini
+        // Call OpenAI
         let parsedData;
         try {
-            const model = genAI!.getGenerativeModel({
-                model: 'gemini-2.0-flash',
-                generationConfig: { responseMimeType: 'application/json' }
+            const response = await openai.chat.completions.create({
+                model: 'gpt-4o',
+                messages: [{ role: 'user', content: prompt }],
+                response_format: { type: 'json_object' }
             });
 
-            const result = await model.generateContent(prompt);
-            const response = await result.response;
-            const resultText = response.text();
+            const resultText = response.choices[0].message.content;
 
-            if (!resultText) throw new Error("No response from Gemini");
+            if (!resultText) throw new Error("No response from OpenAI");
             parsedData = JSON.parse(resultText);
         } catch (aiError: any) {
-            console.warn('Gemini API failed or quota exceeded, providing comprehensive mock menu data:', aiError.message);
-            // "Big" Fallback mock menu - 10+ dishes across categories
+            console.warn('OpenAI API failed, providing comprehensive mock menu data:', aiError.message);
             parsedData = {
                 dishes: [
                     {
@@ -96,87 +93,6 @@ export async function POST(req: Request) {
                             { name: "Lemon", quantity: 1, unit: "piece" },
                             { name: "Marinara Sauce", quantity: 4, unit: "oz" }
                         ]
-                    },
-                    {
-                        name: "Burrata & Heirloom Tomato",
-                        ingredients: [
-                            { name: "Burrata Cheese", quantity: 8, unit: "oz" },
-                            { name: "Heirloom Tomatoes", quantity: 0.5, unit: "lbs" },
-                            { name: "Balsamic Glaze", quantity: 1, unit: "oz" },
-                            { name: "Fresh Basil", quantity: 0.5, unit: "oz" }
-                        ]
-                    },
-                    {
-                        name: "Chef's Signature Dry-Aged Burger",
-                        ingredients: [
-                            { name: "Brioche Bun", quantity: 1, unit: "piece" },
-                            { name: "Dry-Aged Beef Blend", quantity: 0.5, unit: "lbs" },
-                            { name: "Caramelized Onions", quantity: 2, unit: "oz" },
-                            { name: "Gruyère Cheese", quantity: 2, unit: "oz" },
-                            { name: "Arugula", quantity: 1, unit: "oz" }
-                        ]
-                    },
-                    {
-                        name: "Wild Mushroom Risotto",
-                        ingredients: [
-                            { name: "Arborio Rice", quantity: 0.5, unit: "lbs" },
-                            { name: "Porcini Mushrooms", quantity: 3, unit: "oz" },
-                            { name: "Shiitake Mushrooms", quantity: 3, unit: "oz" },
-                            { name: "Parmesan Cheese", quantity: 2, unit: "oz" },
-                            { name: "Vegetable Stock", quantity: 16, unit: "oz" }
-                        ]
-                    },
-                    {
-                        name: "Pan-Seared Atlantic Salmon",
-                        ingredients: [
-                            { name: "Salmon Fillet", quantity: 0.5, unit: "lbs" },
-                            { name: "Asparagus", quantity: 6, unit: "pieces" },
-                            { name: "Fingerling Potatoes", quantity: 4, unit: "oz" },
-                            { name: "Dill Butter", quantity: 1, unit: "oz" }
-                        ]
-                    },
-                    {
-                        name: "Rigatoni alla Bolognese",
-                        ingredients: [
-                            { name: "Rigatoni Pasta", quantity: 0.25, unit: "lbs" },
-                            { name: "Ground Beef/Pork Mix", quantity: 4, unit: "oz" },
-                            { name: "San Marzano Tomatoes", quantity: 6, unit: "oz" },
-                            { name: "Mirepoix (Carrot/Celery/Onion)", quantity: 2, unit: "oz" }
-                        ]
-                    },
-                    {
-                        name: "Braised Beef Short Rib",
-                        ingredients: [
-                            { name: "Beef Short Rib", quantity: 0.75, unit: "lbs" },
-                            { name: "Red Wine Reduction", quantity: 2, unit: "oz" },
-                            { name: "Polenta", quantity: 4, unit: "oz" },
-                            { name: "Baby Carrots", quantity: 4, unit: "pieces" }
-                        ]
-                    },
-                    {
-                        name: "Truffle Parmesan Fries",
-                        ingredients: [
-                            { name: "Russet Potatoes", quantity: 0.5, unit: "lbs" },
-                            { name: "Truffle Oil", quantity: 0.5, unit: "oz" },
-                            { name: "Parmesan Cheese", quantity: 1, unit: "oz" },
-                            { name: "Parsley", quantity: 0.25, unit: "oz" }
-                        ]
-                    },
-                    {
-                        name: "Classic New York Cheesecake",
-                        ingredients: [
-                            { name: "Cream Cheese", quantity: 6, unit: "oz" },
-                            { name: "Graham Cracker Crust", quantity: 1, unit: "slice" },
-                            { name: "Strawberry Coulis", quantity: 1, unit: "oz" }
-                        ]
-                    },
-                    {
-                        name: "Warm Chocolate Lava Cake",
-                        ingredients: [
-                            { name: "Dark Chocolate", quantity: 3, unit: "oz" },
-                            { name: "Butter", quantity: 1, unit: "oz" },
-                            { name: "Vanilla Gelato", quantity: 1, unit: "scoop" }
-                        ]
                     }
                 ]
             };
@@ -185,8 +101,8 @@ export async function POST(req: Request) {
         // Save to Database
         const newMenu = await prisma.menu.create({
             data: {
-                text: menuText,
-                sourceUrl: sourceUrl,
+                text: menuText || 'Manual Text Input',
+                sourceUrl: sourceUrl || 'Manual Input',
             },
         });
 

@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import OpenAI from 'openai';
 import { PrismaClient } from '@prisma/client';
 
-const genAI = process.env.GEMINI_API_KEY
-    ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
+const openai = process.env.OPENAI_API_KEY
+    ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
     : null;
 
 const prisma = new PrismaClient();
@@ -12,9 +12,9 @@ export async function POST(req: Request) {
     try {
         const { rfpId, emailBody } = await req.json();
 
-        if (!genAI) {
+        if (!openai) {
             return NextResponse.json(
-                { error: 'Gemini API key is missing. Please add GEMINI_API_KEY to your .env file.' },
+                { error: 'OpenAI API key is missing. Please add OPENAI_API_KEY to your .env file.' },
                 { status: 500 }
             );
         }
@@ -57,23 +57,27 @@ export async function POST(req: Request) {
             
             Here is the email body from the vendor:
             """
-            ${emailBody}
+            \${emailBody}
             """
         `;
 
-        // Call Gemini
-        const model = genAI!.getGenerativeModel({
-            model: 'gemini-2.0-flash',
-            generationConfig: { responseMimeType: 'application/json' }
-        });
+        // Call OpenAI
+        let parsed;
+        try {
+            const response = await openai.chat.completions.create({
+                model: 'gpt-4o',
+                messages: [{ role: 'user', content: prompt }],
+                response_format: { type: 'json_object' }
+            });
 
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        const resultText = response.text();
+            const resultText = response.choices[0].message.content;
+            if (!resultText) throw new Error("No response from OpenAI.");
 
-        if (!resultText) throw new Error("No response from Gemini.");
-
-        const parsed = JSON.parse(resultText);
+            parsed = JSON.parse(resultText);
+        } catch (aiError: any) {
+            console.error("OpenAI Parsing Error:", aiError);
+            throw aiError;
+        }
 
         // AUTONOMOUS BACK-AND-FORTH:
         // If no clear price was found, generate and return a follow-up email instead of saving a quote
@@ -82,20 +86,22 @@ export async function POST(req: Request) {
                 You are a professional procurement manager at a restaurant group. 
                 A vendor replied to an RFP but their email was unclear or missing key information.
                 
-                Missing information identified: ${JSON.stringify(parsed.missingInfo?.length ? parsed.missingInfo : ['total price', 'delivery terms'])}
-                Original email: """${emailBody}"""
+                Missing information identified: \${JSON.stringify(parsed.missingInfo?.length ? parsed.missingInfo : ['total price', 'delivery terms'])}
+                Original email: """\${emailBody}"""
                 
                 Write a short, polite, professional follow-up email (3-4 sentences max) asking them to clarify the missing details.
                 Return ONLY the email body text, nothing else. No subject line. No "Dear..." opener needed.
             `;
 
-            const followUpModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-            const followUpResult = await followUpModel.generateContent(followUpPrompt);
-            const followUpResponse = await followUpResult.response;
-            const followUpEmail = followUpResponse.text() || 'Could you please clarify your total pricing and delivery terms for this order?';
+            const followUpResponse = await openai.chat.completions.create({
+                model: 'gpt-4o',
+                messages: [{ role: 'user', content: followUpPrompt }]
+            });
+
+            const followUpEmail = followUpResponse.choices[0].message.content || 'Could you please clarify your total pricing and delivery terms for this order?';
 
             // Log the follow-up (in production this would be sent via SMTP/Resend)
-            console.log(`\n📧 AUTONOMOUS FOLLOW-UP EMAIL to ${rfp.distributor.email}:\n${followUpEmail}\n`);
+            console.log(`\n📧 AUTONOMOUS FOLLOW-UP EMAIL to \${rfp.distributor.email}:\n\${followUpEmail}\n`);
 
             return NextResponse.json({
                 success: false,

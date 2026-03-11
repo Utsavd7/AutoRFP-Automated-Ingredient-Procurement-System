@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import OpenAI from 'openai';
 import { PrismaClient } from '@prisma/client';
 
-const genAI = process.env.GEMINI_API_KEY
-    ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
+const openai = process.env.OPENAI_API_KEY
+    ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
     : null;
 
 const prisma = new PrismaClient();
@@ -19,9 +19,9 @@ export async function GET(req: Request) {
             return NextResponse.json({ error: 'menuId is required' }, { status: 400 });
         }
 
-        if (!genAI) {
+        if (!openai) {
             return NextResponse.json(
-                { error: 'Gemini API key is missing.' },
+                { error: 'OpenAI API key is missing.' },
                 { status: 500 }
             );
         }
@@ -55,12 +55,12 @@ export async function GET(req: Request) {
 
         const lowestPrice = Math.min(...quotesSummary.map((q: any) => q.price));
 
-        // Ask Gemini to analyze the quotes holistically and recommend
+        // Ask OpenAI to analyze the quotes holistically and recommend
         const prompt = `
             You are an expert restaurant procurement advisor. You have received the following quotes from different food wholesale distributors in response to a single RFP (Request for Proposal).
 
             Here are the quotes:
-            ${JSON.stringify(quotesSummary, null, 2)}
+            \${JSON.stringify(quotesSummary, null, 2)}
             
             Based on these factors:
             1. Price (lower is better)
@@ -79,19 +79,18 @@ export async function GET(req: Request) {
 
         let recommendation;
         try {
-            const model = genAI!.getGenerativeModel({
-                model: 'gemini-2.0-flash',
-                generationConfig: { responseMimeType: 'application/json' }
+            const response = await openai.chat.completions.create({
+                model: 'gpt-4o',
+                messages: [{ role: 'user', content: prompt }],
+                response_format: { type: 'json_object' }
             });
 
-            const result = await model.generateContent(prompt);
-            const response = await result.response;
-            const resultText = response.text();
+            const resultText = response.choices[0].message.content;
 
-            if (!resultText) throw new Error('No response from Gemini');
+            if (!resultText) throw new Error('No response from OpenAI');
             recommendation = JSON.parse(resultText);
         } catch (aiError: any) {
-            console.warn('Gemini API failed or quota exceeded, providing detailed mock recommendation:', aiError.message);
+            console.warn('OpenAI API failed or quota exceeded, providing detailed mock recommendation:', aiError.message);
 
             // Logic to pick a mock recommendation
             const cheapest = quotesSummary.reduce((prev: any, curr: any) => (prev.price < curr.price) ? prev : curr);
@@ -100,7 +99,7 @@ export async function GET(req: Request) {
 
             recommendation = {
                 recommendedDistributor: cheapest.distributorName,
-                reasoning: `Based on a comprehensive cost-benefit analysis, ${cheapest.distributorName} is the clear winner with a total quote of $${cheapest.price.toFixed(2)}. Their price point offers a significant ${((savings / expensive.price) * 100).toFixed(1)}% reduction compared to the highest bid. Beyond cost, their logistics profile for ${cheapest.location} aligns perfectly with your requested delivery window, and their detailed itemization suggests higher reliability in fulfilling the full bulk order without shortages.`,
+                reasoning: `Based on a comprehensive cost-benefit analysis, \${cheapest.distributorName} is the clear winner with a total quote of $\${cheapest.price.toFixed(2)}. Their price point offers a significant \${((savings / expensive.price) * 100).toFixed(1)}% reduction compared to the highest bid. Beyond cost, their logistics profile for \${cheapest.location} aligns perfectly with your requested delivery window, and their detailed itemization suggests higher reliability in fulfilling the full bulk order without shortages.`,
                 potentialRisks: "Minor risk of price fluctuation on fresh produce if order is not finalized within 48 hours. Ensure delivery access is clear for their larger freight trucks.",
                 savings: savings
             };

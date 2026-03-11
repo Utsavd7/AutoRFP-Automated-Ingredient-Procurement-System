@@ -4,7 +4,7 @@ AutoRFP is a Next.js web application that automates the entire restaurant ingred
 
 ## Features
 
-1. **AI Menu Parsing (URL or Text)**: Paste a menu URL *or* raw text. AutoRFP fetches the page server-side, strips the HTML to readable content, and sends it to Groq's LLaMA 3.3 70B model to extract every dish and reverse-engineer the required ingredients and restaurant-scale quantities.
+1. **AI Menu Parsing (URL or Text)**: Paste a menu URL *or* raw text into the same input field. If the input starts with `http://` or `https://`, AutoRFP automatically fetches the page server-side, strips all HTML (nav, footer, scripts, styles), and passes clean readable text to Groq's LLaMA 3.3 70B model to extract every dish and reverse-engineer the required ingredients and restaurant-scale quantities.
 2. **Pricing Trends (USDA Simulation)**: Retrieves (simulated) historical pricing for extracted ingredients, stored in the database and visualized with Recharts over 6 months.
 3. **Local Distributor Search**: Uses the Google Places API to find nearby wholesale food distributors by city/zip. Falls back to mocked data if the key is not set.
 4. **Automated RFP Dispatch**: Generates a Request for Proposal for all required ingredients and dispatches it to found distributors (email payload is logged to the terminal for safety).

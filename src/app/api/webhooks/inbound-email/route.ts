@@ -28,7 +28,8 @@ export async function POST(req: Request) {
 
         // Verify RFP exists and hasn't already been replied to
         const rfp = await prisma.rFP.findUnique({
-            where: { id: rfpId }
+            where: { id: rfpId },
+            include: { distributor: true }
         });
 
         if (!rfp) {
@@ -43,13 +44,15 @@ export async function POST(req: Request) {
         const prompt = `
             You are an expert AI procurement agent. Your job is to parse incoming emails from food wholesale vendors who are replying to a Request For Proposal (RFP) for ingredients.
             
-            Read the following email body and extract the total proposed price.
+            Read the following email body and extract EVERYTHING you can.
             
             Return ONLY a valid JSON object matching this TypeScript interface exactly:
             {
-                "price": Number, // The total numeric price extracted. If they give a range, pick the average.
-                "details": "String", // Any specific notes or conditions the vendor mentioned (e.g., "delivery on Tuesdays only", "chicken is out of stock"). Keep it brief.
-                "confidence": "String" // "HIGH", "MEDIUM", or "LOW" depending on how clearly the price was stated.
+                "price": Number | null, // The total numeric price extracted. Null if no clear price found.
+                "deliveryTerms": "String", // Delivery frequency, lead time, or conditions mentioned. Empty string if not mentioned.
+                "details": "String", // Other specific notes or conditions. E.g. "chicken out of stock until next week". Empty string if none.
+                "confidence": "String", // "HIGH", "MEDIUM", or "LOW" depending on how clearly the price was stated.
+                "missingInfo": ["String"] // List of important missing pieces needed to make a decision. E.g. ["delivery schedule", "minimum order quantity"]. Empty array if nothing is missing.
             }
             
             Here is the email body from the vendor:
@@ -68,23 +71,55 @@ export async function POST(req: Request) {
         });
 
         const resultText = response.text;
+        if (!resultText) throw new Error("No response from Gemini.");
 
-        if (!resultText) {
-            throw new Error("No response from Gemini.");
+        const parsed = JSON.parse(resultText);
+
+        // AUTONOMOUS BACK-AND-FORTH:
+        // If no clear price was found, generate and return a follow-up email instead of saving a quote
+        if (!parsed.price || isNaN(Number(parsed.price)) || parsed.confidence === 'LOW') {
+            const followUpPrompt = `
+                You are a professional procurement manager at a restaurant group. 
+                A vendor replied to an RFP but their email was unclear or missing key information.
+                
+                Missing information identified: ${JSON.stringify(parsed.missingInfo?.length ? parsed.missingInfo : ['total price', 'delivery terms'])}
+                Original email: """${emailBody}"""
+                
+                Write a short, polite, professional follow-up email (3-4 sentences max) asking them to clarify the missing details.
+                Return ONLY the email body text, nothing else. No subject line. No "Dear..." opener needed.
+            `;
+
+            const followUpResponse = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: followUpPrompt,
+            });
+
+            const followUpEmail = followUpResponse.text || 'Could you please clarify your total pricing and delivery terms for this order?';
+
+            // Log the follow-up (in production this would be sent via SMTP/Resend)
+            console.log(`\n📧 AUTONOMOUS FOLLOW-UP EMAIL to ${rfp.distributor.email}:\n${followUpEmail}\n`);
+
+            return NextResponse.json({
+                success: false,
+                action: 'FOLLOW_UP_SENT',
+                followUpEmail,
+                missingInfo: parsed.missingInfo,
+                message: `Quote was incomplete. A follow-up was automatically generated and logged.`
+            });
         }
 
-        const parsedData = JSON.parse(resultText);
+        // Save the complete quote and update the RFP status
+        const details = [
+            parsed.deliveryTerms ? `Delivery: ${parsed.deliveryTerms}` : '',
+            parsed.details ? parsed.details : '',
+            `[AI Confidence: ${parsed.confidence}]`
+        ].filter(Boolean).join(' | ');
 
-        if (!parsedData.price || isNaN(parsedData.price)) {
-            return NextResponse.json({ error: 'The AI agent could not confidently extract a numeric price from the email.' }, { status: 400 });
-        }
-
-        // Save the quote and update the RFP status
         const newQuote = await prisma.quote.create({
             data: {
                 rfpId,
-                price: Number(parsedData.price),
-                details: `[AI Parsed Confidence: ${parsedData.confidence}] ${parsedData.details || ''}`
+                price: Number(parsed.price),
+                details: details
             }
         });
 
@@ -95,7 +130,9 @@ export async function POST(req: Request) {
 
         return NextResponse.json({
             success: true,
-            extractedQuote: newQuote
+            action: 'QUOTE_SAVED',
+            extractedQuote: newQuote,
+            parsed
         });
 
     } catch (error: any) {

@@ -32,6 +32,9 @@ export default function Home() {
   const [simulatedEmailBody, setSimulatedEmailBody] = useState('');
   const [simulatedEmailRfpId, setSimulatedEmailRfpId] = useState('');
   const [simulatingEmail, setSimulatingEmail] = useState(false);
+  const [followUpEmail, setFollowUpEmail] = useState('');
+  const [recommendation, setRecommendation] = useState<any>(null);
+  const [loadingRecommendation, setLoadingRecommendation] = useState(false);
 
   const [error, setError] = useState('');
 
@@ -195,16 +198,42 @@ export default function Home() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Failed to process email.');
 
-      // Clear the simulator and auto-refresh the quotes
-      setSimulatedEmailBody('');
-      setSimulatedEmailRfpId('');
-      setShowEmailSimulator(false);
-      await handleFetchQuotes();
+      if (data.action === 'FOLLOW_UP_SENT') {
+        // Agent detected incomplete quote — show the generated follow-up email
+        setFollowUpEmail(data.followUpEmail);
+        setSimulatedEmailBody('');
+        setSimulatedEmailRfpId('');
+      } else {
+        // Quote was saved successfully — refresh dashboard
+        setFollowUpEmail('');
+        setSimulatedEmailBody('');
+        setSimulatedEmailRfpId('');
+        setShowEmailSimulator(false);
+        await handleFetchQuotes();
+      }
     } catch (err: any) {
       console.error(err);
       setError(err.message);
     } finally {
       setSimulatingEmail(false);
+    }
+  };
+
+  const handleGetRecommendation = async () => {
+    const menuId = recipes[0]?.menuId;
+    if (!menuId) return;
+    setLoadingRecommendation(true);
+    setError('');
+    try {
+      const response = await fetch(`/api/recommend?menuId=${menuId}`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to get recommendation');
+      setRecommendation(data.recommendation);
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message);
+    } finally {
+      setLoadingRecommendation(false);
     }
   };
 
@@ -681,6 +710,76 @@ export default function Home() {
                       </div>
                     ))}
                   </div>
+                </div>
+              )}
+              {/* Follow-up alert when agent detects incomplete quote */}
+              {followUpEmail && (
+                <div className="mt-4 bg-yellow-950/30 border border-yellow-800/50 rounded-xl p-5 space-y-3 animate-in fade-in duration-300">
+                  <div className="flex items-center gap-2 text-yellow-400 font-semibold text-sm">
+                    <span>⚡</span> AI Agent Detected Incomplete Quote — Follow-up Generated
+                  </div>
+                  <p className="text-xs text-yellow-400/70">The email was unclear or missing pricing. The agent wrote the following follow-up automatically (logged to your terminal in production):</p>
+                  <pre className="bg-neutral-950 border border-yellow-900/30 rounded-lg p-4 text-xs text-yellow-200 font-mono whitespace-pre-wrap">{followUpEmail}</pre>
+                  <button
+                    onClick={() => setFollowUpEmail('')}
+                    className="text-xs text-yellow-500 hover:text-yellow-300 transition-colors"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              )}
+
+              {/* Final AI Recommendation Card */}
+              {quotes.length > 0 && (
+                <div className="mt-6 pt-6 border-t border-neutral-800 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-base font-semibold text-neutral-200">AI Final Recommendation</h3>
+                    <button
+                      onClick={handleGetRecommendation}
+                      disabled={loadingRecommendation}
+                      className={cn(
+                        "flex items-center gap-2 py-2 px-4 rounded-xl font-medium text-sm transition-all",
+                        loadingRecommendation
+                          ? "bg-neutral-800 text-neutral-500 cursor-not-allowed"
+                          : "bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm shadow-indigo-600/20 active:scale-[0.98]"
+                      )}
+                    >
+                      {loadingRecommendation ? (
+                        <><Loader2 className="w-4 h-4 animate-spin" /> Analyzing...</>
+                      ) : (
+                        <>✦ Get Recommendation</>
+                      )}
+                    </button>
+                  </div>
+
+                  {recommendation ? (
+                    <div className="bg-gradient-to-br from-indigo-950/50 to-neutral-900 border border-indigo-800/40 rounded-2xl p-6 space-y-4">
+                      <div className="flex items-start gap-4">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-500 text-lg shrink-0 shadow-lg shadow-indigo-500/20">
+                          ✦
+                        </div>
+                        <div>
+                          <p className="text-xs text-indigo-400 uppercase font-semibold tracking-wider mb-1">Recommended Distributor</p>
+                          <h4 className="text-xl font-bold text-white">{recommendation.recommendedDistributor}</h4>
+                        </div>
+                      </div>
+                      <p className="text-sm text-neutral-300 leading-relaxed">{recommendation.reasoning}</p>
+                      {recommendation.potentialRisks && (
+                        <div className="bg-yellow-950/30 border border-yellow-900/40 rounded-xl px-4 py-3 text-xs text-yellow-300">
+                          <span className="font-semibold">⚠ Potential Risk: </span>{recommendation.potentialRisks}
+                        </div>
+                      )}
+                      {recommendation.savings > 0 && (
+                        <div className="text-xs text-emerald-400 bg-emerald-500/10 px-3 py-2 rounded-lg inline-block font-mono">
+                          💰 Saves ${Number(recommendation.savings).toFixed(2)} vs most expensive quote
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center py-8 text-neutral-600 text-sm border border-neutral-800/50 border-dashed rounded-xl">
+                      Click "Get Recommendation" for an AI-powered analysis across price, delivery terms, and reliability.
+                    </div>
+                  )}
                 </div>
               )}
             </div>

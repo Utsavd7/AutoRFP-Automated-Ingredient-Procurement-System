@@ -3,8 +3,9 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-// In a real app, this generates a fake email for testing
+// Uses MOCK_EMAIL from .env if set, otherwise generates a safe demo address
 function generateMockEmail(name: string) {
+    if (process.env.MOCK_EMAIL) return process.env.MOCK_EMAIL;
     const cleanName = name.toLowerCase().replace(/[^a-z0-9]/g, '');
     return `quotes+${cleanName}@autorfp.demo`;
 }
@@ -75,7 +76,7 @@ export async function POST(req: Request) {
         for (const place of data.places) {
             const name = place.displayName?.text || 'Unknown Distributor';
             const address = place.formattedAddress || location;
-            const email = generateMockEmail(name); // We must use mock emails to actually send RFPs safely
+            const email = generateMockEmail(name); // Routes to MOCK_EMAIL if set in .env
 
             // Check if already in DB
             let distributor = await prisma.distributor.findFirst({

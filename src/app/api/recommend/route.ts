@@ -130,7 +130,7 @@ export async function GET(req: Request) {
 
             recommendation = {
                 recommendedDistributor: cheapest.distributorName,
-                reasoning: `Based on a comprehensive cost-benefit analysis, \${cheapest.distributorName} is the clear winner with a total quote of $\${cheapest.price.toFixed(2)}. Their price point offers a significant \${((savings / expensive.price) * 100).toFixed(1)}% reduction compared to the highest bid. Beyond cost, their logistics profile for \${cheapest.location} aligns perfectly with your requested delivery window, and their detailed itemization suggests higher reliability in fulfilling the full bulk order without shortages.`,
+                reasoning: `Based on a comprehensive cost-benefit analysis, ${cheapest.distributorName} is the clear winner with a total quote of $${cheapest.price.toFixed(2)}. Their price point offers a significant ${((savings / expensive.price) * 100).toFixed(1)}% reduction compared to the highest bid. Beyond cost, their logistics profile for ${cheapest.location} aligns perfectly with your requested delivery window, and their detailed itemization suggests higher reliability in fulfilling the full bulk order without shortages.`,
                 potentialRisks: "Minor risk of price fluctuation on fresh produce if order is not finalized within 48 hours. Ensure delivery access is clear for their larger freight trucks.",
                 savings: savings
             };

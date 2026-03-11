@@ -1,23 +1,23 @@
 # AutoRFP - Automated Ingredient Procurement System
 
-AutoRFP is a Next.js web application designed to automate the painful process of restaurant ingredient procurement. Instead of manually breaking down menus, forecasting ingredient costs, finding local wholesale distributors, and emailing them for quotes—AutoRFP does it all in one beautifully designed pipeline.
+AutoRFP is a Next.js web application that automates the entire restaurant ingredient procurement pipeline — from AI menu parsing to automated vendor RFP dispatch and AI-powered quote analysis.
 
 ## Features
 
-This project implements a full end-to-end pipeline covering the following steps:
-
-1. **AI Menu Parsing**: Provide text from a restaurant menu. AutoRFP uses Groq's high-speed LLaMA 3.3 70B model to break the menu down into individual dishes and reverse-engineer the required ingredients and standard restaurant-sized quantities.
-2. **Pricing Trends (USDA Simulation)**: Automatically retrieves (simulated) historical pricing trends for the extracted ingredients using realistic randomized market data over the past 6 months. Visualized smoothly with Recharts.
-3. **Local Distributor Search**: Uses the Google Places API to dynamically find nearby wholesale food distributors based on a provided city/zip code (e.g., "Maspeth, NY" or "Brooklyn"). It falls back to beautifully mocked data if an API key is not present.
-4. **Automated RFP Dispatch**: Generates a Request for Proposal (RFP) for the required ingredients and "sends" it safely to the found distributors (the email payload is logged to the Node console for safety).
-5. **Vendor Quote Collection Dashboard**: AutoRFP includes a unique dynamic vendor portal (`/quote/[rfpId]`). When vendors submit their estimates through this link, the main dashboard natively pulls in the incoming quotes and automatically highlights the most cost-effective bid.
+1. **AI Menu Parsing (URL or Text)**: Paste a menu URL *or* raw text. AutoRFP fetches the page server-side, strips the HTML to readable content, and sends it to Groq's LLaMA 3.3 70B model to extract every dish and reverse-engineer the required ingredients and restaurant-scale quantities.
+2. **Pricing Trends (USDA Simulation)**: Retrieves (simulated) historical pricing for extracted ingredients, stored in the database and visualized with Recharts over 6 months.
+3. **Local Distributor Search**: Uses the Google Places API to find nearby wholesale food distributors by city/zip. Falls back to mocked data if the key is not set.
+4. **Automated RFP Dispatch**: Generates a Request for Proposal for all required ingredients and dispatches it to found distributors (email payload is logged to the terminal for safety).
+5. **AI Quote Simulation**: Automatically simulates a full multi-turn vendor email conversation using Groq. Vendor quotes are **grounded in real ingredient quantities × market prices** — not random numbers.
+6. **AI Final Recommendation**: Groq compares all received quotes against the actual ingredient market pricing from the database and recommends the best vendor with reasoning and savings calculated.
+7. **Vendor Quote Portal**: Vendors can also manually submit quotes via a unique `quote/[rfpId]` portal link.
 
 ## Tech Stack
 
-- **Frontend**: Next.js 15 (App Router), React, Tailwind CSS, Recharts, Lucide Icons.
+- **Frontend**: Next.js 15 (App Router), React, Tailwind CSS, Recharts, Lucide Icons
 - **Backend**: Next.js API Routes (Serverless Functions)
 - **Database**: PostgreSQL (via Prisma ORM v5)
-- **AI**: Groq API (via OpenAI SDK)
+- **AI**: Groq API — LLaMA 3.3 70B Versatile (via OpenAI SDK compatibility layer)
 
 ## System Architecture
 
@@ -29,7 +29,7 @@ graph TD
     Prisma -->|Query| DB[(PostgreSQL Database)]
     
     subgraph "External Integration"
-        Backend -->|Recipe Extraction| Groq[Groq LLaMA 3.3 70B]
+        Backend -->|URL Fetch + Recipe Extraction| Groq[Groq LLaMA 3.3 70B]
         Backend -->|Map Search| GooglePlaces[Google Places API]
         Backend -->|Market Data| USDASim[USDA Pricing Simulation]
     end
@@ -42,8 +42,6 @@ graph TD
 ```
 
 ## Database Design
-
-AutoRFP uses a robust relational schema tailored for complex recipe management and procurement tracking.
 
 ```mermaid
 erDiagram
@@ -104,23 +102,20 @@ erDiagram
    ```
 
 2. **Set up Environment Variables**:
-
-   Copy the sample file and fill in your keys:
    ```bash
    cp .env.sample .env
    ```
 
    | Variable | Required | Used For |
    |---|---|---|
-   | `GROQ_API_KEY` | ✅ Yes | Menu parsing + AI email quote extraction |
-   | `GOOGLE_MAPS_API_KEY` | ⚠️ Optional | Finding real local distributors (falls back to mock data if not set) |
-   | `USDA_API_KEY` | ⚠️ Optional | Real ingredient market pricing (falls back to simulation if not set) |
+   | `GROQ_API_KEY` | ✅ Yes | Menu parsing, quote simulation, AI recommendation |
    | `DATABASE_URL` | ✅ Yes | PostgreSQL database |
+   | `GOOGLE_MAPS_API_KEY` | ⚠️ Optional | Finding real local distributors (falls back to mock data) |
+   | `USDA_API_KEY` | ⚠️ Optional | Real ingredient pricing (falls back to simulation) |
 
-   > 📄 See [`.env.sample`](.env.sample) for step-by-step instructions on how to obtain each API key.
+   > 📄 Get a free Groq API key at [console.groq.com/keys](https://console.groq.com/keys). See [`.env.sample`](.env.sample) for full instructions.
 
 3. **Initialize the Database**:
-   Push the schema to your PostgreSQL database:
    ```bash
    npx prisma generate
    npx prisma db push
@@ -130,33 +125,38 @@ erDiagram
    ```bash
    npm run dev
    ```
-   Open [http://localhost:3000](http://localhost:3000) in your browser.
+   Open [http://localhost:3000](http://localhost:3000).
 
 ## Sample Menu for Testing
 
-Paste this URL into the **"Paste Restaurant Menu (Text or URL)"** input to test the full pipeline end-to-end:
+Paste this URL into the **"Paste Restaurant Menu (Text or URL)"** input to test:
 
 ```
 https://carminesnyc.com/menus/menus-c44-q420-dining
 ```
 
-This is Carmine's NYC's dining menu — a large Italian-American menu with starters, pastas, mains and desserts, which is great for testing ingredient extraction across many dish categories.
+The server will fetch the page, extract the readable text, and pass it to Groq for full menu parsing.
 
 ## Project Architecture & Routing
 
-- `src/app/page.tsx`: The main user-facing dashboard containing the 5-step pipeline UI.
-- `src/app/quote/[rfpId]/page.tsx`: The external-facing vendor portal where distributors can submit their quotes for a specific RFP.
-- `src/app/api/parse-menu/route.ts`: Calls the Groq API to extract and structure recipes.
-- `src/app/api/pricing/route.ts`: Generates simulated 6-month historical USDA pricing data.
-- `src/app/api/distributors/route.ts`: Integrates with the Google Places `searchText` API to find local entities.
-- `src/app/api/send-rfp/route.ts`: Generates the email payload and tracks the RFP status in the DB.
-- `src/app/api/quote/[rfpId]/route.ts`: Handles GET requests for RFP details and POST requests for vendors submitting quotes.
-- `src/app/api/quotes/route.ts`: Fetches all completed quotes for a specific menu context to display on the dashboard.
-- `prisma/schema.prisma`: The database schema tracking Menus, Recipes, Ingredients, Pricing, Distributors, RFPs, and Quotes.
+| File | Purpose |
+|---|---|
+| `src/app/page.tsx` | Main dashboard with the 5-step procurement pipeline UI |
+| `src/app/quote/[rfpId]/page.tsx` | Vendor portal for submitting quotes |
+| `src/app/api/parse-menu/route.ts` | Fetches URL content server-side, then calls Groq for recipe extraction |
+| `src/app/api/pricing/route.ts` | Generates/retrieves USDA-simulated 6-month pricing trends |
+| `src/app/api/distributors/route.ts` | Google Places API integration for finding local distributors |
+| `src/app/api/send-rfp/route.ts` | Generates and dispatches RFP emails, tracks status in DB |
+| `src/app/api/simulate-conversation/route.ts` | Groq-powered vendor email simulation using real pricing data |
+| `src/app/api/recommend/route.ts` | AI recommendation engine cross-referencing quotes vs. market prices |
+| `src/app/api/webhooks/inbound-email/route.ts` | Parses incoming vendor email replies and extracts quoted prices |
+| `prisma/schema.prisma` | Database schema: Menus, Recipes, Ingredients, Pricing, Distributors, RFPs, Quotes |
 
 ## Notes & Tradeoffs
 
-- **Email Dispatching**: Real emails are not sent to prevent spamming actual businesses found via Google Maps. Instead, the `send-rfp` route mocks the email payload and handles the internal database state shifts, logging the "email" to the terminal.
-- **USDA API**: The USDA API is notoriously difficult to get immediate access to and often lacks specific restaurant-grade ingredient data. A robust mathematical simulation is used to generate realistic market fluctuations over 6 months instead of returning hardcoded values.
-- **Prisma**: Optimized for PostgreSQL to provide true relational scale and ACID consistency across all procurement stages.
-- **Robust Demo Mode (NEW)**: If the Groq API quota is hit or the key is missing, the application automatically triggers a **"Big Data" Mock Mode**. This provides a comprehensive 10-dish menu, detailed simulated vendor conversations, and multifaceted AI recommendations to ensure the demo remains fully functional and visually impressive at all times.
+- **AI Provider**: Uses Groq (free tier, high rate limits) via the OpenAI SDK's compatibility mode (`baseURL` override). The `openai` npm package is still in `package.json` — this is intentional and correct.
+- **Real-Priced Quote Simulation**: Vendor quotes are computed from `quantity × market_price` for each ingredient. Vendors quote at a 5–20% margin above cost, making all numbers economically grounded.
+- **URL Menu Parsing**: The server fetches the URL and strips HTML before sending to Groq. Groq cannot browse the internet directly.
+- **Email Dispatching**: Emails are not sent to real vendors to avoid spamming. The `send-rfp` route logs the email payload to the terminal and tracks state in the database.
+- **USDA API**: A deterministic mathematical simulation is used instead of the live API, which is difficult to access and lacks restaurant-grade ingredient data.
+- **Robust Demo Mode**: If Groq is unavailable, the app falls back to a comprehensive 12-dish mock menu and calculates plausible prices from that dataset to keep the demo fully functional.

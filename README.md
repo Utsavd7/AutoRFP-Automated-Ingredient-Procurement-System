@@ -27,18 +27,37 @@ This project implements a full end-to-end pipeline covering the following steps:
    ```
 
 2. **Set up Environment Variables**:
-   Create a `.env` file in the root directory and add your API keys:
-   ```env
-   # Required for Menu Parsing (Google Gemini API)
-   GEMINI_API_KEY="your_gemini_api_key_here"
 
-   # Optional for Local Distributors (Google Places API)
-   # If left blank, the app will gracefully fall back to mock suppliers.
-   GOOGLE_MAPS_API_KEY="your_google_maps_api_key_here"
-
-   # SQLite local database URL
-   DATABASE_URL="file:./dev.db"
+   Copy the sample file and fill in your keys:
+   ```bash
+   cp .env.sample .env
    ```
+
+   | Variable | Required | Used For |
+   |---|---|---|
+   | `GEMINI_API_KEY` | ✅ Yes | Menu parsing + AI email quote extraction |
+   | `GOOGLE_MAPS_API_KEY` | ⚠️ Optional | Finding real local distributors (falls back to mock data if not set) |
+   | `DATABASE_URL` | ✅ Yes | SQLite database (default value works as-is) |
+
+   ---
+
+   ### Getting your Gemini API Key
+   1. Go to **[https://aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)**
+   2. Sign in with your Google account
+   3. Click **"Create API Key"** → **"Create API key in new project"**
+   4. Copy the key into your `.env` as `GEMINI_API_KEY`
+
+   ### Getting your Google Places API Key (optional)
+   1. Go to **[https://console.cloud.google.com/](https://console.cloud.google.com/)**
+   2. Create or select a project
+   3. Navigate to **"APIs & Services" → "Library"**
+   4. Search for **"Places API (New)"** and click **Enable**
+   5. Go to **"APIs & Services" → "Credentials"**
+   6. Click **"Create Credentials" → "API Key"**
+   7. *(Recommended)* Restrict the key to **Places API (New)** only
+   8. Copy the key into your `.env` as `GOOGLE_MAPS_API_KEY`
+
+   > **Billing note:** Google requires a billing account, but provides a **$200/month free credit** which covers thousands of API calls.
 
 3. **Initialize the Database**:
    Push the schema to the local SQLite database and generate the Prisma client:

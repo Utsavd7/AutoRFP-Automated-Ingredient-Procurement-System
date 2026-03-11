@@ -40,25 +40,7 @@ This project implements a full end-to-end pipeline covering the following steps:
    | `USDA_API_KEY` | ⚠️ Optional | Real ingredient market pricing (falls back to simulation if not set) |
    | `DATABASE_URL` | ✅ Yes | SQLite database (default value works as-is) |
 
-   ---
-
-   ### Getting your Gemini API Key
-   1. Go to **[https://aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)**
-   2. Sign in with your Google account
-   3. Click **"Create API Key"** → **"Create API key in new project"**
-   4. Copy the key into your `.env` as `GEMINI_API_KEY`
-
-   ### Getting your Google Places API Key (optional)
-   1. Go to **[https://console.cloud.google.com/](https://console.cloud.google.com/)**
-   2. Create or select a project
-   3. Navigate to **"APIs & Services" → "Library"**
-   4. Search for **"Places API (New)"** and click **Enable**
-   5. Go to **"APIs & Services" → "Credentials"**
-   6. Click **"Create Credentials" → "API Key"**
-   7. *(Recommended)* Restrict the key to **Places API (New)** only
-   8. Copy the key into your `.env` as `GOOGLE_MAPS_API_KEY`
-
-   > **Billing note:** Google requires a billing account, but provides a **$200/month free credit** which covers thousands of API calls.
+   > 📄 See [`.env.sample`](.env.sample) for step-by-step instructions on how to obtain each API key.
 
 3. **Initialize the Database**:
    Push the schema to the local SQLite database and generate the Prisma client:

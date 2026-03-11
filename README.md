@@ -26,18 +26,36 @@ graph TD
     User((User)) -->|Browser| Frontend[Next.js Frontend]
     Frontend -->|API Routes| Backend[Next.js API Layer]
     Backend -->|ORM| Prisma[Prisma Client]
-    Prisma -->|Query| DB[(PostgreSQL Database)]
-    
-    subgraph "External Integration"
-        Backend -->|URL Fetch + Recipe Extraction| Groq[Groq LLaMA 3.3 70B]
-        Backend -->|Map Search| GooglePlaces[Google Places API]
-        Backend -->|Market Data| USDASim[USDA Pricing Simulation]
+    Prisma -->|Query/Store| DB[(PostgreSQL Database)]
+
+    subgraph "Step 1 · AI Menu Parsing"
+        Backend -->|Fetch page HTML| ExternalSite[Restaurant Website]
+        ExternalSite -->|Raw HTML| Backend
+        Backend -->|Stripped text + JSON schema| Groq[Groq LLaMA 3.3 70B]
+        Groq -->|Structured dishes + ingredients| Backend
     end
-    
-    subgraph "Procurement Flow"
-        Backend -->|Email RFP| Vendors[Vendor Email System]
-        Vendors -->|Submit Quote| QuotePortal[Vendor Portal]
-        QuotePortal -->|Update| Backend
+
+    subgraph "Step 2 · Market Pricing"
+        Backend -->|Ingredient list| USDASim[USDA Price Simulation]
+        USDASim -->|Price per unit / history| DB
+    end
+
+    subgraph "Step 3 · Distributor Search"
+        Backend -->|City / Zip code| GooglePlaces[Google Places API]
+        GooglePlaces -->|Local distributors| Backend
+    end
+
+    subgraph "Step 4-5 · RFP & Quote Simulation"
+        Backend -->|RFP dispatch| Vendors[Vendor Email System]
+        Vendors -->|Submit Quote| QuotePortal[Vendor Portal /quote/rfpId]
+        QuotePortal -->|Update status| Backend
+        DB -->|Real qty × market price| Groq
+        Groq -->|Simulated vendor quote| Backend
+    end
+
+    subgraph "Step 6 · AI Recommendation"
+        DB -->|All quotes + pricing trends| Groq
+        Groq -->|Best vendor + reasoning| Frontend
     end
 ```
 

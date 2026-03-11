@@ -631,7 +631,7 @@ export default function Home() {
                   {simulatingConversation ? (
                     <><Loader2 className="w-4 h-4 animate-spin" /> Simulating...</>
                   ) : (
-                    <><Mail className="w-4 h-4" /> Auto-Simulate with Gemini</>
+                    <><Mail className="w-4 h-4" /> Auto-Simulate with Groq</>
                   )}
                 </button>
                 <button
@@ -656,12 +656,12 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Gemini Conversation Logs */}
+            {/* Groq Conversation Logs */}
             {Object.keys(conversationLogs).length > 0 && (
               <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 space-y-5 animate-in fade-in duration-300">
                 <h3 className="text-sm font-semibold text-neutral-300 flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-indigo-500 inline-block"></span>
-                  Gemini Conversation Logs
+                  Groq Conversation Logs
                 </h3>
                 {sentRFPs.map((rfp: any) => {
                   const logs = conversationLogs[rfp.id];
@@ -696,7 +696,7 @@ export default function Home() {
             {showEmailSimulator && (
               <div className="bg-indigo-950/30 border border-indigo-900/50 rounded-2xl p-6 shadow-xl space-y-4 animate-in fade-in zoom-in-95 duration-200">
                 <h3 className="text-indigo-300 font-medium">Process Raw Email with AI Agent</h3>
-                <p className="text-xs text-indigo-400/80">Test the incoming email parsing agent by pasting a fake reply from a vendor. The Gemini AI agent will read the email context and extract the final quoted price automatically.</p>
+                <p className="text-xs text-indigo-400/80">Test the incoming email parsing agent by pasting a fake reply from a vendor. The Groq AI agent will read the email context and extract the final quoted price automatically.</p>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">

@@ -93,6 +93,96 @@ export async function POST(req: Request) {
                             { name: "Lemon", quantity: 1, unit: "piece" },
                             { name: "Marinara Sauce", quantity: 4, unit: "oz" }
                         ]
+                    },
+                    {
+                        name: "Classic Cheeseburger",
+                        ingredients: [
+                            { name: "Ground Beef", quantity: 20, unit: "lbs" },
+                            { name: "Hamburger Buns", quantity: 50, unit: "ct" },
+                            { name: "Cheddar Cheese Slices", quantity: 5, unit: "lbs" },
+                            { name: "Iceberg Lettuce", quantity: 10, unit: "heads" }
+                        ]
+                    },
+                    {
+                        name: "Margarita Pizza",
+                        ingredients: [
+                            { name: "Pizza Flour (Type 00)", quantity: 50, unit: "lbs" },
+                            { name: "San Marzano Tomatoes", quantity: 6, unit: "cans (#10)" },
+                            { name: "Fresh Mozzarella", quantity: 15, unit: "lbs" },
+                            { name: "Fresh Basil", quantity: 2, unit: "lbs" }
+                        ]
+                    },
+                    {
+                        name: "Caesar Salad",
+                        ingredients: [
+                            { name: "Romaine Hearts", quantity: 24, unit: "ct" },
+                            { name: "Parmesan Cheese", quantity: 10, unit: "lbs" },
+                            { name: "Anchovy Paste", quantity: 2, unit: "tubes" },
+                            { name: "Croutons", quantity: 5, unit: "lbs" }
+                        ]
+                    },
+                    {
+                        name: "Spaghetti Carbonara",
+                        ingredients: [
+                            { name: "Dry Spaghetti", quantity: 20, unit: "lbs" },
+                            { name: "Guanciale", quantity: 5, unit: "lbs" },
+                            { name: "Large Eggs", quantity: 15, unit: "doz" },
+                            { name: "Pecorino Romano", quantity: 8, unit: "lbs" }
+                        ]
+                    },
+                    {
+                        name: "Grilled Ribeye Steak",
+                        ingredients: [
+                            { name: "Bone-in Ribeye Steaks", quantity: 30, unit: "ct" },
+                            { name: "Unsalted Butter", quantity: 10, unit: "lbs" },
+                            { name: "Fresh Garlic", quantity: 3, unit: "lbs" },
+                            { name: "Fresh Thyme", quantity: 1, unit: "lb" }
+                        ]
+                    },
+                    {
+                        name: "Fish and Chips",
+                        ingredients: [
+                            { name: "Cod Fillets", quantity: 25, unit: "lbs" },
+                            { name: "Idaho Potatoes", quantity: 50, unit: "lbs" },
+                            { name: "All-Purpose Flour", quantity: 25, unit: "lbs" },
+                            { name: "Canola Oil", quantity: 35, unit: "lbs" }
+                        ]
+                    },
+                    {
+                        name: "Chicken Tikka Masala",
+                        ingredients: [
+                            { name: "Chicken Breast", quantity: 40, unit: "lbs" },
+                            { name: "Basmati Rice", quantity: 50, unit: "lbs" },
+                            { name: "Heavy Cream", quantity: 4, unit: "gallons" },
+                            { name: "Garam Masala", quantity: 2, unit: "lbs" }
+                        ]
+                    },
+                    {
+                        name: "Vegetable Stir Fry",
+                        ingredients: [
+                            { name: "Broccoli Florets", quantity: 15, unit: "lbs" },
+                            { name: "Bell Peppers", quantity: 10, unit: "lbs" },
+                            { name: "Soy Sauce", quantity: 2, unit: "gallons" },
+                            { name: "Fresh Ginger", quantity: 3, unit: "lbs" }
+                        ]
+                    },
+                    {
+                        name: "Classic Tiramisu",
+                        ingredients: [
+                            { name: "Mascarpone Cheese", quantity: 10, unit: "lbs" },
+                            { name: "Ladyfingers", quantity: 20, unit: "packs" },
+                            { name: "Espresso Beans", quantity: 5, unit: "lbs" },
+                            { name: "Cocoa Powder", quantity: 2, unit: "lbs" }
+                        ]
+                    },
+                    {
+                        name: "New York Cheesecake",
+                        ingredients: [
+                            { name: "Cream Cheese", quantity: 30, unit: "lbs" },
+                            { name: "Graham Cracker Crumbs", quantity: 10, unit: "lbs" },
+                            { name: "Granulated Sugar", quantity: 25, unit: "lbs" },
+                            { name: "Vanilla Extract", quantity: 32, unit: "oz" }
+                        ]
                     }
                 ]
             };

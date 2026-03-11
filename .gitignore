@@ -45,3 +45,6 @@ next-env.d.ts
 # SQLite local database
 *.db
 *.db-journal
+
+# Local utility scripts
+/scripts/show-tables.sh

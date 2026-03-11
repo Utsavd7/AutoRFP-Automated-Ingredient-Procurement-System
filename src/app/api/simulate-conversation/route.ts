@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { PrismaClient } from '@prisma/client';
 
-const openai = process.env.OPENAI_API_KEY
-    ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+const openai = process.env.GROQ_API_KEY
+    ? new OpenAI({ apiKey: process.env.GROQ_API_KEY, baseURL: 'https://api.groq.com/openai/v1' })
     : null;
 
 const prisma = new PrismaClient();
@@ -11,13 +11,13 @@ const prisma = new PrismaClient();
 const MAX_TURNS = 3;
 
 // POST /api/simulate-conversation
-// Fully simulates a back-and-forth vendor email conversation using OpenAI as both sides
+// Fully simulates a back-and-forth vendor email conversation using Groq as both sides
 export async function POST(req: Request) {
     try {
         const { rfpId } = await req.json();
 
         if (!openai) {
-            return NextResponse.json({ error: 'OPENAI_API_KEY is missing.' }, { status: 500 });
+            return NextResponse.json({ error: 'GROQ_API_KEY is missing.' }, { status: 500 });
         }
 
         if (!rfpId) {
@@ -72,7 +72,7 @@ The RFP requested: various restaurant ingredients in bulk quantities.
                        Do NOT use placeholder text. Make it feel like a real email.`;
 
                 const vendorResponse = await openai.chat.completions.create({
-                    model: 'gpt-4o',
+                    model: 'llama-3.3-70b-versatile',
                     messages: [{ role: 'user', content: vendorPrompt }]
                 });
 
@@ -95,7 +95,7 @@ The RFP requested: various restaurant ingredients in bulk quantities.
                 `;
 
                 const agentResponse = await openai.chat.completions.create({
-                    model: 'gpt-4o',
+                    model: 'llama-3.3-70b-versatile',
                     messages: [{ role: 'user', content: agentParsePrompt }],
                     response_format: { type: 'json_object' }
                 });
@@ -135,7 +135,7 @@ The RFP requested: various restaurant ingredients in bulk quantities.
                     `;
 
                     const followUpResponse = await openai.chat.completions.create({
-                        model: 'gpt-4o',
+                        model: 'llama-3.3-70b-versatile',
                         messages: [{ role: 'user', content: followUpPrompt }]
                     });
 
@@ -147,7 +147,7 @@ The RFP requested: various restaurant ingredients in bulk quantities.
                 }
             }
         } catch (aiError: any) {
-            console.warn('OpenAI API failed during conversation simulation, providing detailed mock conversation:', aiError.message);
+            console.warn('Groq API failed during conversation simulation, providing detailed mock conversation:', aiError.message);
 
             // Generate a more robust mock conversation fallback
             const mockBasePrice = Math.floor(Math.random() * (1200 - 800) + 800);

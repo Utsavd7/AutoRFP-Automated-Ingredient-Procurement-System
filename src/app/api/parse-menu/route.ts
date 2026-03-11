@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { PrismaClient } from '@prisma/client';
 
-const openai = process.env.OPENAI_API_KEY
-    ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+const openai = process.env.GROQ_API_KEY
+    ? new OpenAI({ apiKey: process.env.GROQ_API_KEY, baseURL: 'https://api.groq.com/openai/v1' })
     : null;
 
 const prisma = new PrismaClient();
@@ -14,7 +14,7 @@ export async function POST(req: Request) {
 
         if (!openai) {
             return NextResponse.json(
-                { error: 'OpenAI API key is missing. Please add OPENAI_API_KEY to your .env file.' },
+                { error: 'Groq API key is missing. Please add GROQ_API_KEY to your .env file.' },
                 { status: 500 }
             );
         }
@@ -59,21 +59,21 @@ export async function POST(req: Request) {
       \${menuText || sourceUrl}
     `;
 
-        // Call OpenAI
+        // Call Groq
         let parsedData;
         try {
             const response = await openai.chat.completions.create({
-                model: 'gpt-4o',
+                model: 'llama-3.3-70b-versatile',
                 messages: [{ role: 'user', content: prompt }],
                 response_format: { type: 'json_object' }
             });
 
             const resultText = response.choices[0].message.content;
 
-            if (!resultText) throw new Error("No response from OpenAI");
+            if (!resultText) throw new Error("No response from Groq");
             parsedData = JSON.parse(resultText);
         } catch (aiError: any) {
-            console.warn('OpenAI API failed, providing comprehensive mock menu data:', aiError.message);
+            console.warn('Groq API failed, providing comprehensive mock menu data:', aiError.message);
             parsedData = {
                 dishes: [
                     {

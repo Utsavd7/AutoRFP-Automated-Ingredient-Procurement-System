@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { PrismaClient } from '@prisma/client';
 
-const openai = process.env.OPENAI_API_KEY
-    ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+const openai = process.env.GROQ_API_KEY
+    ? new OpenAI({ apiKey: process.env.GROQ_API_KEY, baseURL: 'https://api.groq.com/openai/v1' })
     : null;
 
 const prisma = new PrismaClient();
@@ -21,7 +21,7 @@ export async function GET(req: Request) {
 
         if (!openai) {
             return NextResponse.json(
-                { error: 'OpenAI API key is missing.' },
+                { error: 'Groq API key is missing.' },
                 { status: 500 }
             );
         }
@@ -80,17 +80,17 @@ export async function GET(req: Request) {
         let recommendation;
         try {
             const response = await openai.chat.completions.create({
-                model: 'gpt-4o',
+                model: 'llama-3.3-70b-versatile',
                 messages: [{ role: 'user', content: prompt }],
                 response_format: { type: 'json_object' }
             });
 
             const resultText = response.choices[0].message.content;
 
-            if (!resultText) throw new Error('No response from OpenAI');
+            if (!resultText) throw new Error('No response from Groq');
             recommendation = JSON.parse(resultText);
         } catch (aiError: any) {
-            console.warn('OpenAI API failed or quota exceeded, providing detailed mock recommendation:', aiError.message);
+            console.warn('Groq API failed or quota exceeded, providing detailed mock recommendation:', aiError.message);
 
             // Logic to pick a mock recommendation
             const cheapest = quotesSummary.reduce((prev: any, curr: any) => (prev.price < curr.price) ? prev : curr);

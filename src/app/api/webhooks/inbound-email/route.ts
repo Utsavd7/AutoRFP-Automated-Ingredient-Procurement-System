@@ -62,8 +62,8 @@ export async function POST(req: Request) {
         `;
 
         // Call Gemini
-        const model = genAI.getGenerativeModel({
-            model: 'gemini-1.5-flash',
+        const model = genAI!.getGenerativeModel({
+            model: 'gemini-2.0-flash',
             generationConfig: { responseMimeType: 'application/json' }
         });
 
@@ -89,7 +89,7 @@ export async function POST(req: Request) {
                 Return ONLY the email body text, nothing else. No subject line. No "Dear..." opener needed.
             `;
 
-            const followUpModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+            const followUpModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
             const followUpResult = await followUpModel.generateContent(followUpPrompt);
             const followUpResponse = await followUpResult.response;
             const followUpEmail = followUpResponse.text() || 'Could you please clarify your total pricing and delivery terms for this order?';

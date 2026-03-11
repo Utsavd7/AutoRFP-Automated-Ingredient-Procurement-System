@@ -71,7 +71,7 @@ The RFP requested: various restaurant ingredients in bulk quantities.
                        Be professional but conversational, like a real local distributor would write.
                        Do NOT use placeholder text. Make it feel like a real email.`;
 
-                const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+                const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
                 const vendorResult = await model.generateContent(vendorPrompt);
                 const vendorResponse = await vendorResult.response;
                 const vendorEmail = vendorResponse.text() || 'Thank you for reaching out. We will get back to you shortly.';
@@ -92,8 +92,8 @@ The RFP requested: various restaurant ingredients in bulk quantities.
                     """${vendorEmail}"""
                 `;
 
-                const agentModel = genAI.getGenerativeModel({
-                    model: 'gemini-1.5-flash',
+                const agentModel = genAI!.getGenerativeModel({
+                    model: 'gemini-2.0-flash',
                     generationConfig: { responseMimeType: 'application/json' }
                 });
 
@@ -133,7 +133,7 @@ The RFP requested: various restaurant ingredients in bulk quantities.
                         Write a short, polite follow-up asking for clarification (2-3 sentences only).
                     `;
 
-                    const followUpModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+                    const followUpModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
                     const followUpResult = await followUpModel.generateContent(followUpPrompt);
                     const followUpResponse = await followUpResult.response;
                     const followUpEmail = followUpResponse.text() || 'Could you please clarify your total pricing for this order?';

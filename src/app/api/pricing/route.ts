@@ -6,13 +6,112 @@ const prisma = new PrismaClient();
 // ─── Real-time commodity price lookup via Yahoo Finance ───────────────────────
 // Maps ingredient name keywords → futures symbol + retail scaling factor
 const COMMODITY_MAP: Array<{ keywords: string[]; symbol: string; factor: number; label: string }> = [
-    { keywords: ['beef', 'ground beef', 'ribeye', 'steak', 'brisket', 'chuck', 'veal', 'sirloin', 'tenderloin', 'short rib', 'flank', 'skirt'], symbol: 'LE=F', factor: 0.022, label: 'CME Live Cattle' },
-    { keywords: ['pork', 'bacon', 'ham', 'guanciale', 'prosciutto', 'pancetta', 'sausage', 'chorizo', 'salami', 'pepperoni', 'lard', 'pork belly', 'ribs'], symbol: 'HE=F', factor: 0.019, label: 'CME Lean Hogs' },
-    { keywords: ['wheat', 'flour', 'all-purpose flour', 'bread flour', 'pizza flour', 'pasta', 'spaghetti', 'linguine', 'fettuccine', 'penne', 'rigatoni', 'bread', 'breadcrumb', 'panko', 'crouton', 'semolina'], symbol: 'ZW=F', factor: 0.0042, label: 'CBOT Wheat' },
-    { keywords: ['corn', 'cornmeal', 'polenta', 'corn starch', 'tortilla', 'grits', 'hominy', 'popcorn'], symbol: 'ZC=F', factor: 0.0038, label: 'CBOT Corn' },
-    { keywords: ['soy', 'soybean', 'tofu', 'miso', 'edamame', 'tempeh', 'soy sauce', 'canola oil', 'vegetable oil'], symbol: 'ZS=F', factor: 0.0045, label: 'CBOT Soybeans' },
+    { keywords: ['beef', 'ground beef', 'ribeye', 'steak', 'brisket', 'chuck', 'veal', 'sirloin', 'tenderloin', 'short rib', 'flank', 'skirt', 'burger'], symbol: 'LE=F', factor: 0.022, label: 'CME Live Cattle' },
+    { keywords: ['pork', 'bacon', 'ham', 'guanciale', 'prosciutto', 'pancetta', 'sausage', 'chorizo', 'salami', 'pepperoni', 'lard', 'pork belly', 'ribs', 'pork chop', 'pork loin'], symbol: 'HE=F', factor: 0.019, label: 'CME Lean Hogs' },
+    { keywords: ['wheat', 'flour', 'all-purpose flour', 'bread flour', 'pizza flour', 'pasta', 'spaghetti', 'linguine', 'fettuccine', 'penne', 'rigatoni', 'bread', 'breadcrumb', 'panko', 'crouton', 'semolina', 'noodle', 'lasagna', 'tortellini', 'gnocchi'], symbol: 'ZW=F', factor: 0.0042, label: 'CBOT Wheat' },
+    { keywords: ['corn', 'cornmeal', 'polenta', 'corn starch', 'tortilla', 'grits', 'hominy', 'popcorn', 'corn syrup'], symbol: 'ZC=F', factor: 0.0038, label: 'CBOT Corn' },
+    { keywords: ['soy', 'soybean', 'tofu', 'miso', 'edamame', 'tempeh', 'soy sauce', 'canola oil', 'vegetable oil', 'soybean oil'], symbol: 'ZS=F', factor: 0.0045, label: 'CBOT Soybeans' },
     { keywords: ['oat', 'oatmeal', 'oats', 'granola', 'muesli'], symbol: 'ZO=F', factor: 0.0060, label: 'CBOT Oats' },
+    { keywords: ['coffee', 'espresso', 'cappuccino', 'latte', 'americano', 'cold brew', 'coffee bean', 'coffee grounds'], symbol: 'KC=F', factor: 0.040, label: 'ICE Coffee C' },
+    { keywords: ['sugar', 'cane sugar', 'brown sugar', 'powdered sugar', 'confectioner', 'syrup', 'simple syrup', 'honey', 'agave', 'molasses'], symbol: 'SB=F', factor: 0.025, label: 'ICE Sugar No.11' },
+    { keywords: ['cocoa', 'chocolate', 'dark chocolate', 'milk chocolate', 'white chocolate', 'cacao', 'ganache', 'brownie', 'truffle', 'nutella'], symbol: 'CC=F', factor: 0.0009, label: 'ICE Cocoa' },
+    { keywords: ['orange juice', 'orange', 'citrus', 'grapefruit', 'mandarin', 'tangerine', 'clementine', 'lemon', 'lime', 'juice'], symbol: 'OJ=F', factor: 0.008, label: 'ICE OJ' },
+    { keywords: ['salmon', 'tuna', 'shrimp', 'prawn', 'lobster', 'crab', 'seafood', 'fish', 'cod', 'tilapia', 'halibut', 'sea bass', 'mahi', 'scallop', 'oyster', 'clam', 'mussel', 'anchovy', 'sardine'], symbol: 'ZS=F', factor: 0.012, label: 'Seafood Index (proxy)' },
 ];
+
+// ─── BLS (Bureau of Labor Statistics) free retail price series ────────────────
+// Series IDs → APU0000 prefix, no API key needed (anonymous access)
+const BLS_MAP: Array<{ keywords: string[]; series: string; label: string; unitConvert?: number }> = [
+    {
+        keywords: ['chicken', 'poultry', 'turkey', 'duck', 'hen', 'roast chicken', 'rotisserie', 'wing', 'thigh', 'breast', 'drumstick', 'chicken breast', 'chicken thigh', 'chicken wing', 'fried chicken', 'grilled chicken'],
+        series: 'APU0000706111',
+        label: 'BLS Chicken Breast ($/lb)',
+    },
+    {
+        keywords: ['egg', 'eggs', 'egg white', 'egg yolk', 'quail egg', 'omelette', 'frittata', 'scrambled', 'benedict', 'poached egg'],
+        series: 'APU0000708111',
+        label: 'BLS Eggs ($/doz → $/lb)',
+        unitConvert: 1 / 1.5, // 1 doz eggs ≈ 1.5 lb
+    },
+    {
+        keywords: ['milk', 'whole milk', 'skim milk', '2% milk', 'dairy', 'cream', 'heavy cream', 'half and half', 'condensed milk', 'evaporated milk'],
+        series: 'APU0000709112',
+        label: 'BLS Milk ($/gal → $/lb)',
+        unitConvert: 1 / 8.6, // 1 gal ≈ 8.6 lb
+    },
+    {
+        keywords: ['butter', 'margarine', 'ghee', 'clarified butter'],
+        series: 'APU0000715211',
+        label: 'BLS Butter ($/lb)',
+    },
+    {
+        keywords: ['cheese', 'cheddar', 'mozzarella', 'parmesan', 'parmigiano', 'pecorino', 'ricotta', 'brie', 'gouda', 'gruyere', 'fontina', 'provolone', 'romano', 'gorgonzola', 'blue cheese', 'feta', 'cream cheese', 'cottage cheese'],
+        series: 'APU0000710212',
+        label: 'BLS Cheddar Cheese ($/lb)',
+    },
+    {
+        keywords: ['tomato', 'roma tomato', 'cherry tomato', 'heirloom tomato', 'plum tomato', 'san marzano', 'tomato sauce', 'tomato paste', 'tomato puree'],
+        series: 'APU0000712311',
+        label: 'BLS Tomatoes ($/lb)',
+    },
+    {
+        keywords: ['potato', 'russet', 'yukon', 'sweet potato', 'yam', 'french fry', 'hash brown', 'mashed potato'],
+        series: 'APU0000712409',
+        label: 'BLS Potatoes ($/lb)',
+    },
+    {
+        keywords: ['lettuce', 'romaine', 'iceberg', 'arugula', 'spinach', 'mixed greens', 'salad', 'endive', 'radicchio', 'kale', 'swiss chard'],
+        series: 'APU0000712311',
+        label: 'BLS Lettuce ($/head)',
+        unitConvert: 1 / 1.2,
+    },
+    {
+        keywords: ['apple', 'gala', 'fuji', 'granny smith', 'honeycrisp', 'mcintosh'],
+        series: 'APU0000711111',
+        label: 'BLS Apples ($/lb)',
+    },
+    {
+        keywords: ['banana', 'plantain'],
+        series: 'APU0000711211',
+        label: 'BLS Bananas ($/lb)',
+    },
+];
+
+async function fetchBLSPrice(name: string): Promise<{ price: number; source: string; label: string } | null> {
+    const lowerName = name.toLowerCase();
+    const match = BLS_MAP.find(b => b.keywords.some(kw => lowerName.includes(kw)));
+    if (!match) return null;
+
+    try {
+        // BLS public data API v2 — no key needed for single-series requests
+        const url = `https://api.bls.gov/publicAPI/v2/timeseries/data/${match.series}?startyear=2024&endyear=2025&calculations=false`;
+        const res = await fetch(url, {
+            headers: { 'Content-Type': 'application/json' },
+            signal: AbortSignal.timeout(6000),
+        });
+        if (!res.ok) return null;
+
+        const data = await res.json();
+        if (data.status !== 'REQUEST_SUCCEEDED') return null;
+
+        const series = data.Results?.series?.[0];
+        if (!series?.data?.length) return null;
+
+        // BLS returns newest-first; take most recent valid value
+        const latestEntry = series.data.find((d: any) => d.value && !isNaN(parseFloat(d.value)));
+        if (!latestEntry) return null;
+
+        let price = parseFloat(latestEntry.value);
+        if (match.unitConvert) price = price * match.unitConvert;
+        price = parseFloat(price.toFixed(2));
+
+        if (price <= 0.05 || price > 50) return null;
+
+        return { price, source: 'LIVE', label: match.label };
+    } catch {
+        return null;
+    }
+}
 
 async function fetchLiveCommodityPrice(name: string): Promise<{ price: number; source: string; label: string } | null> {
     const lowerName = name.toLowerCase();
@@ -131,12 +230,20 @@ export async function POST(req: Request) {
             }
 
             if (trends.length === 0) {
-                // 2. Try to fetch live commodity price
+                // 2. Try Yahoo Finance futures first, then BLS retail prices
                 let liveData: { price: number; source: string; label: string } | null = null;
                 try {
                     liveData = await fetchLiveCommodityPrice(ing.name);
                 } catch {
-                    // proceed to mock
+                    // proceed to BLS
+                }
+
+                if (!liveData) {
+                    try {
+                        liveData = await fetchBLSPrice(ing.name);
+                    } catch {
+                        // proceed to mock
+                    }
                 }
 
                 if (liveData) {

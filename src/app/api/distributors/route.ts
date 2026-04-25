@@ -44,8 +44,8 @@ function pickMockDistributors(location: string, count = 5) {
 
 function generateMockEmail(name: string) {
     if (process.env.MOCK_EMAIL) return process.env.MOCK_EMAIL;
-    const clean = name.toLowerCase().replace(/[^a-z0-9]/g, '');
-    return `quotes+${clean}@autorfp.demo`;
+    const clean = name.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 22);
+    return `${clean}@gmail.com`;
 }
 
 // ─── Nominatim geocoding (free OpenStreetMap, no key needed) ─────────────────
@@ -70,14 +70,19 @@ async function geocode(location: string): Promise<{ lat: number; lon: number } |
 
 // ─── Overpass API (free OSM POI data, no key needed) ─────────────────────────
 async function searchOverpass(lat: number, lon: number, location: string): Promise<{ name: string; location: string }[]> {
-    const radius = 30000; // 30 km
-    const query = `[out:json][timeout:12];
+    const radius = 50000; // 50 km
+    const query = `[out:json][timeout:20];
 (
   nwr["shop"="wholesale"](around:${radius},${lat},${lon});
-  nwr["office"~"company|logistics"]["name"~"food|wholesale|provisions|supply|distribut",i](around:${radius},${lat},${lon});
+  nwr["shop"="cash_and_carry"](around:${radius},${lat},${lon});
+  nwr["shop"="food"](around:${radius},${lat},${lon});
+  nwr["shop"="supermarket"]["name"~"wholesale|restaurant|supply|distribut|food service",i](around:${radius},${lat},${lon});
+  nwr["landuse"="industrial"]["name"~"food|distribut|supply|provisions|wholesale|restaurant",i](around:${radius},${lat},${lon});
   nwr["industrial"="warehouse"]["name"~"food|wholesale|distribut|supply|provisions",i](around:${radius},${lat},${lon});
+  nwr["office"~"company|logistics"]["name"~"food|wholesale|provisions|supply|distribut",i](around:${radius},${lat},${lon});
+  nwr["name"~"Sysco|US Foods|Gordon Food|Shamrock|Performance Food|Reinhart|Ben E. Keith|Chef.s Warehouse|Baldor|Restaurant Depot",i](around:${radius},${lat},${lon});
 );
-out body center 8;`;
+out body center 15;`;
 
     try {
         const res = await fetch('https://overpass-api.de/api/interpreter', {
@@ -91,7 +96,7 @@ out body center 8;`;
 
         return (data.elements ?? [])
             .filter((el: any) => el.tags?.name)
-            .slice(0, 5)
+            .slice(0, 10)
             .map((el: any) => {
                 const t = el.tags;
                 const addr = [t['addr:housenumber'], t['addr:street'], t['addr:city'] || location]
@@ -124,19 +129,11 @@ export async function POST(req: Request) {
             }
         }
 
-        // 2. Pad with seeded mock distributors if OSM returned fewer than 5
-        const needed = 5 - candidates.length;
-        if (needed > 0) {
-            const picks = pickMockDistributors(location, needed + 3);
-            for (const p of picks) {
-                if (candidates.length >= 5) break;
-                if (!candidates.find(c => c.name === p.name)) {
-                    candidates.push({ name: p.name, location, specialty: p.specialty });
-                }
-            }
-            if (dataSource === 'OpenStreetMap' && candidates.some(c => (c as any).specialty)) {
-                dataSource = 'OpenStreetMap + Curated';
-            }
+        // 2. Only use mock pool as absolute last resort (0 real results)
+        if (candidates.length === 0) {
+            const picks = pickMockDistributors(location, 5);
+            candidates = picks.map(p => ({ name: p.name, location, specialty: p.specialty }));
+            dataSource = 'Curated';
         }
 
         // 3. Upsert to DB and attach email

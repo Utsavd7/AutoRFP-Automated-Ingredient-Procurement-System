@@ -19,16 +19,26 @@ function cn(...inputs: (string | undefined | null | false)[]) {
   return twMerge(clsx(inputs));
 }
 
+const SAMPLE_MENU = `Classic Cheeseburger $14
+Spaghetti Carbonara $18
+Grilled Salmon $26
+Chicken Parmesan $22
+Caesar Salad $14
+Margherita Pizza $16
+Eggs Benedict $13
+Tiramisu $10`;
+
+
 // ─── Pill tag ─────────────────────────────────────────────────────────────────
 function Tag({ children, color = 'gray', className }: { children: React.ReactNode; color?: 'gray' | 'green' | 'blue' | 'amber' | 'red' | 'indigo'; className?: string }) {
   const base = 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold tracking-wide border';
   const c = {
     gray:   'bg-white/5 text-[#8A8F98] border-white/10',
     green:  'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
-    blue:   'bg-white/5 text-[#F2F2F2] border-white/15',
+    blue:   'bg-blue-500/10 text-blue-300 border-blue-500/20',
     amber:  'bg-amber-500/10 text-amber-400 border-amber-500/20',
     red:    'bg-red-500/10 text-red-400 border-red-500/20',
-    indigo: 'bg-white/5 text-[#F2F2F2] border-white/15',
+    indigo: 'bg-violet-500/10 text-violet-300 border-violet-500/20',
   }[color];
   return (
     <span className={cn(base, c, className)}>
@@ -48,7 +58,7 @@ function Section({ title, subtitle, step, done, children, action }: {
         <div className="flex items-start gap-4">
           <div className={cn(
             'mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[11px] font-bold border',
-            done ? 'bg-white/10 text-white border-white/20' : 'bg-white/5 text-[#8A8F98] border-white/10'
+            done ? 'bg-white/10 text-white border-white/20' : 'bg-blue-500/10 text-blue-300 border-blue-500/25'
           )}>
             {done ? <CheckCircle className="w-3.5 h-3.5" /> : step}
           </div>
@@ -288,7 +298,7 @@ export default function Home() {
         });
         const data = await res.json();
         newLogs[rfp.id] = [
-          { role: 'system', message: `Simulating conversation with ${rfp.distributorName}...` },
+          { role: 'system', message: `Processing vendor response from ${rfp.distributorName}...` },
           ...(data.conversationLog || []),
           { role: 'system', message: data.message },
         ];
@@ -332,7 +342,7 @@ export default function Home() {
   // RENDER
   // ─────────────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-[#000000] text-[#EEEEEE] font-sans selection:bg-white/15 selection:text-white">
+    <div className="min-h-screen bg-[#000000] page-ambient text-[#EEEEEE] font-sans selection:bg-violet-500/30 selection:text-white">
 
       {/* ── Sticky top block: nav + stepper + stats ───────────────────────── */}
       <div className="sticky top-0 z-50 bg-[#000000]/80 backdrop-blur-2xl border-b border-white/10 shadow-lg shadow-black/50">
@@ -340,8 +350,8 @@ export default function Home() {
         {/* Navbar */}
         <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="h-7 w-7 rounded border border-white/10 bg-white/5 flex items-center justify-center shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)]">
-              <ChefHat className="w-3.5 h-3.5 text-[#EEEEEE]" />
+            <div className="h-7 w-7 rounded border border-violet-500/30 bg-violet-500/10 flex items-center justify-center shadow-[inset_0_1px_0_0_rgba(139,92,246,0.2),0_0_12px_rgba(139,92,246,0.15)]">
+              <ChefHat className="w-3.5 h-3.5 text-violet-300" />
             </div>
             <span className="font-bold text-[#EEEEEE] text-[13px] tracking-wide">AutoRFP</span>
             <span className="hidden sm:block text-[#8A8F98] text-[11px] font-medium tracking-wide">/ PROCUREMENT</span>
@@ -371,13 +381,13 @@ export default function Home() {
                     <div className={cn(
                       'flex items-center gap-2.5 py-3 px-1 text-[11px] font-bold uppercase tracking-widest min-w-0 truncate transition-colors duration-300',
                       isDone   ? 'text-[#EEEEEE]' :
-                      isActive ? 'text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.15)]' :
+                      isActive ? 'text-blue-300 drop-shadow-[0_0_8px_rgba(147,197,253,0.4)]' :
                                  'text-[#8A8F98]'
                     )}>
                       <div className={cn(
                         'flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] text-[9px] font-black border transition-all duration-300',
                         isDone   ? 'bg-white/8 text-white border-white/15' :
-                        isActive ? 'bg-white/10 text-white border-white/20 ' :
+                        isActive ? 'bg-blue-500/20 text-blue-300 border-blue-500/40 shadow-[0_0_8px_rgba(59,130,246,0.3)]' :
                                    'bg-white/5 text-[#8A8F98] border-white/10'
                       )}>
                         {isDone ? '✓' : step.id}
@@ -426,6 +436,38 @@ export default function Home() {
       {/* ── Main ─────────────────────────────────────────────────────────────── */}
       <main className="max-w-6xl mx-auto px-6 py-12 space-y-16">
 
+        {/* ── Hero — only shown before first run ─────────────────────────────── */}
+        {recipes.length === 0 && !loading && (
+          <div className="relative py-10 text-center space-y-5 border-b border-white/5 pb-16 overflow-hidden">
+            {/* ambient color blobs */}
+            <div className="pointer-events-none absolute inset-0 -z-10">
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[300px] rounded-full bg-violet-600/10 blur-[80px]" />
+              <div className="absolute top-1/2 left-1/3 -translate-x-1/2 -translate-y-1/2 w-[300px] h-[200px] rounded-full bg-blue-600/10 blur-[60px]" />
+              <div className="absolute top-1/2 right-1/4 -translate-y-1/2 w-[250px] h-[180px] rounded-full bg-pink-600/8 blur-[60px]" />
+            </div>
+            <div className="space-y-3 relative">
+              <h1 className="text-[44px] font-black tracking-tight leading-none gradient-text">
+                Procurement, automated.
+              </h1>
+              <p className="text-[15px] text-[#8A8F98] font-medium max-w-2xl mx-auto leading-relaxed">
+                Paste any menu or supplier request — AI extracts every line item, fetches live market pricing, discovers local suppliers, and negotiates the best deal without human intervention.
+              </p>
+            </div>
+            <div className="flex items-center justify-center flex-wrap gap-x-5 gap-y-2 text-[11px] font-bold uppercase tracking-widest relative">
+              <span className="flex items-center gap-1.5 text-violet-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse shadow-[0_0_5px_rgba(167,139,250,0.8)]" />
+                Groq LLaMA 3.3 70B
+              </span>
+              <span className="text-white/20">/</span>
+              <span className="text-blue-400">CME · CBOT · BLS live prices</span>
+              <span className="text-white/20">/</span>
+              <span className="text-[#8A8F98]">OpenStreetMap suppliers</span>
+              <span className="text-white/20">/</span>
+              <span className="text-[#8A8F98]">5-agent negotiation pipeline</span>
+            </div>
+          </div>
+        )}
+
         {/* Error banner */}
         {error && (
           <div className="flex items-center gap-3 px-4 py-3 bg-red-500/10 border border-red-500/20 rounded-md text-[13px] font-medium text-red-400 linear-panel">
@@ -454,10 +496,18 @@ export default function Home() {
                 value={menuText}
                 onChange={e => setMenuText(e.target.value)}
               />
-              <Btn onClick={handleParseMenu} disabled={!menuText.trim()} loading={loading}>
-                <Sparkles className="w-4 h-4" />
-                {loading ? 'Analyzing with Groq…' : 'Extract Ingredients'}
-              </Btn>
+              <div className="flex items-center justify-between gap-3">
+                <button
+                  onClick={() => setMenuText(SAMPLE_MENU)}
+                  className="text-[11px] font-bold text-[#8A8F98] hover:text-[#EEEEEE] transition-colors uppercase tracking-widest"
+                >
+                  Load sample →
+                </button>
+                <Btn onClick={handleParseMenu} disabled={!menuText.trim()} loading={loading}>
+                  <Sparkles className="w-4 h-4" />
+                  {loading ? 'Analyzing with Groq…' : 'Extract Ingredients'}
+                </Btn>
+              </div>
             </Card>
 
             {/* Dishes */}
@@ -553,7 +603,7 @@ export default function Home() {
                         <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                           {item.isLive
                             ? <Tag color="green" className="bg-emerald-500/20 border-emerald-500/30 text-[10px]"><span className="w-1 h-1 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_5px_rgba(16,185,129,0.8)]" />Live</Tag>
-                            : <Tag color="gray" className="text-[10px]">Simulated</Tag>
+                            : <Tag color="gray" className="text-[10px]">Estimated</Tag>
                           }
                           {forecast?.trend && forecast.trend !== 'STABLE' && (
                             <span className={cn('text-[10px] font-bold uppercase tracking-widest flex items-center gap-0.5', trendColor)}>
@@ -723,7 +773,7 @@ export default function Home() {
                 <Btn variant="secondary" size="sm" onClick={() => setShowEmailSimulator(s => !s)}>Manual</Btn>
                 <Btn size="sm" onClick={handleAutoConversation} disabled={simulatingConversation || quotes.length >= sentRFPs.length} loading={simulatingConversation}>
                   <Bot className="w-3 h-3" />
-                  {simulatingConversation ? 'Simulating…' : 'Auto-simulate responses'}
+                  {simulatingConversation ? 'Generating…' : 'Generate vendor responses'}
                 </Btn>
                 <Btn variant="ghost" size="sm" onClick={handleFetchQuotes} disabled={loadingQuotes}>
                   {loadingQuotes ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Refresh'}
@@ -799,7 +849,7 @@ export default function Home() {
               {quotes.length === 0 ? (
                 <div className="py-16 flex flex-col items-center text-[#8A8F98] gap-3">
                   <FileCheck className="w-10 h-10 opacity-20" />
-                  <p className="text-[13px] font-medium tracking-tight">No quotes yet — use Auto-simulate above</p>
+                  <p className="text-[13px] font-medium tracking-tight">No quotes yet — click "Generate vendor responses" above</p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -840,7 +890,7 @@ export default function Home() {
                 <div className="border-t border-white/10 p-6 space-y-5 bg-white/[0.01]">
                   <div className="flex items-center justify-between">
                     <h3 className="text-[13px] font-bold text-[#EEEEEE] flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-white" />AI Recommendation
+                      <Sparkles className="w-4 h-4 text-violet-400" />AI Recommendation
                     </h3>
                     <Btn size="sm" onClick={handleGetRecommendation} loading={loadingRecommendation}>
                       {loadingRecommendation ? 'Analyzing…' : 'Get recommendation'}
@@ -915,7 +965,7 @@ export default function Home() {
                 <Card className="flex flex-col overflow-hidden border border-white/10 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] bg-[#000000]/60 relative z-10 group">
                   <div className="absolute top-0 left-0 w-64 h-64 bg-white/5 blur-[80px] rounded-full pointer-events-none opacity-50 group-hover:opacity-100 transition-opacity duration-1000" />
                   <div className="flex items-center gap-2.5 px-6 py-4 border-b border-white/10 bg-white/[0.02] relative z-10">
-                    <Cpu className="w-4 h-4 text-white" />
+                    <Cpu className="w-4 h-4 text-violet-400" />
                     <span className="text-[11px] font-bold text-[#8A8F98] uppercase tracking-widest">Agent terminal</span>
                     {negotiating && <span className="ml-auto w-2 h-2 rounded-full bg-white/10 animate-pulse shadow-[0_0_8px_rgba(255,255,255,0.2)]" />}
                   </div>
@@ -1033,11 +1083,10 @@ export default function Home() {
             {/* Final deal summary */}
             {negotiationComplete && (
               <Card className="p-8 border-white/10 space-y-8 bg-[#000000]/60 relative z-10 overflow-hidden shadow-[0_0_40px_rgba(0,0,0,0.5)]">
-                <div className="absolute inset-0 // removed gradient" />
                 <div className="flex items-start justify-between gap-4 flex-wrap relative z-10">
                   <div>
-                    <p className="text-[10px] text-white font-black uppercase tracking-[0.2em] mb-2 ">Negotiation complete</p>
-                    <h3 className="text-3xl font-black text-[#EEEEEE] tracking-tight">{negotiationComplete.winner}</h3>
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] mb-2 text-violet-400">Negotiation complete</p>
+                    <h3 className="text-3xl font-black gradient-text tracking-tight">{negotiationComplete.winner}</h3>
                     <p className="text-[13px] font-medium text-[#8A8F98] mt-1.5 flex items-center gap-2">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
                       Best negotiated deal secured · {new Date().toLocaleDateString()}
@@ -1070,7 +1119,7 @@ export default function Home() {
                 </div>
 
                 <div className="bg-[#000000] border border-white/10 rounded-xl p-6 relative z-10 shadow-inner">
-                  <p className="text-[11px] font-bold text-white uppercase tracking-widest mb-3 flex items-center gap-1.5"><Sparkles className="w-3.5 h-3.5" /> Executive Summary</p>
+                  <p className="text-[11px] font-bold text-violet-300 uppercase tracking-widest mb-3 flex items-center gap-1.5"><Sparkles className="w-3.5 h-3.5" /> Executive Summary</p>
                   <p className="text-[14px] text-[#EEEEEE]/90 leading-relaxed font-medium">{negotiationComplete.executiveSummary}</p>
                 </div>
 
@@ -1124,9 +1173,11 @@ export default function Home() {
           <div className="flex items-center flex-wrap gap-3">
             <span className="hover:text-[#EEEEEE] transition-colors cursor-default">Groq LLaMA 3.3 70B</span>
             <span className="opacity-30">/</span>
-            <span className="hover:text-[#EEEEEE] transition-colors cursor-default">CME / CBOT Pricing</span>
+            <span className="hover:text-[#EEEEEE] transition-colors cursor-default">CME · CBOT · BLS Pricing</span>
             <span className="opacity-30">/</span>
-            <span className="hover:text-[#EEEEEE] transition-colors cursor-default">OSM Nodes</span>
+            <span className="hover:text-[#EEEEEE] transition-colors cursor-default">OpenStreetMap Suppliers</span>
+            <span className="opacity-30">/</span>
+            <span className="hover:text-[#EEEEEE] transition-colors cursor-default">5-Agent Pipeline</span>
           </div>
         </div>
       </footer>

@@ -20,17 +20,18 @@ function cn(...inputs: (string | undefined | null | false)[]) {
 }
 
 // ─── Pill tag ─────────────────────────────────────────────────────────────────
-function Tag({ children, color = 'gray' }: { children: React.ReactNode; color?: 'gray' | 'green' | 'blue' | 'amber' | 'red' | 'indigo' }) {
+function Tag({ children, color = 'gray', className }: { children: React.ReactNode; color?: 'gray' | 'green' | 'blue' | 'amber' | 'red' | 'indigo'; className?: string }) {
+  const base = 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold tracking-wide border';
   const c = {
-    gray:   'bg-slate-100 text-slate-600',
-    green:  'bg-emerald-50 text-emerald-700',
-    blue:   'bg-blue-50 text-blue-700',
-    amber:  'bg-amber-50 text-amber-700',
-    red:    'bg-red-50 text-red-700',
-    indigo: 'bg-indigo-50 text-indigo-700',
+    gray:   'bg-white/5 text-[#8A8F98] border-white/10',
+    green:  'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+    blue:   'bg-[#5E6AD2]/10 text-[#5E6AD2] border-[#5E6AD2]/20',
+    amber:  'bg-amber-500/10 text-amber-400 border-amber-500/20',
+    red:    'bg-red-500/10 text-red-400 border-red-500/20',
+    indigo: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20',
   }[color];
   return (
-    <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium', c)}>
+    <span className={cn(base, c, className)}>
       {children}
     </span>
   );
@@ -42,18 +43,18 @@ function Section({ title, subtitle, step, done, children, action }: {
   children: React.ReactNode; action?: React.ReactNode;
 }) {
   return (
-    <section className="space-y-5">
+    <section className="space-y-6">
       <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div className="flex items-start gap-3">
+        <div className="flex items-start gap-4">
           <div className={cn(
-            'mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold',
-            done ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-500'
+            'mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[11px] font-bold border',
+            done ? 'bg-[#5E6AD2]/20 text-[#5E6AD2] border-[#5E6AD2]/30 shadow-[0_0_15px_rgba(94,106,210,0.3)]' : 'bg-white/5 text-[#8A8F98] border-white/10'
           )}>
-            {done ? <CheckCircle className="w-4 h-4" /> : step}
+            {done ? <CheckCircle className="w-3.5 h-3.5" /> : step}
           </div>
           <div>
-            <h2 className="text-[15px] font-semibold text-slate-900">{title}</h2>
-            {subtitle && <p className="text-sm text-slate-500 mt-0.5">{subtitle}</p>}
+            <h2 className="text-lg font-medium text-[#EEEEEE] tracking-tight">{title}</h2>
+            {subtitle && <p className="text-sm text-[#8A8F98] mt-1">{subtitle}</p>}
           </div>
         </div>
         {action}
@@ -64,19 +65,19 @@ function Section({ title, subtitle, step, done, children, action }: {
 }
 
 // ─── Primary button ───────────────────────────────────────────────────────────
-function Btn({ children, onClick, disabled, loading, variant = 'primary', size = 'md' }: {
+function Btn({ children, onClick, disabled, loading, variant = 'primary', size = 'md', className }: {
   children: React.ReactNode; onClick?: () => void; disabled?: boolean;
-  loading?: boolean; variant?: 'primary' | 'secondary' | 'ghost'; size?: 'sm' | 'md';
+  loading?: boolean; variant?: 'primary' | 'secondary' | 'ghost'; size?: 'sm' | 'md'; className?: string;
 }) {
-  const base = 'inline-flex items-center justify-center gap-1.5 font-medium rounded-lg transition-all select-none';
-  const sizes = { sm: 'text-xs px-3 py-1.5', md: 'text-sm px-4 py-2' };
+  const base = 'inline-flex items-center justify-center gap-2 font-medium rounded-md transition-all select-none focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-black focus:ring-[#5E6AD2]/50 disabled:opacity-50 disabled:pointer-events-none active:scale-[0.98]';
+  const sizes = { sm: 'text-[11px] px-3 py-1.5', md: 'text-[13px] px-4 py-2' };
   const variants = {
-    primary:   'bg-blue-600 hover:bg-blue-700 text-white shadow-sm disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed',
-    secondary: 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm',
-    ghost:     'text-slate-600 hover:text-slate-900 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed',
+    primary:   'linear-btn text-[#EEEEEE] hover:text-white disabled:opacity-50 disabled:cursor-not-allowed',
+    secondary: 'bg-transparent border border-white/10 text-[#8A8F98] hover:text-[#EEEEEE] hover:bg-white/5 shadow-none disabled:opacity-50 disabled:cursor-not-allowed',
+    ghost:     'text-[#8A8F98] hover:text-[#EEEEEE] hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed',
   };
   return (
-    <button onClick={onClick} disabled={disabled || loading} className={cn(base, sizes[size], variants[variant])}>
+    <button onClick={onClick} disabled={disabled || loading} className={cn(base, sizes[size], variants[variant], className)}>
       {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
       {children}
     </button>
@@ -86,7 +87,7 @@ function Btn({ children, onClick, disabled, loading, variant = 'primary', size =
 // ─── Card ─────────────────────────────────────────────────────────────────────
 function Card({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={cn('bg-white border border-slate-200 rounded-xl shadow-sm', className)}>
+    <div className={cn('linear-panel rounded-xl', className)}>
       {children}
     </div>
   );
@@ -331,35 +332,35 @@ export default function Home() {
   // RENDER
   // ─────────────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
+    <div className="min-h-screen bg-[#000000] text-[#EEEEEE] font-sans selection:bg-[#5E6AD2]/30 selection:text-white">
 
       {/* ── Sticky top block: nav + stepper + stats ───────────────────────── */}
-      <div className="sticky top-0 z-50 bg-white border-b border-slate-200 shadow-sm">
+      <div className="sticky top-0 z-50 bg-[#000000]/80 backdrop-blur-2xl border-b border-white/10 shadow-lg shadow-black/50">
 
         {/* Navbar */}
         <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="h-8 w-8 rounded-lg bg-blue-600 flex items-center justify-center">
-              <ChefHat className="w-4 h-4 text-white" />
-            </div>
-            <span className="font-semibold text-slate-900 text-[15px]">AutoRFP</span>
-            <span className="hidden sm:block text-slate-400 text-sm">/ Procurement</span>
-          </div>
           <div className="flex items-center gap-3">
+            <div className="h-7 w-7 rounded border border-white/10 bg-white/5 flex items-center justify-center shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)]">
+              <ChefHat className="w-3.5 h-3.5 text-[#EEEEEE]" />
+            </div>
+            <span className="font-bold text-[#EEEEEE] text-[13px] tracking-wide">AutoRFP</span>
+            <span className="hidden sm:block text-[#8A8F98] text-[11px] font-medium tracking-wide">/ PROCUREMENT</span>
+          </div>
+          <div className="flex items-center gap-4">
             {anomalyCount > 0 && (
-              <span className="flex items-center gap-1.5 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full">
+              <span className="flex items-center gap-1.5 text-[11px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md drop-shadow-[0_0_10px_rgba(245,158,11,0.2)]">
                 <AlertTriangle className="w-3 h-3" />
-                {anomalyCount} price {anomalyCount === 1 ? 'anomaly' : 'anomalies'}
+                {anomalyCount} {anomalyCount === 1 ? 'anomaly' : 'anomalies'}
               </span>
             )}
-            <span className="text-xs text-slate-500 font-medium">
-              Step {currentStep} of 5
+            <span className="text-[11px] text-[#8A8F98] font-bold uppercase tracking-widest">
+              Step {currentStep} <span className="opacity-40">/ 5</span>
             </span>
           </div>
         </div>
 
         {/* Progress stepper */}
-        <div className="border-t border-slate-100 bg-slate-50/80">
+        <div className="border-t border-white/5 bg-white/[0.01]">
           <div className="max-w-6xl mx-auto px-6">
             <ol className="flex items-center">
               {steps.map((step, idx) => {
@@ -368,16 +369,16 @@ export default function Home() {
                 return (
                   <li key={step.id} className="flex items-center flex-1 min-w-0">
                     <div className={cn(
-                      'flex items-center gap-2 py-2.5 px-1 text-xs font-medium min-w-0 truncate',
-                      isDone   ? 'text-emerald-600' :
-                      isActive ? 'text-blue-600' :
-                                 'text-slate-400'
+                      'flex items-center gap-2.5 py-3 px-1 text-[11px] font-bold uppercase tracking-widest min-w-0 truncate transition-colors duration-300',
+                      isDone   ? 'text-[#EEEEEE]' :
+                      isActive ? 'text-[#5E6AD2] drop-shadow-[0_0_8px_rgba(94,106,210,0.5)]' :
+                                 'text-[#8A8F98]'
                     )}>
                       <div className={cn(
-                        'flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold',
-                        isDone   ? 'bg-emerald-500 text-white' :
-                        isActive ? 'bg-blue-600 text-white' :
-                                   'bg-slate-200 text-slate-500'
+                        'flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] text-[9px] font-black border transition-all duration-300',
+                        isDone   ? 'bg-[#5E6AD2]/20 text-[#5E6AD2] border-[#5E6AD2]/30' :
+                        isActive ? 'bg-[#5E6AD2] text-white border-[#5E6AD2]/50 shadow-[0_0_10px_rgba(94,106,210,0.4)]' :
+                                   'bg-white/5 text-[#8A8F98] border-white/10'
                       )}>
                         {isDone ? '✓' : step.id}
                       </div>
@@ -385,8 +386,8 @@ export default function Home() {
                     </div>
                     {idx < steps.length - 1 && (
                       <div className={cn(
-                        'flex-1 h-px mx-2',
-                        steps[idx].done ? 'bg-emerald-300' : 'bg-slate-200'
+                        'flex-1 h-px mx-3 transition-colors duration-300',
+                        steps[idx].done ? 'bg-[#5E6AD2]/50 shadow-[0_0_5px_rgba(94,106,210,0.5)]' : 'bg-white/5'
                       )} />
                     )}
                   </li>
@@ -397,9 +398,9 @@ export default function Home() {
         </div>
 
         {/* Stats strip */}
-        <div className="border-t border-slate-100">
+        <div className="border-t border-white/10 bg-white/[0.02]">
           <div className="max-w-6xl mx-auto px-6">
-            <div className="flex divide-x divide-slate-100">
+            <div className="flex divide-x divide-white/5">
               {[
                 { label: 'Ingredients',  value: ingredients.length || '—',  icon: Package,   hi: ingredients.length > 0 },
                 { label: 'Market Value', value: marketValue > 0 ? `$${marketValue.toFixed(0)}` : '—', icon: DollarSign, hi: marketValue > 0 },
@@ -407,13 +408,13 @@ export default function Home() {
                 { label: 'Quotes',       value: sentRFPs.length ? `${quotes.length} / ${sentRFPs.length}` : '—', icon: FileCheck, hi: quotes.length > 0 },
                 { label: 'AI Savings',   value: negotiationComplete ? `$${Number(negotiationComplete.totalSavings).toFixed(0)}` : '—', icon: Target, hi: !!negotiationComplete, green: true },
               ].map((s, i) => (
-                <div key={i} className="flex items-center gap-2.5 px-5 py-2.5">
-                  <s.icon className={cn('w-3.5 h-3.5 shrink-0', s.green && s.hi ? 'text-emerald-500' : s.hi ? 'text-blue-500' : 'text-slate-300')} />
+                <div key={i} className="flex items-center gap-3 px-6 py-3 transition-colors hover:bg-white/[0.03]">
+                  <s.icon className={cn('w-4 h-4 shrink-0', s.green && s.hi ? 'text-[#5E6AD2] drop-shadow-[0_0_8px_rgba(94,106,210,0.6)]' : s.hi ? 'text-[#EEEEEE]' : 'text-[#8A8F98]')} />
                   <div>
-                    <span className={cn('text-sm font-semibold', s.green && s.hi ? 'text-emerald-600' : s.hi ? 'text-slate-900' : 'text-slate-400')}>
+                    <span className={cn('text-[13px] font-bold tracking-tight', s.green && s.hi ? 'text-[#EEEEEE]' : s.hi ? 'text-[#EEEEEE]' : 'text-[#8A8F98]')}>
                       {s.value}
                     </span>
-                    <span className="text-xs text-slate-400 ml-1.5">{s.label}</span>
+                    <span className="text-[10px] text-[#8A8F98] font-medium tracking-wide ml-2 uppercase">{s.label}</span>
                   </div>
                 </div>
               ))}
@@ -423,14 +424,14 @@ export default function Home() {
       </div>
 
       {/* ── Main ─────────────────────────────────────────────────────────────── */}
-      <main className="max-w-6xl mx-auto px-6 py-8 space-y-12">
+      <main className="max-w-6xl mx-auto px-6 py-12 space-y-16">
 
         {/* Error banner */}
         {error && (
-          <div className="flex items-center gap-3 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+          <div className="flex items-center gap-3 px-4 py-3 bg-red-500/10 border border-red-500/20 rounded-md text-[13px] font-medium text-red-400 linear-panel">
             <AlertTriangle className="w-4 h-4 shrink-0" />
             <span className="flex-1">{error}</span>
-            <button onClick={() => setError('')} className="text-red-400 hover:text-red-600 text-lg leading-none">×</button>
+            <button onClick={() => setError('')} className="text-red-400/60 hover:text-red-400 transition-colors pointer-events-auto">×</button>
           </div>
         )}
 
@@ -442,39 +443,40 @@ export default function Home() {
           title="Menu Analysis"
           subtitle="Paste your menu or a URL — AI extracts every dish and ingredient automatically"
         >
-          <div className="grid lg:grid-cols-5 gap-5">
+          <div className="grid lg:grid-cols-5 gap-6">
             {/* Input */}
-            <Card className="lg:col-span-2 p-5 flex flex-col gap-4">
-              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Menu Input</label>
+            <Card className="lg:col-span-2 p-6 flex flex-col gap-5 border border-white/10 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05),0_0_30px_rgba(0,0,0,0.5)]">
+              <label className="text-[11px] font-bold text-[#8A8F98] uppercase tracking-widest">Menu Input</label>
               <textarea
                 rows={10}
-                className="flex-1 w-full bg-slate-50 border border-slate-200 rounded-lg p-3.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 resize-none font-mono leading-relaxed"
+                className="flex-1 w-full bg-[#000000] border border-white/10 rounded-lg p-4 text-[13px] text-[#EEEEEE] placeholder:text-[#8A8F98]/50 focus:outline-none focus:ring-1 focus:ring-[#5E6AD2] focus:border-[#5E6AD2] resize-none font-mono leading-relaxed shadow-inner"
                 placeholder={"Classic Cheeseburger  $12\nSpaghetti Bolognese  $16\nGrilled Salmon  $24\n\nor paste a URL to auto-fetch"}
                 value={menuText}
                 onChange={e => setMenuText(e.target.value)}
               />
               <Btn onClick={handleParseMenu} disabled={!menuText.trim()} loading={loading}>
-                <Sparkles className="w-3.5 h-3.5" />
+                <Sparkles className="w-4 h-4" />
                 {loading ? 'Analyzing with Groq…' : 'Extract Ingredients'}
               </Btn>
             </Card>
 
             {/* Dishes */}
-            <Card className="lg:col-span-3 p-5 flex flex-col">
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Extracted Dishes</span>
-                {recipes.length > 0 && <Tag color="blue">{recipes.length} dishes</Tag>}
+            <Card className="lg:col-span-3 p-6 flex flex-col border border-white/10 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] bg-[#000000]/60 z-10 relative">
+               <div className="absolute top-0 right-0 w-64 h-64 bg-[#5E6AD2]/10 blur-[80px] rounded-full pointer-events-none" />
+              <div className="flex items-center justify-between mb-5 relative z-10">
+                <span className="text-[11px] font-bold text-[#8A8F98] uppercase tracking-widest">Extracted Dishes</span>
+                {recipes.length > 0 && <Tag color="blue" className="bg-[#5E6AD2]/20 border-[#5E6AD2]/30">{recipes.length} dishes</Tag>}
               </div>
-              <div className="flex-1 overflow-y-auto space-y-1.5 min-h-[220px]">
+              <div className="flex-1 overflow-y-auto space-y-2 min-h-[220px] relative z-10">
                 {recipes.length === 0 ? (
-                  <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-2 py-10">
-                    <ChefHat className="w-8 h-8 opacity-30" />
-                    <p className="text-sm">Dishes appear here after extraction</p>
+                  <div className="h-full flex flex-col items-center justify-center text-[#8A8F98] gap-3 py-10 border border-dashed border-white/10 rounded-lg">
+                    <ChefHat className="w-8 h-8 opacity-20" />
+                    <p className="text-[13px] font-medium tracking-tight">Dishes appear here after extraction</p>
                   </div>
                 ) : recipes.map((recipe, i) => (
-                  <div key={i} className="flex items-center justify-between px-3.5 py-2.5 bg-slate-50 hover:bg-slate-100 rounded-lg transition-colors">
-                    <span className="text-sm text-slate-800 font-medium">{recipe.name}</span>
-                    <span className="text-xs text-slate-400">{recipe.ingredients?.length ?? 0} ingredients</span>
+                  <div key={i} className="flex items-center justify-between px-4 py-3 bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-white/10 rounded-lg transition-all duration-300">
+                    <span className="text-[13px] text-[#EEEEEE] font-bold tracking-tight">{recipe.name}</span>
+                    <span className="text-[11px] font-medium text-[#8A8F98] uppercase tracking-widest">{recipe.ingredients?.length ?? 0} ingredients</span>
                   </div>
                 ))}
               </div>
@@ -482,16 +484,16 @@ export default function Home() {
 
             {/* Ingredient list */}
             {ingredients.length > 0 && (
-              <Card className="lg:col-span-5 p-5">
-                <div className="flex items-center justify-between mb-4">
-                  <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Procurement List</span>
-                  <Tag color="blue">{ingredients.length} unique ingredients</Tag>
+              <Card className="lg:col-span-5 p-6 border border-white/10 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05),0_0_30px_rgba(0,0,0,0.5)]">
+                <div className="flex items-center justify-between mb-5">
+                  <span className="text-[11px] font-bold text-[#8A8F98] uppercase tracking-widest">Procurement List</span>
+                  <Tag color="blue" className="bg-[#5E6AD2]/20 border-[#5E6AD2]/30">{ingredients.length} unique ingredients</Tag>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
                   {ingredients.map((ing, i) => (
-                    <div key={i} className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg">
-                      <p className="text-xs font-medium text-slate-800 truncate">{ing.name}</p>
-                      <p className="text-[11px] text-slate-400 mt-0.5">{ing.quantity} {ing.unit}</p>
+                    <div key={i} className="px-4 py-3 bg-[#080808] border border-white/10 rounded-[8px] hover:border-white/20 transition-colors shadow-inner">
+                      <p className="text-[13px] font-bold text-[#EEEEEE] truncate">{ing.name}</p>
+                      <p className="text-[11px] text-[#8A8F98] font-medium mt-1 truncate">{ing.quantity} {ing.unit}</p>
                     </div>
                   ))}
                 </div>
@@ -508,23 +510,23 @@ export default function Home() {
           title="Market Pricing & Forecasting"
           subtitle="Live commodity data from CME/CBOT futures · ML regression with 3-month price forecast"
           action={
-            <div className="flex items-center gap-2 flex-wrap">
-              {liveCount > 0 && <Tag color="green"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />{liveCount} live</Tag>}
-              {Object.keys(mlForecasts).length > 0 && <Tag color="indigo"><Activity className="w-3 h-3" />ML active</Tag>}
+            <div className="flex items-center gap-3 flex-wrap">
+              {liveCount > 0 && <Tag color="green" className="bg-emerald-500/20 border-emerald-500/30"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]" />{liveCount} live</Tag>}
+              {Object.keys(mlForecasts).length > 0 && <Tag color="indigo" className="bg-indigo-500/20 border-indigo-500/30"><Activity className="w-3.5 h-3.5" />ML active</Tag>}
               <Btn onClick={handleFetchPricing} disabled={!ingredients.length} loading={loadingPricing}>
-                <BarChart3 className="w-3.5 h-3.5" />
+                <BarChart3 className="w-4 h-4" />
                 {loadingPricing ? 'Fetching…' : 'Run Analysis'}
               </Btn>
             </div>
           }
         >
           {pricingData.length === 0 ? (
-            <Card className="py-16 flex flex-col items-center text-slate-400 gap-2">
-              <BarChart3 className="w-9 h-9 opacity-20" />
-              <p className="text-sm">Run market analysis after extracting ingredients</p>
+            <Card className="py-20 flex flex-col items-center border border-dashed border-white/10 text-[#8A8F98] gap-3 bg-[rgba(255,255,255,0.01)] shadow-none">
+              <BarChart3 className="w-10 h-10 opacity-20" />
+              <p className="text-[13px] font-medium tracking-tight">Run market analysis after extracting ingredients</p>
             </Card>
           ) : (
-            <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
+            <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-5">
               {pricingData.map((item, idx) => {
                 const current = item.history[item.history.length - 1]?.price ?? item.currentPrice;
                 const prev    = item.history[item.history.length - 2]?.price ?? current;
@@ -541,20 +543,20 @@ export default function Home() {
                   }))
                 ];
 
-                const trendColor = forecast?.trend === 'RISING' ? 'text-red-600' : forecast?.trend === 'FALLING' ? 'text-emerald-600' : 'text-slate-500';
+                const trendColor = forecast?.trend === 'RISING' ? 'text-red-400' : forecast?.trend === 'FALLING' ? 'text-emerald-400' : 'text-[#8A8F98]';
 
                 return (
-                  <Card key={idx} className="p-4 flex flex-col gap-3">
-                    <div className="flex items-start justify-between gap-2">
+                  <Card key={idx} className="p-5 flex flex-col gap-4 border border-white/10 hover:border-white/20 transition-all duration-300">
+                    <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <h3 className="font-semibold text-slate-900 truncate text-sm">{item.name}</h3>
-                        <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        <h3 className="font-bold text-[#EEEEEE] truncate text-[15px] tracking-tight">{item.name}</h3>
+                        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                           {item.isLive
-                            ? <Tag color="green"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />Live</Tag>
-                            : <Tag color="gray">Simulated</Tag>
+                            ? <Tag color="green" className="bg-emerald-500/20 border-emerald-500/30 text-[10px]"><span className="w-1 h-1 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_5px_rgba(16,185,129,0.8)]" />Live</Tag>
+                            : <Tag color="gray" className="text-[10px]">Simulated</Tag>
                           }
                           {forecast?.trend && forecast.trend !== 'STABLE' && (
-                            <span className={cn('text-[11px] font-medium flex items-center gap-0.5', trendColor)}>
+                            <span className={cn('text-[10px] font-bold uppercase tracking-widest flex items-center gap-0.5', trendColor)}>
                               {forecast.trend === 'RISING' ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
                               {forecast.trend} {forecast.trendPct > 0 && `${forecast.trendPct}%`}
                             </span>
@@ -562,61 +564,63 @@ export default function Home() {
                         </div>
                       </div>
                       <div className="text-right shrink-0">
-                        <p className="text-xl font-bold text-slate-900">${item.currentPrice.toFixed(2)}</p>
-                        <p className={cn('text-xs mt-0.5', pct > 0 ? 'text-red-500' : pct < 0 ? 'text-emerald-500' : 'text-slate-400')}>
-                          {pct > 0 ? '+' : ''}{pct.toFixed(1)}% MoM
+                        <p className="text-[22px] font-black text-[#EEEEEE] tracking-tighter">${item.currentPrice.toFixed(2)}</p>
+                        <p className={cn('text-[11px] font-bold tracking-widest mt-1', pct > 0 ? 'text-red-400' : pct < 0 ? 'text-emerald-400' : 'text-[#8A8F98]')}>
+                          {pct > 0 ? '↑' : pct < 0 ? '↓' : ''}{Math.abs(pct).toFixed(1)}% MoM
                         </p>
                       </div>
                     </div>
 
                     {forecast?.anomaly && (
                       <div className={cn(
-                        'text-xs px-3 py-2 rounded-lg flex items-start gap-1.5',
-                        forecast.anomaly.type === 'SPIKE' ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'
+                        'text-[11px] font-bold uppercase tracking-wide px-3 py-2 rounded-[6px] flex items-center gap-1.5 border',
+                        forecast.anomaly.type === 'SPIKE' ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
                       )}>
-                        <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
                         {forecast.anomaly.type === 'SPIKE'
-                          ? `Price spike: ${forecast.anomaly.deviationPct}% above average`
-                          : `Below average: ${forecast.anomaly.deviationPct}% — good time to buy`}
+                          ? `Price spike: ${forecast.anomaly.deviationPct}% above avg`
+                          : `Below average: ${forecast.anomaly.deviationPct}% — buy now`}
                       </div>
                     )}
 
-                    <div className="h-20">
+                    <div className="h-24 pointer-events-none mt-2">
                       <ResponsiveContainer width="100%" height="100%">
                         <ComposedChart data={chartData} margin={{ top: 2, right: 2, left: 2, bottom: 2 }}>
                           <defs>
                             <linearGradient id={`grad-${idx}`} x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%"  stopColor="#3B82F6" stopOpacity={0.15} />
-                              <stop offset="95%" stopColor="#3B82F6" stopOpacity={0} />
+                              <stop offset="5%"  stopColor="#5E6AD2" stopOpacity={0.4} />
+                              <stop offset="95%" stopColor="#5E6AD2" stopOpacity={0} />
                             </linearGradient>
                           </defs>
                           <XAxis dataKey="date" hide />
                           <YAxis domain={['dataMin - 0.5', 'dataMax + 0.5']} hide />
                           <Tooltip
-                            contentStyle={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '11px', color: '#1e293b' }}
+                            contentStyle={{ background: '#080808', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', fontSize: '11px', color: '#EEEEEE', fontWeight: 'bold' }}
+                            itemStyle={{ color: '#8A8F98' }}
+                            labelStyle={{ color: '#EEEEEE', marginBottom: '4px' }}
                             labelFormatter={l => new Date(l).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
                             formatter={(v: any, n) => [v !== null ? `$${Number(v).toFixed(2)}` : '—', n === 'forecast' ? 'ML Forecast' : 'Market Price'] as [string, string]}
                           />
-                          <Area type="monotone" dataKey="price" stroke="#3B82F6" strokeWidth={1.5} fill={`url(#grad-${idx})`} dot={false} connectNulls={false} />
-                          <Line type="monotone" dataKey="forecast" stroke="#F59E0B" strokeWidth={1.5} strokeDasharray="4 2" dot={false} connectNulls />
+                          <Area type="monotone" dataKey="price" stroke="#5E6AD2" strokeWidth={2} fill={`url(#grad-${idx})`} dot={false} connectNulls={false} />
+                          <Line type="monotone" dataKey="forecast" stroke="#8A8F98" strokeWidth={2} strokeDasharray="4 4" dot={false} connectNulls />
                         </ComposedChart>
                       </ResponsiveContainer>
                     </div>
 
                     {forecast?.buySignal && (
-                      <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
+                      <div className="flex items-center justify-between pt-3 border-t border-white/10 text-[11px] font-bold uppercase tracking-widest mt-auto">
                         <span className={cn(
-                          'font-semibold flex items-center gap-1',
-                          forecast.buySignal.signal === 'BUY_NOW' ? 'text-emerald-600' :
-                          forecast.buySignal.signal === 'WAIT'    ? 'text-amber-600' : 'text-slate-400'
+                          'flex items-center gap-1.5',
+                          forecast.buySignal.signal === 'BUY_NOW' ? 'text-emerald-400 drop-shadow-[0_0_5px_rgba(16,185,129,0.5)]' :
+                          forecast.buySignal.signal === 'WAIT'    ? 'text-amber-400' : 'text-[#8A8F98]'
                         )}>
                           {forecast.buySignal.signal === 'BUY_NOW'
-                            ? <><ShoppingCart className="w-3 h-3" />Buy now</>
+                            ? <><ShoppingCart className="w-3.5 h-3.5" />Buy now</>
                             : forecast.buySignal.signal === 'WAIT'
-                            ? <><Clock className="w-3 h-3" />Wait</>
-                            : <><Minus className="w-3 h-3" />Neutral</>}
+                            ? <><Clock className="w-3.5 h-3.5" />Wait</>
+                            : <><Minus className="w-3.5 h-3.5" />Neutral</>}
                         </span>
-                        <span className="text-slate-400">R²={forecast.r2} · {forecast.confidence}</span>
+                        <span className="text-[#8A8F98]">R² {forecast.r2} · {forecast.confidence}</span>
                       </div>
                     )}
                   </Card>
@@ -634,69 +638,70 @@ export default function Home() {
           title="Supplier Discovery"
           subtitle="Search by city or zip code to find nearby wholesale food distributors"
         >
-          <Card className="p-5 space-y-5">
-            <div className="flex flex-col sm:flex-row gap-3">
+          <Card className="p-6 space-y-6">
+            <div className="flex flex-col sm:flex-row gap-4">
               <div className="flex-1 relative">
-                <MapPin className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#8A8F98]" />
                 <input
                   type="text"
                   value={distributorLocation}
                   onChange={e => setDistributorLocation(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && handleFindDistributors()}
                   placeholder="e.g. New York, NY  or  10001"
-                  className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+                  className="w-full pl-11 pr-4 py-2.5 bg-[#000000] border border-white/10 rounded-lg text-[13px] text-[#EEEEEE] placeholder:text-[#8A8F98]/50 focus:outline-none focus:ring-1 focus:ring-[#5E6AD2] focus:border-[#5E6AD2] shadow-inner"
                 />
               </div>
               <Btn onClick={handleFindDistributors} disabled={!distributorLocation.trim()} loading={loadingDistributors}>
-                <Search className="w-3.5 h-3.5" />
+                <Search className="w-4 h-4" />
                 {loadingDistributors ? 'Searching…' : 'Find Suppliers'}
               </Btn>
             </div>
 
             {distributors.length === 0 && !loadingDistributors && (
-              <div className="py-10 flex flex-col items-center text-slate-400 gap-2 border border-dashed border-slate-200 rounded-lg">
-                <Building2 className="w-8 h-8 opacity-25" />
-                <p className="text-sm">Enter a location to discover local distributors</p>
+              <div className="py-14 flex flex-col items-center text-[#8A8F98] gap-3 border border-dashed border-white/10 rounded-lg bg-white/[0.01]">
+                <Building2 className="w-8 h-8 opacity-20" />
+                <p className="text-[13px] font-medium tracking-tight">Enter a location to discover local distributors</p>
               </div>
             )}
 
             {distributors.length > 0 && (
               <>
                 {distributorSource && (
-                  <div className="flex items-center gap-2 text-xs text-slate-500">
+                  <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-[#8A8F98]">
                     <span>Source:</span>
                     <Tag color={distributorSource.startsWith('OpenStreetMap') ? 'green' : 'gray'}>
-                      {distributorSource.startsWith('OpenStreetMap') && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />}
+                      {distributorSource.startsWith('OpenStreetMap') && <span className="w-1 h-1 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_5px_rgba(16,185,129,0.5)]" />}
                       {distributorSource}
                     </Tag>
                   </div>
                 )}
-                <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
                   {distributors.map((dist, i) => (
-                    <div key={i} className="border border-slate-200 rounded-lg p-4 hover:border-blue-300 hover:bg-blue-50/30 transition-colors flex flex-col gap-2.5">
-                      <div className="flex items-start justify-between gap-2">
+                    <div key={i} className="border border-white/10 rounded-lg p-5 hover:border-[#5E6AD2]/50 hover:bg-[#5E6AD2]/5 transition-all duration-300 flex flex-col gap-3 group relative overflow-hidden">
+                      <div className="absolute inset-0 bg-gradient-to-b from-white/[0.04] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
+                      <div className="flex items-start justify-between gap-3 relative z-10">
                         <div className="min-w-0">
-                          <h3 className="font-semibold text-sm text-slate-900 truncate">{dist.name}</h3>
-                          <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1 truncate">
+                          <h3 className="font-bold text-[14px] text-[#EEEEEE] truncate tracking-tight">{dist.name}</h3>
+                          <p className="text-[11px] text-[#8A8F98] mt-1 flex items-center gap-1.5 truncate font-medium">
                             <MapPin className="w-3 h-3 shrink-0" />{dist.location}
                           </p>
                         </div>
                         {sentRFPs.some(r => r.distributorName === dist.name) && (
-                          <Tag color="green"><CheckCircle className="w-3 h-3" />Sent</Tag>
+                          <Tag color="green" className="bg-emerald-500/10 border-emerald-500/20 text-[10px]"><CheckCircle className="w-3 h-3" />Sent</Tag>
                         )}
                       </div>
-                      {dist.specialty && <p className="text-[11px] text-slate-500 leading-snug">{dist.specialty}</p>}
-                      <p className="text-[11px] text-slate-400 font-mono truncate">{dist.email}</p>
+                      {dist.specialty && <p className="text-[11px] text-[#8A8F98] leading-relaxed relative z-10">{dist.specialty}</p>}
+                      <p className="text-[11px] text-[#8A8F98]/70 font-mono truncate relative z-10">{dist.email}</p>
                     </div>
                   ))}
                 </div>
-                <div className="flex justify-end">
+                <div className="flex justify-end pt-2">
                   <Btn
                     onClick={handleSendRFPs}
                     disabled={sendingRFPs || sentRFPs.length > 0}
                     loading={sendingRFPs}
                   >
-                    <Mail className="w-3.5 h-3.5" />
+                    <Mail className="w-4 h-4" />
                     {sentRFPs.length > 0 ? `RFPs sent to ${sentRFPs.length} suppliers` : `Send RFPs to ${distributors.length} suppliers`}
                   </Btn>
                 </div>
@@ -728,21 +733,21 @@ export default function Home() {
           >
             {/* Conversation logs */}
             {Object.keys(conversationLogs).length > 0 && (
-              <Card className="p-5 space-y-4">
-                <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Negotiation Conversations</h3>
+              <Card className="p-6 space-y-5">
+                <h3 className="text-[11px] font-bold text-[#8A8F98] uppercase tracking-widest">Negotiation Conversations</h3>
                 {sentRFPs.map((rfp: any) => {
                   const logs = conversationLogs[rfp.id];
                   if (!logs) return null;
                   return (
-                    <div key={rfp.id} className="space-y-1.5 border-t border-slate-100 pt-4 first:border-0 first:pt-0">
-                      <p className="text-xs font-semibold text-slate-600">{rfp.distributorName}</p>
+                    <div key={rfp.id} className="space-y-2 border-t border-white/5 pt-5 first:border-0 first:pt-0">
+                      <p className="text-[13px] font-bold text-[#EEEEEE]">{rfp.distributorName}</p>
                       {logs.map((entry: any, i: number) => (
                         <div key={i} className={cn(
-                          'text-xs rounded-lg px-3.5 py-2.5',
-                          entry.role === 'AutoRFP Agent' ? 'bg-blue-50 text-blue-800'
-                          : entry.role === 'system' ? 'text-slate-400 italic' : 'bg-slate-50 text-slate-700'
+                          'text-[13px] rounded-lg px-4 py-3 leading-relaxed tracking-tight',
+                          entry.role === 'AutoRFP Agent' ? 'bg-[#5E6AD2]/10 text-[#5E6AD2] border border-[#5E6AD2]/20 shadow-[inset_0_1px_0_0_rgba(94,106,210,0.2)]'
+                          : entry.role === 'system' ? 'text-[#8A8F98]/60 italic font-mono text-[11px]' : 'bg-white/[0.03] text-[#EEEEEE] border border-white/5'
                         )}>
-                          {entry.role !== 'system' && <span className="font-semibold block mb-0.5">{entry.role}</span>}
+                          {entry.role !== 'system' && <span className="font-bold uppercase text-[10px] tracking-widest block mb-1 opacity-60">{entry.role}</span>}
                           {entry.message}
                         </div>
                       ))}
@@ -754,13 +759,13 @@ export default function Home() {
 
             {/* Manual email simulator */}
             {showEmailSimulator && (
-              <Card className="p-5 space-y-4 border-blue-200 bg-blue-50/40">
+              <Card className="p-6 space-y-4 border-[#5E6AD2]/30 bg-[#5E6AD2]/5 shadow-[inset_0_1px_0_0_rgba(94,106,210,0.2)]">
                 <div>
-                  <h3 className="text-sm font-semibold text-slate-800">Process Vendor Email</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">Paste a vendor reply — AI parses the quote automatically</p>
+                  <h3 className="text-sm font-bold text-[#EEEEEE]">Process Vendor Email</h3>
+                  <p className="text-[11px] font-medium uppercase tracking-widest text-[#8A8F98] mt-1">Paste a vendor reply — AI parses the quote automatically</p>
                 </div>
                 <select
-                  className="w-full border border-slate-300 rounded-lg p-2.5 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                  className="w-full bg-[#000000] border border-[#5E6AD2]/30 rounded-lg p-3 text-[13px] text-[#EEEEEE] focus:outline-none focus:ring-1 focus:ring-[#5E6AD2]"
                   value={simulatedEmailRfpId}
                   onChange={e => setSimulatedEmailRfpId(e.target.value)}
                 >
@@ -768,13 +773,13 @@ export default function Home() {
                   {sentRFPs.map(rfp => <option key={rfp.id} value={rfp.id}>{rfp.distributorName}</option>)}
                 </select>
                 <textarea
-                  className="w-full border border-slate-300 rounded-lg p-3 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 min-h-[100px] font-mono"
+                  className="w-full bg-[#000000] border border-[#5E6AD2]/30 rounded-lg p-4 text-[13px] text-[#EEEEEE] focus:outline-none focus:ring-1 focus:ring-[#5E6AD2] min-h-[100px] font-mono leading-relaxed"
                   placeholder="Hi, we can supply everything. Total: $840.00, delivery Tue/Fri."
                   value={simulatedEmailBody}
                   onChange={e => setSimulatedEmailBody(e.target.value)}
                 />
                 <div className="flex justify-end">
-                  <Btn onClick={handleSimulateEmail} disabled={!simulatedEmailRfpId || !simulatedEmailBody.trim()} loading={simulatingEmail}>
+                  <Btn onClick={handleSimulateEmail} disabled={!simulatedEmailRfpId || !simulatedEmailBody.trim()} loading={simulatingEmail} className="linear-glow">
                     Extract Quote
                   </Btn>
                 </div>
@@ -782,83 +787,87 @@ export default function Home() {
             )}
 
             {followUpEmail && (
-              <Card className="p-5 space-y-3 border-amber-200 bg-amber-50/40">
-                <p className="text-sm font-semibold text-amber-800 flex items-center gap-1.5"><Zap className="w-4 h-4" />Incomplete quote — follow-up generated</p>
-                <pre className="bg-white border border-amber-200 rounded-lg p-3.5 text-xs text-slate-700 font-mono whitespace-pre-wrap">{followUpEmail}</pre>
-                <button onClick={() => setFollowUpEmail('')} className="text-xs text-amber-600 hover:text-amber-800">Dismiss</button>
+              <Card className="p-5 space-y-3 border-amber-500/20 bg-amber-500/5">
+                <p className="text-[13px] font-bold text-amber-500 flex items-center gap-1.5"><Zap className="w-4 h-4" />Incomplete quote — follow-up generated</p>
+                <pre className="bg-[#000000] border border-amber-500/20 rounded-lg p-4 text-[11px] text-amber-200/80 font-mono whitespace-pre-wrap leading-relaxed shadow-inner">{followUpEmail}</pre>
+                <button onClick={() => setFollowUpEmail('')} className="text-[11px] font-bold uppercase tracking-widest text-amber-500 hover:text-amber-400 transition-colors">Dismiss</button>
               </Card>
             )}
 
             {/* Quotes table */}
             <Card className="overflow-hidden">
               {quotes.length === 0 ? (
-                <div className="py-14 flex flex-col items-center text-slate-400 gap-2">
-                  <FileCheck className="w-8 h-8 opacity-20" />
-                  <p className="text-sm">No quotes yet — use Auto-simulate above</p>
+                <div className="py-16 flex flex-col items-center text-[#8A8F98] gap-3">
+                  <FileCheck className="w-10 h-10 opacity-20" />
+                  <p className="text-[13px] font-medium tracking-tight">No quotes yet — use Auto-simulate above</p>
                 </div>
               ) : (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-200 bg-slate-50 text-left">
-                      <th className="px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Supplier</th>
-                      <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide hidden md:table-cell">Notes</th>
-                      <th className="px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide text-right">Total Quote</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {quotes.map((q, i) => (
-                      <tr key={i} className={cn('hover:bg-slate-50 transition-colors', i === 0 && 'bg-emerald-50/50')}>
-                        <td className="px-5 py-4">
-                          <div className="flex items-center gap-2.5">
-                            {i === 0 && <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400 shrink-0" />}
-                            <div>
-                              <p className="font-semibold text-slate-900">{q.distributorName}</p>
-                              <p className="text-xs text-slate-400 mt-0.5">{q.distributorLocation}</p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-4 text-xs text-slate-500 hidden md:table-cell max-w-xs">
-                          <span className="line-clamp-2">{q.details || '—'}</span>
-                        </td>
-                        <td className={cn('px-5 py-4 text-right font-bold text-base', i === 0 ? 'text-emerald-600' : 'text-slate-800')}>
-                          ${Number(q.price).toFixed(2)}
-                        </td>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-white/10 bg-white/[0.02] text-left">
+                        <th className="px-6 py-4 text-[11px] font-bold text-[#8A8F98] uppercase tracking-widest w-1/3">Supplier</th>
+                        <th className="px-6 py-4 text-[11px] font-bold text-[#8A8F98] uppercase tracking-widest hidden md:table-cell">Notes</th>
+                        <th className="px-6 py-4 text-[11px] font-bold text-[#8A8F98] uppercase tracking-widest text-right w-32">Total Quote</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {quotes.map((q, i) => (
+                        <tr key={i} className={cn('hover:bg-white/[0.03] transition-colors', i === 0 && 'bg-[#5E6AD2]/[0.02]')}>
+                          <td className="px-6 py-5">
+                            <div className="flex items-center gap-3">
+                              {i === 0 && <Star className="w-4 h-4 text-emerald-400 fill-emerald-400 shrink-0 drop-shadow-[0_0_8px_rgba(16,185,129,0.5)]" />}
+                              <div>
+                                <p className="font-bold text-[#EEEEEE] tracking-tight">{q.distributorName}</p>
+                                <p className="text-[11px] font-medium text-[#8A8F98] mt-1">{q.distributorLocation}</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-5 text-[12px] text-[#8A8F98] hidden md:table-cell">
+                            <span className="line-clamp-2 leading-relaxed">{q.details || '—'}</span>
+                          </td>
+                          <td className={cn('px-6 py-5 text-right font-mono text-[14px] font-bold tracking-tight', i === 0 ? 'text-emerald-400' : 'text-[#EEEEEE]')}>
+                            ${Number(q.price).toFixed(2)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
 
               {quotes.length > 0 && (
-                <div className="border-t border-slate-200 p-5 space-y-4">
+                <div className="border-t border-white/10 p-6 space-y-5 bg-white/[0.01]">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-blue-500" />AI Recommendation
+                    <h3 className="text-[13px] font-bold text-[#EEEEEE] flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-[#5E6AD2]" />AI Recommendation
                     </h3>
                     <Btn size="sm" onClick={handleGetRecommendation} loading={loadingRecommendation}>
                       {loadingRecommendation ? 'Analyzing…' : 'Get recommendation'}
                     </Btn>
                   </div>
                   {recommendation ? (
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2.5">
-                      <p className="text-xs text-blue-500 font-semibold uppercase tracking-wide">Recommended supplier</p>
-                      <h4 className="text-lg font-bold text-slate-900">{recommendation.recommendedDistributor}</h4>
-                      <p className="text-sm text-slate-700 leading-relaxed">{recommendation.reasoning}</p>
+                    <div className="bg-white/[0.02] border border-white/10 rounded-xl p-5 space-y-3 relative overflow-hidden group">
+                      <div className="absolute inset-0 bg-gradient-to-r from-[#5E6AD2]/5 to-transparent pointer-events-none" />
+                      <p className="text-[10px] text-[#5E6AD2] font-black uppercase tracking-[0.2em] relative z-10">Recommended supplier</p>
+                      <h4 className="text-xl font-bold text-[#EEEEEE] tracking-tight relative z-10">{recommendation.recommendedDistributor}</h4>
+                      <p className="text-[13px] text-[#8A8F98] leading-relaxed relative z-10">{recommendation.reasoning}</p>
                       {recommendation.potentialRisks && (
-                        <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 text-xs text-amber-800">
-                          <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />{recommendation.potentialRisks}
+                        <div className="flex items-start gap-2.5 bg-amber-500/10 border border-amber-500/20 rounded-md px-3.5 py-3 text-[12px] text-amber-500 font-medium relative z-10 shadow-inner">
+                          <AlertTriangle className="w-4 h-4 shrink-0" />{recommendation.potentialRisks}
                         </div>
                       )}
                       {recommendation.savings > 0 && (
-                        <p className="text-sm font-semibold text-emerald-600">
-                          ${Number(recommendation.savings).toFixed(2)} saved vs most expensive quote
+                        <p className="text-[13px] font-bold text-emerald-400 relative z-10">
+                          <span className="inline-block px-1.5 py-0.5 bg-emerald-500/10 border border-emerald-500/20 rounded mr-2">−${Number(recommendation.savings).toFixed(2)}</span>
+                          saved vs most expensive quote
                         </p>
                       )}
                     </div>
                   ) : (
-                    <p className="text-sm text-slate-400 border border-dashed border-slate-200 rounded-lg py-5 text-center">
+                    <div className="flex flex-col items-center justify-center p-8 border border-dashed border-white/10 rounded-xl text-[#8A8F98] text-[13px] font-medium">
                       Click to get an AI-powered supplier recommendation
-                    </p>
+                    </div>
                   )}
                 </div>
               )}
@@ -879,6 +888,7 @@ export default function Home() {
                 onClick={handleAgentNegotiation}
                 disabled={negotiating || !!negotiationComplete}
                 loading={negotiating}
+                className="linear-glow"
               >
                 <Zap className="w-3.5 h-3.5" />
                 {negotiating ? 'Agents running…' : negotiationComplete ? 'Negotiation complete' : 'Launch agent pipeline'}
@@ -886,125 +896,126 @@ export default function Home() {
             }
           >
             {agentEvents.length === 0 && !negotiating && !negotiationComplete && (
-              <Card className="py-14 flex flex-col items-center gap-4">
-                <div className="flex -space-x-2">
+              <Card className="py-20 flex flex-col items-center gap-5 border border-dashed border-white/10 bg-white/[0.01] shadow-none">
+                <div className="flex -space-x-3">
                   {['🎯','📊','🤝','🏪','✅'].map((e, i) => (
-                    <div key={i} className="w-9 h-9 rounded-full bg-slate-100 border-2 border-white flex items-center justify-center text-base shadow-sm">{e}</div>
+                    <div key={i} className="w-10 h-10 rounded-full bg-[#000000] border border-white/10 flex items-center justify-center text-lg z-10">{e}</div>
                   ))}
                 </div>
                 <div className="text-center">
-                  <p className="text-sm font-medium text-slate-700">5 AI agents ready to negotiate on your behalf</p>
-                  <p className="text-xs text-slate-400 mt-1">Orchestrator → Market Analyst → Negotiation Agent → Vendor Simulator → Deal Auditor</p>
+                  <p className="text-[14px] font-bold text-[#EEEEEE] tracking-tight">5 AI agents ready to negotiate on your behalf</p>
+                  <p className="text-[11px] font-medium uppercase tracking-widest text-[#8A8F98] mt-2">Orchestrator → Market Analyst → Negotiation Agent → Vendor Simulator → Deal Auditor</p>
                 </div>
               </Card>
             )}
 
             {agentEvents.length > 0 && (
-              <div className="grid lg:grid-cols-2 gap-5">
+              <div className="grid lg:grid-cols-2 gap-6">
                 {/* Agent Activity */}
-                <Card className="flex flex-col overflow-hidden">
-                  <div className="flex items-center gap-2 px-5 py-3 border-b border-slate-200 bg-slate-50">
-                    <Cpu className="w-3.5 h-3.5 text-blue-500" />
-                    <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Agent Activity</span>
-                    {negotiating && <span className="ml-auto w-2 h-2 rounded-full bg-blue-500 animate-pulse" />}
+                <Card className="flex flex-col overflow-hidden border border-white/10 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] bg-[#000000]/60 relative z-10 group">
+                  <div className="absolute top-0 left-0 w-64 h-64 bg-[#5E6AD2]/10 blur-[80px] rounded-full pointer-events-none opacity-50 group-hover:opacity-100 transition-opacity duration-1000" />
+                  <div className="flex items-center gap-2.5 px-6 py-4 border-b border-white/10 bg-white/[0.02] relative z-10">
+                    <Cpu className="w-4 h-4 text-[#5E6AD2]" />
+                    <span className="text-[11px] font-bold text-[#8A8F98] uppercase tracking-widest">Agent terminal</span>
+                    {negotiating && <span className="ml-auto w-2 h-2 rounded-full bg-[#5E6AD2] animate-pulse shadow-[0_0_8px_rgba(94,106,210,0.8)]" />}
                   </div>
-                  <div className="flex-1 overflow-y-auto p-4 space-y-2 max-h-[440px]">
+                  <div className="flex-1 overflow-y-auto p-5 space-y-3 max-h-[500px] relative z-10">
                     {agentEvents.map((ev, i) => (
                       <div key={i}>
                         {ev.type === 'agent_start' && (
-                          <div className="flex items-start gap-2.5 py-2 border-b border-slate-100">
-                            <span className="text-base leading-none mt-0.5">{ev.emoji}</span>
+                          <div className="flex items-start gap-3 py-3 border-b border-white/5">
+                            <span className="text-xl leading-none mt-0.5">{ev.emoji}</span>
                             <div className="min-w-0 flex-1">
-                              <p className="text-xs font-semibold text-slate-800">{ev.agent}</p>
-                              <p className="text-[11px] text-slate-500">{ev.task}</p>
+                              <p className="text-[13px] font-bold text-[#EEEEEE]">{ev.agent}</p>
+                              <p className="text-[12px] text-[#8A8F98] leading-relaxed mt-0.5 font-mono">{ev.task}</p>
                             </div>
-                            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-ping mt-1.5" />
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#5E6AD2] mt-1.5" />
                           </div>
                         )}
                         {ev.type === 'agent_result' && (
-                          <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5">
-                            <p className="text-[11px] font-semibold text-emerald-600 mb-1">{ev.emoji} {ev.agent} — done</p>
-                            <pre className="text-[10px] text-slate-500 font-mono whitespace-pre-wrap max-h-16 overflow-hidden">
+                          <div className="bg-[#000000] border border-white/10 rounded-lg px-4 py-3 mt-2 shadow-inner">
+                            <p className="text-[11px] font-bold text-emerald-400 mb-1.5 flex items-center gap-1.5">{ev.emoji} {ev.agent} <span className="text-white/30 font-medium">— done</span></p>
+                            <pre className="text-[11px] text-[#8A8F98]/80 font-mono whitespace-pre-wrap max-h-24 overflow-hidden leading-relaxed">
                               {JSON.stringify(ev.data, null, 2).slice(0, 250)}{JSON.stringify(ev.data||{}).length > 250 ? '…' : ''}
                             </pre>
                           </div>
                         )}
                         {ev.type === 'email_sent' && (
-                          <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-xs">
-                            <span className="text-blue-600 font-bold">↑</span>
-                            <span className="text-slate-600 flex-1 truncate">Counter-offer → {ev.to}</span>
-                            {ev.proposedPrice && <span className="font-mono font-semibold text-blue-700">${Number(ev.proposedPrice).toFixed(2)}</span>}
+                          <div className="flex items-center gap-2.5 px-4 py-3 bg-[#5E6AD2]/10 border border-[#5E6AD2]/20 rounded-lg text-[12px] mt-2 shadow-[inset_0_1px_0_0_rgba(94,106,210,0.1)]">
+                            <span className="text-[#5E6AD2] font-black">↑</span>
+                            <span className="text-[#5E6AD2]/80 flex-1 truncate font-medium">Counter-offer → {ev.to}</span>
+                            {ev.proposedPrice && <span className="font-mono font-bold text-[#5E6AD2]">${Number(ev.proposedPrice).toFixed(2)}</span>}
                           </div>
                         )}
                         {ev.type === 'email_received' && (
-                          <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs">
-                            <span className="text-amber-600 font-bold">↓</span>
-                            <span className="text-slate-500 flex-1 truncate">{ev.from}</span>
+                          <div className="flex items-center gap-2.5 px-4 py-3 bg-white/[0.03] border border-white/10 rounded-lg text-[12px] mt-2">
+                            <span className="text-amber-500 font-black">↓</span>
+                            <span className="text-[#8A8F98] flex-1 truncate font-medium">{ev.from}</span>
                             {ev.decision && (
-                              <span className={cn('px-1.5 py-0.5 rounded text-[10px] font-semibold',
-                                ev.decision==='ACCEPT' ? 'bg-emerald-100 text-emerald-700' :
-                                ev.decision==='COUNTER' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'
+                              <span className={cn('px-2 py-0.5 rounded-[4px] text-[10px] font-bold uppercase tracking-widest',
+                                ev.decision==='ACCEPT' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                                ev.decision==='COUNTER' ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20' : 'bg-red-500/10 text-red-500 border border-red-500/20'
                               )}>{ev.decision}</span>
                             )}
                           </div>
                         )}
                         {ev.type === 'negotiation_round' && (
-                          <div className="flex items-center gap-1.5 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs font-mono">
-                            <span className="text-slate-500 font-sans truncate max-w-[80px]">{ev.vendorName}</span>
-                            <span className="text-slate-400">${Number(ev.originalPrice).toFixed(0)}</span>
-                            <ChevronRight className="w-3 h-3 text-slate-300" />
-                            <span className="text-slate-500">${Number(ev.counterPrice).toFixed(0)}</span>
-                            <ChevronRight className="w-3 h-3 text-slate-300" />
-                            <span className={cn('font-semibold', ev.savings > 0 ? 'text-emerald-600' : 'text-slate-500')}>
+                          <div className="flex items-center gap-2 px-4 py-3 bg-white/[0.02] border border-white/5 rounded-lg text-[12px] font-mono mt-2">
+                            <span className="text-[#8A8F98] font-sans font-bold truncate max-w-[80px]">{ev.vendorName}</span>
+                            <span className="text-red-400/80 line-through decoration-red-500/50">${Number(ev.originalPrice).toFixed(0)}</span>
+                            <ChevronRight className="w-3.5 h-3.5 text-white/20" />
+                            <span className="text-amber-400">${Number(ev.counterPrice).toFixed(0)}</span>
+                            <ChevronRight className="w-3.5 h-3.5 text-white/20" />
+                            <span className={cn('font-bold tracking-tight', ev.savings > 0 ? 'text-emerald-400 drop-shadow-[0_0_5px_rgba(16,185,129,0.3)]' : 'text-[#8A8F98]')}>
                               ${Number(ev.finalPrice).toFixed(0)}
                             </span>
-                            {ev.savings > 0 && <span className="ml-auto text-emerald-600">−${Number(ev.savings).toFixed(2)}</span>}
+                            {ev.savings > 0 && <span className="ml-auto text-emerald-400 font-bold">−${Number(ev.savings).toFixed(2)}</span>}
                           </div>
                         )}
                         {ev.type === 'error' && (
-                          <div className="px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">✗ {ev.message}</div>
+                          <div className="px-4 py-3 bg-red-500/10 border border-red-500/20 rounded-lg text-[12px] font-medium text-red-400 mt-2">✗ {ev.message}</div>
                         )}
                       </div>
                     ))}
                     {negotiating && (
-                      <div className="flex items-center gap-2 py-2 text-xs text-slate-400 animate-pulse">
-                        <Loader2 className="w-3 h-3 animate-spin" />Next agent processing…
+                      <div className="flex items-center gap-2.5 py-4 text-[12px] font-medium text-[#8A8F98]">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-[#5E6AD2]" />System processing…
                       </div>
                     )}
                   </div>
                 </Card>
 
                 {/* Email Thread */}
-                <Card className="flex flex-col overflow-hidden">
-                  <div className="flex items-center gap-2 px-5 py-3 border-b border-slate-200 bg-slate-50">
-                    <MessageSquare className="w-3.5 h-3.5 text-blue-500" />
-                    <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Negotiation Thread</span>
-                    <span className="ml-auto text-[10px] text-slate-400">AI-to-AI · no real emails sent</span>
+                <Card className="flex flex-col overflow-hidden border border-white/10 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] bg-[#000000]">
+                  <div className="flex items-center gap-2.5 px-6 py-4 border-b border-white/10 bg-white/[0.02]">
+                    <MessageSquare className="w-4 h-4 text-[#8A8F98]" />
+                    <span className="text-[11px] font-bold text-[#8A8F98] uppercase tracking-widest">Email Interceptors</span>
+                    <span className="ml-auto text-[10px] font-bold text-white/30 uppercase tracking-widest">AI-to-AI ONLY</span>
                   </div>
-                  <div className="flex-1 overflow-y-auto p-4 space-y-3 max-h-[440px]">
+                  <div className="flex-1 overflow-y-auto p-5 space-y-4 max-h-[500px]">
                     {emailThread.length === 0 && (
-                      <div className="py-10 text-center text-slate-400 text-sm border border-dashed border-slate-200 rounded-lg">
-                        Email exchanges appear here as agents negotiate
+                      <div className="py-14 text-center text-[#8A8F98] text-[13px] font-medium border border-dashed border-white/5 rounded-xl">
+                        Intercepted emails appear here
                       </div>
                     )}
                     {emailThread.map((email, i) => (
                       <div key={i} className={cn(
-                        'rounded-xl p-4 text-xs space-y-2 border',
+                        'rounded-xl p-4 text-[13px] space-y-2 border shadow-inner',
                         email.direction === 'sent'
-                          ? 'bg-blue-50 border-blue-200 ml-6'
-                          : 'bg-white border-slate-200 mr-6'
+                          ? 'bg-[#5E6AD2]/5 border-[#5E6AD2]/20 shadow-[inset_0_1px_0_0_rgba(94,106,210,0.1)] ml-10'
+                          : 'bg-white/[0.02] border-white/5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.02)] mr-10'
                       )}>
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-semibold text-slate-800">
-                            {email.direction === 'sent' ? '↑ AutoRFP Agent' : `↓ ${email.from}`}
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="font-bold text-[#EEEEEE] tracking-tight">
+                            {email.direction === 'sent' ? '↑ Agent' : `↓ ${email.from}`}
                           </span>
-                          <span className="text-[10px] text-slate-400">→ {email.to}</span>
+                          <span className="text-[10px] text-[#8A8F98] font-bold uppercase tracking-widest truncate max-w-[100px]">→ {email.to}</span>
                         </div>
-                        <p className="font-semibold text-slate-700 text-[11px]">{email.subject}</p>
-                        <p className="text-slate-600 whitespace-pre-wrap leading-relaxed">{email.body}</p>
-                        <div className="flex flex-wrap gap-1.5 pt-1">
+                        <p className="font-bold text-[#8A8F98] text-[11px] uppercase tracking-wide">{email.subject}</p>
+                        <p className="text-[#8A8F98]/90 whitespace-pre-wrap leading-relaxed pb-1">{email.body}</p>
+                        <div className="flex flex-wrap gap-2 pt-2 border-t border-white/5">
                           {email.proposedPrice && (
-                            <Tag color="blue">Proposed ${Number(email.proposedPrice).toFixed(2)}</Tag>
+                            <Tag color="blue" className="bg-[#5E6AD2]/10 border-[#5E6AD2]/20">Proposed ${Number(email.proposedPrice).toFixed(2)}</Tag>
                           )}
                           {email.finalPrice && email.decision && (
                             <Tag color={email.decision==='ACCEPT' ? 'green' : email.decision==='COUNTER' ? 'amber' : 'red'}>
@@ -1021,75 +1032,81 @@ export default function Home() {
 
             {/* Final deal summary */}
             {negotiationComplete && (
-              <Card className="p-6 border-emerald-200 space-y-5">
-                <div className="flex items-start justify-between gap-4 flex-wrap">
+              <Card className="p-8 border-[#5E6AD2]/20 space-y-8 bg-[#000000]/60 relative z-10 overflow-hidden shadow-[inset_0_1px_0_0_rgba(94,106,210,0.1),0_0_40px_rgba(0,0,0,0.5)]">
+                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-[#5E6AD2]/20 via-transparent to-transparent opacity-60 pointer-events-none" />
+                <div className="flex items-start justify-between gap-4 flex-wrap relative z-10">
                   <div>
-                    <p className="text-xs text-emerald-600 font-semibold uppercase tracking-wide mb-1">Negotiation complete</p>
-                    <h3 className="text-2xl font-bold text-slate-900">{negotiationComplete.winner}</h3>
-                    <p className="text-sm text-slate-500 mt-1">Best negotiated deal · {new Date().toLocaleDateString()}</p>
+                    <p className="text-[10px] text-[#5E6AD2] font-black uppercase tracking-[0.2em] mb-2 drop-shadow-[0_0_5px_rgba(94,106,210,0.5)]">Negotiation complete</p>
+                    <h3 className="text-3xl font-black text-[#EEEEEE] tracking-tight">{negotiationComplete.winner}</h3>
+                    <p className="text-[13px] font-medium text-[#8A8F98] mt-1.5 flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                      Best negotiated deal secured · {new Date().toLocaleDateString()}
+                    </p>
                   </div>
                   <div className="text-right">
-                    <p className="text-3xl font-bold text-slate-900">${Number(negotiationComplete.winnerPrice).toFixed(2)}</p>
-                    <p className="text-sm text-slate-500 mt-1">Final price</p>
+                    <p className="text-[40px] font-black text-[#EEEEEE] tracking-tighter leading-none">${Number(negotiationComplete.winnerPrice).toFixed(2)}</p>
+                    <p className="text-[11px] font-bold text-[#8A8F98] uppercase tracking-widest mt-2">Final price</p>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 relative z-10">
                   {[
                     { label: 'Total Savings',   value: `$${Number(negotiationComplete.totalSavings).toFixed(2)}`,     color: 'emerald' },
                     { label: 'Cost Reduction',  value: `${Number(negotiationComplete.savingsPercentage).toFixed(1)}%`, color: 'blue' },
                     { label: 'Deals Improved',  value: negotiationComplete.negotiationResults?.filter((r: any) => r.savings > 0).length ?? 0, color: 'indigo' },
                   ].map((s, i) => (
                     <div key={i} className={cn(
-                      'rounded-lg p-4 text-center border',
-                      s.color === 'emerald' ? 'bg-emerald-50 border-emerald-200' :
-                      s.color === 'blue'    ? 'bg-blue-50 border-blue-200' : 'bg-indigo-50 border-indigo-200'
+                      'rounded-xl p-5 border shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)]',
+                      s.color === 'emerald' ? 'bg-emerald-500/10 border-emerald-500/20' :
+                      s.color === 'blue'    ? 'bg-[#5E6AD2]/10 border-[#5E6AD2]/20' : 'bg-indigo-500/10 border-indigo-500/20'
                     )}>
-                      <p className={cn('text-2xl font-bold',
-                        s.color === 'emerald' ? 'text-emerald-700' :
-                        s.color === 'blue'    ? 'text-blue-700' : 'text-indigo-700'
+                      <p className={cn('text-2xl font-black tracking-tight',
+                        s.color === 'emerald' ? 'text-emerald-400 drop-shadow-[0_0_8px_rgba(16,185,129,0.3)]' :
+                        s.color === 'blue'    ? 'text-[#5E6AD2] drop-shadow-[0_0_8px_rgba(94,106,210,0.3)]' : 'text-indigo-400 drop-shadow-[0_0_8px_rgba(99,102,241,0.3)]'
                       )}>{s.value}</p>
-                      <p className="text-xs text-slate-500 mt-1">{s.label}</p>
+                      <p className="text-[11px] font-bold text-white/40 uppercase tracking-widest mt-1.5">{s.label}</p>
                     </div>
                   ))}
                 </div>
 
-                <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Executive Summary</p>
-                  <p className="text-sm text-slate-700 leading-relaxed">{negotiationComplete.executiveSummary}</p>
+                <div className="bg-[#000000] border border-[#5E6AD2]/20 rounded-xl p-6 relative z-10 shadow-inner">
+                  <p className="text-[11px] font-bold text-[#5E6AD2] uppercase tracking-widest mb-3 flex items-center gap-1.5"><Sparkles className="w-3.5 h-3.5" /> Executive Summary</p>
+                  <p className="text-[14px] text-[#EEEEEE]/90 leading-relaxed font-medium">{negotiationComplete.executiveSummary}</p>
                 </div>
 
                 {negotiationComplete.actionItems?.length > 0 && (
-                  <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 space-y-1.5">
-                    <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Action Items</p>
+                  <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl px-6 py-5 space-y-2.5 relative z-10 shadow-[inset_0_1px_0_0_rgba(245,158,11,0.1)]">
+                    <p className="text-[11px] font-bold text-amber-500 uppercase tracking-widest mb-1 shadow-sm">Action Items</p>
                     {negotiationComplete.actionItems.map((item: string, i: number) => (
-                      <p key={i} className="text-sm text-amber-800">• {item}</p>
+                      <p key={i} className="text-[13px] font-medium text-amber-400/90 flex items-start gap-2">
+                        <span className="text-amber-500 opacity-60 flex-shrink-0 mt-1">•</span> {item}
+                      </p>
                     ))}
                   </div>
                 )}
 
-                <div className="border border-slate-200 rounded-lg overflow-hidden">
-                  <div className="grid grid-cols-4 px-4 py-2.5 bg-slate-50 border-b border-slate-200 text-[10px] font-semibold text-slate-500 uppercase tracking-wide">
+                <div className="border border-white/10 rounded-xl overflow-hidden relative z-10 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] bg-[#000000]">
+                  <div className="grid grid-cols-4 px-5 py-3.5 bg-white/[0.02] border-b border-white/10 text-[10px] font-black text-[#8A8F98] uppercase tracking-widest">
                     <div className="col-span-2">Supplier</div>
                     <div className="text-right">Original</div>
                     <div className="text-right">Final</div>
                   </div>
                   {negotiationComplete.negotiationResults?.map((r: any, i: number) => (
-                    <div key={i} className="grid grid-cols-4 px-4 py-3 text-sm border-b border-slate-100 last:border-0 items-center hover:bg-slate-50 transition-colors">
-                      <div className="col-span-2 flex items-center gap-2 min-w-0">
-                        <span className="font-medium text-slate-800 truncate">{r.vendorName}</span>
+                    <div key={i} className="grid grid-cols-4 px-5 py-4 text-[13px] font-medium border-b border-white/5 last:border-0 items-center hover:bg-white/[0.03] transition-colors">
+                      <div className="col-span-2 flex items-center gap-3 min-w-0">
+                        <span className="font-bold text-[#EEEEEE] truncate tracking-tight">{r.vendorName}</span>
                         <Tag color={
                           r.decision==='ACCEPT'        ? 'green' :
                           r.decision==='COUNTER'       ? 'amber' :
                           r.decision==='NOT_TARGETED'  ? 'gray'  : 'red'
-                        }>
+                        } className="hidden sm:inline-flex shadow-sm">
                           {r.decision==='NOT_TARGETED' ? 'skipped' : r.decision.toLowerCase()}
                         </Tag>
                       </div>
-                      <div className="text-right text-slate-400 font-mono text-xs">${Number(r.originalPrice).toFixed(2)}</div>
-                      <div className={cn('text-right font-mono text-xs font-semibold', r.savings > 0 ? 'text-emerald-600' : 'text-slate-700')}>
+                      <div className="text-right text-[#8A8F98] font-mono text-[12px] line-through decoration-red-500/40">${Number(r.originalPrice).toFixed(2)}</div>
+                      <div className={cn('text-right font-mono text-[13px] font-bold tracking-tight', r.savings > 0 ? 'text-emerald-400' : 'text-[#8A8F98]')}>
                         ${Number(r.negotiatedPrice).toFixed(2)}
-                        {r.savings > 0 && <span className="text-emerald-500 text-[10px] ml-1">−${Number(r.savings).toFixed(0)}</span>}
+                        {r.savings > 0 && <span className="text-emerald-500 text-[10px] ml-1.5 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded shadow-sm">−${Number(r.savings).toFixed(0)}</span>}
                       </div>
                     </div>
                   ))}
@@ -1101,15 +1118,15 @@ export default function Home() {
       </main>
 
       {/* ── Footer ─────────────────────────────────────────────────────────────── */}
-      <footer className="border-t border-slate-200 bg-white mt-12">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between text-xs text-slate-400">
-          <span>AutoRFP · Intelligent Procurement Platform</span>
-          <div className="flex items-center gap-3">
-            <span>Groq LLaMA 3.3 70B</span>
-            <span>·</span>
-            <span>CME/CBOT Live Pricing</span>
-            <span>·</span>
-            <span>OpenStreetMap</span>
+      <footer className="border-t border-white/5 bg-[#000000] mt-16 relative z-10">
+        <div className="max-w-6xl mx-auto px-6 py-6 flex flex-col md:flex-row md:items-center justify-between text-[11px] font-bold text-[#8A8F98] uppercase tracking-widest gap-4">
+          <span className="flex items-center gap-2"><ChefHat className="w-3.5 h-3.5 text-[#5E6AD2]" /> AutoRFP Engine</span>
+          <div className="flex items-center flex-wrap gap-3">
+            <span className="hover:text-[#EEEEEE] transition-colors cursor-default">Groq LLaMA 3.3 70B</span>
+            <span className="opacity-30">/</span>
+            <span className="hover:text-[#EEEEEE] transition-colors cursor-default">CME / CBOT Pricing</span>
+            <span className="opacity-30">/</span>
+            <span className="hover:text-[#EEEEEE] transition-colors cursor-default">OSM Nodes</span>
           </div>
         </div>
       </footer>

@@ -7,9 +7,9 @@ AutoRFP automates the entire restaurant ingredient procurement pipeline in five 
 ## Demo walkthrough
 
 1. **Paste a menu** (text or URL) → Groq LLaMA 3.3 70B extracts every dish and ingredient
-2. **Run Market Analysis** → live CME/CBOT commodity futures + ML price forecasting with anomaly detection
-3. **Find Suppliers** → geosearch via OpenStreetMap/Overpass; curated pool of 15 real distributors as fallback
-4. **Auto-simulate vendor responses** → Groq negotiates multi-turn email conversations grounded in real quantities × market prices
+2. **Run Market Analysis** → live CME/CBOT futures + BLS retail prices + ML price forecasting with anomaly detection
+3. **Find Suppliers** → geosearch via OpenStreetMap/Overpass (50 km radius); curated distributor pool as last-resort fallback
+4. **Generate vendor responses** → Groq negotiates multi-turn email conversations grounded in real quantities × market prices
 5. **Launch Agent Pipeline** → 5 specialized AI agents negotiate autonomously via SSE-streamed email thread
 
 ---
@@ -30,10 +30,11 @@ AutoRFP automates the entire restaurant ingredient procurement pipeline in five 
 ### Data sources (all free, no API key)
 | Source | Used for |
 |---|---|
-| Yahoo Finance (`query1.finance.yahoo.com`) | CME Live Cattle (LE=F), CME Lean Hogs (HE=F), CBOT Wheat (ZW=F), CBOT Corn (ZC=F), CBOT Soybeans (ZS=F), CBOT Oats (ZO=F) |
+| Yahoo Finance (`query1.finance.yahoo.com`) | CME Live Cattle (LE=F), CME Lean Hogs (HE=F), CBOT Wheat (ZW=F), CBOT Corn (ZC=F), CBOT Soybeans (ZS=F), CBOT Oats (ZO=F), ICE Coffee (KC=F), ICE Sugar (SB=F), ICE Cocoa (CC=F), ICE OJ (OJ=F) |
+| BLS Public API (`api.bls.gov`) | Retail prices for chicken, eggs, milk, butter, cheese, tomatoes, potatoes, apples, bananas — no key required |
 | Nominatim (OpenStreetMap) | Geocode user-supplied city/zip to lat/lon |
-| Overpass API | OSM POI search for wholesale/food businesses within 30 km |
-| Curated mock pool | 15 real distributor names (Sysco, US Foods, Gordon Food Service, etc.); seeded Fisher-Yates shuffle gives consistent results per location |
+| Overpass API | OSM POI search for wholesale/food businesses within 50 km; includes cash & carry, restaurant supply, named distributors |
+| Curated distributor pool | 15 real distributor names (Sysco, US Foods, Gordon Food Service, etc.); seeded Fisher-Yates shuffle; used only when Overpass returns 0 results |
 
 ---
 
@@ -60,9 +61,9 @@ src/app/
 ├── quote/[rfpId]/page.tsx            # Vendor self-serve quote portal
 └── api/
     ├── parse-menu/route.ts           # Groq menu parsing (text or URL)
-    ├── pricing/route.ts              # Live Yahoo Finance + deterministic mock fallback
+    ├── pricing/route.ts              # Yahoo Finance → BLS → estimated fallback
     ├── ml/forecast/route.ts          # OLS regression, z-score anomaly, buy signals
-    ├── distributors/route.ts         # Nominatim → Overpass → seeded mock pool
+    ├── distributors/route.ts         # Nominatim → Overpass (50 km) → curated pool
     ├── send-rfp/route.ts             # RFP dispatch (logged, not emailed for safety)
     ├── simulate-conversation/route.ts # Groq multi-turn vendor negotiation
     ├── quotes/route.ts               # Fetch quotes by menuId
@@ -106,7 +107,7 @@ Edit `.env` with your values:
 |---|---|---|
 | `DATABASE_URL` | ✅ | PostgreSQL connection |
 | `GROQ_API_KEY` | ✅ | All AI/LLM features — free at [console.groq.com/keys](https://console.groq.com/keys) |
-| `MOCK_EMAIL` | Optional | Route all demo emails to one address instead of `@autorfp.demo` |
+| `MOCK_EMAIL` | Optional | Route all demo emails to one address instead of vendor@gmail.com |
 
 No Google Maps key, no USDA key, no paid APIs required.
 
@@ -139,14 +140,21 @@ https://carminesnyc.com/menus/menus-c44-q420-dining#
 
 AutoRFP fetches the page server-side, strips all HTML, and passes clean text to Groq. Carmine's NYC is a large Italian-American menu with dozens of dishes — great for demoing bulk ingredient extraction.
 
-### Option 2 — Plain text
+### Option 2 — Click "Load sample →"
+
+The input card has a **Load sample →** button that pre-fills a diverse 8-dish menu optimized to trigger live prices across multiple data sources (beef → CME, chicken/eggs → BLS, pasta → CBOT, salmon → futures proxy, coffee → ICE).
+
+### Option 3 — Plain text
 
 ```
-Classic Cheeseburger $12
+Classic Cheeseburger $14
 Spaghetti Carbonara $18
-Grilled Salmon $24
+Grilled Salmon $26
+Chicken Parmesan $22
 Caesar Salad $14
 Margherita Pizza $16
+Eggs Benedict $13
+Tiramisu $10
 ```
 
 ---
@@ -160,9 +168,10 @@ Groq's free tier has very high rate limits and near-instant inference on LLaMA 3
 RFPs are generated and tracked in the database but not delivered to real vendors. This is intentional — the vendor side is simulated by the Groq Vendor Simulator agent to complete the demo loop without spamming real inboxes.
 
 **Why deterministic mock distributors?**
-A seeded Fisher-Yates shuffle (djb2 hash of the location string) ensures the same city always returns the same 5 distributors. This makes demos reproducible.
+A seeded Fisher-Yates shuffle (djb2 hash of the location string) ensures the same city always returns the same distributors. The mock pool is only used when Overpass returns zero real results, making demos reproducible without sacrificing real data when available.
 
 **Pricing fallback chain:**
-1. Yahoo Finance futures (live, no key) for meat/grain/soy/oat ingredients
-2. Deterministic mock based on ingredient name hash for everything else
-3. DB cache — if the same ingredient was priced this calendar month, return cached data
+1. Yahoo Finance futures (live, no key) — meat, grains, soy, oats, coffee, sugar, cocoa, OJ
+2. BLS Public API (live, no key) — chicken, eggs, milk, butter, cheese, produce
+3. Deterministic estimate based on ingredient name hash — everything else
+4. DB cache — if the same ingredient was priced this calendar month, skip external calls

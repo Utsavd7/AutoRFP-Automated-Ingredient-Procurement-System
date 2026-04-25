@@ -129,7 +129,17 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ## Sample menus for testing
 
-**Paste any of these into the menu input:**
+### Option 1 — Real restaurant URL
+
+Paste this directly into the menu input field:
+
+```
+https://carminesnyc.com/menus/menus-c44-q420-dining#
+```
+
+AutoRFP fetches the page server-side, strips all HTML, and passes clean text to Groq. Carmine's NYC is a large Italian-American menu with dozens of dishes — great for demoing bulk ingredient extraction.
+
+### Option 2 — Plain text
 
 ```
 Classic Cheeseburger $12
@@ -138,8 +148,6 @@ Grilled Salmon $24
 Caesar Salad $14
 Margherita Pizza $16
 ```
-
-Or paste a URL — AutoRFP fetches the page server-side, strips all HTML, and sends clean text to Groq.
 
 ---
 

@@ -4,7 +4,7 @@
   --background: #000000;
   --foreground: #F2F2F2;
   --muted: #8A8F98;
-  --accent: #5E6AD2;
+  --accent: rgba(255, 255, 255, 0.7);
 }
 
 @theme inline {

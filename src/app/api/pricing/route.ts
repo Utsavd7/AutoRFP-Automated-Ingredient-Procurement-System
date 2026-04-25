@@ -6,12 +6,12 @@ const prisma = new PrismaClient();
 // ─── Real-time commodity price lookup via Yahoo Finance ───────────────────────
 // Maps ingredient name keywords → futures symbol + retail scaling factor
 const COMMODITY_MAP: Array<{ keywords: string[]; symbol: string; factor: number; label: string }> = [
-    { keywords: ['beef', 'ground beef', 'ribeye', 'steak', 'brisket', 'chuck'], symbol: 'LE=F', factor: 0.022, label: 'CME Live Cattle' },
-    { keywords: ['pork', 'bacon', 'ham', 'guanciale', 'prosciutto', 'pancetta'], symbol: 'HE=F', factor: 0.019, label: 'CME Lean Hogs' },
-    { keywords: ['wheat', 'flour', 'all-purpose flour', 'bread flour', 'pizza flour'], symbol: 'ZW=F', factor: 0.0042, label: 'CBOT Wheat' },
-    { keywords: ['corn', 'cornmeal', 'polenta', 'corn starch'], symbol: 'ZC=F', factor: 0.0038, label: 'CBOT Corn' },
-    { keywords: ['soy', 'soybean', 'tofu', 'miso', 'edamame'], symbol: 'ZS=F', factor: 0.0045, label: 'CBOT Soybeans' },
-    { keywords: ['oat', 'oatmeal', 'oats'], symbol: 'ZO=F', factor: 0.0060, label: 'CBOT Oats' },
+    { keywords: ['beef', 'ground beef', 'ribeye', 'steak', 'brisket', 'chuck', 'veal', 'sirloin', 'tenderloin', 'short rib', 'flank', 'skirt'], symbol: 'LE=F', factor: 0.022, label: 'CME Live Cattle' },
+    { keywords: ['pork', 'bacon', 'ham', 'guanciale', 'prosciutto', 'pancetta', 'sausage', 'chorizo', 'salami', 'pepperoni', 'lard', 'pork belly', 'ribs'], symbol: 'HE=F', factor: 0.019, label: 'CME Lean Hogs' },
+    { keywords: ['wheat', 'flour', 'all-purpose flour', 'bread flour', 'pizza flour', 'pasta', 'spaghetti', 'linguine', 'fettuccine', 'penne', 'rigatoni', 'bread', 'breadcrumb', 'panko', 'crouton', 'semolina'], symbol: 'ZW=F', factor: 0.0042, label: 'CBOT Wheat' },
+    { keywords: ['corn', 'cornmeal', 'polenta', 'corn starch', 'tortilla', 'grits', 'hominy', 'popcorn'], symbol: 'ZC=F', factor: 0.0038, label: 'CBOT Corn' },
+    { keywords: ['soy', 'soybean', 'tofu', 'miso', 'edamame', 'tempeh', 'soy sauce', 'canola oil', 'vegetable oil'], symbol: 'ZS=F', factor: 0.0045, label: 'CBOT Soybeans' },
+    { keywords: ['oat', 'oatmeal', 'oats', 'granola', 'muesli'], symbol: 'ZO=F', factor: 0.0060, label: 'CBOT Oats' },
 ];
 
 async function fetchLiveCommodityPrice(name: string): Promise<{ price: number; source: string; label: string } | null> {
@@ -85,7 +85,7 @@ function generateMockPriceTrends(ingredientName: string): { date: string; price:
         trends.push({
             date: d.toISOString(),
             price: Number((basePrice + volatility).toFixed(2)),
-            source: 'USDA Simulated'
+            source: 'Estimated'
         });
     }
     return trends;
@@ -181,7 +181,7 @@ export async function POST(req: Request) {
                 id: ing.id,
                 currentPrice: latestTrend.price,
                 unit: 'per lb',
-                source: isLive ? latestTrend.source : 'USDA Simulated',
+                source: isLive ? latestTrend.source : 'Estimated',
                 isLive,
                 history: trends
             });

@@ -1,5 +1,5 @@
 'use client';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   Loader2, ChefHat, Search, MapPin, Mail, Bot, Zap, Brain,
   MessageSquare, FileText, Package, DollarSign, Building2,
@@ -103,11 +103,123 @@ function Card({ children, className }: { children: React.ReactNode; className?: 
   );
 }
 
+// ─── Onboarding ───────────────────────────────────────────────────────────────
+function OnboardingScreen({ onComplete }: { onComplete: (name: string, email: string, location: string) => void }) {
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [location, setLocation] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const valid = name.trim() && email.includes('@') && location.trim();
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!valid) return;
+    setLoading(true);
+    await new Promise(r => setTimeout(r, 600));
+    onComplete(name.trim(), email.trim(), location.trim());
+  };
+
+  return (
+    <div className="min-h-screen bg-[#000000] text-[#EEEEEE] font-sans flex flex-col items-center justify-center px-6 relative overflow-hidden">
+      {/* Ambient glow */}
+      <div className="absolute inset-0 pointer-events-none">
+        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[400px] bg-violet-500/5 blur-[120px] rounded-full" />
+      </div>
+
+      <div className="w-full max-w-md relative z-10">
+        {/* Logo */}
+        <div className="flex items-center gap-3 mb-10">
+          <div className="h-9 w-9 rounded-lg border border-violet-500/30 bg-violet-500/10 flex items-center justify-center shadow-[0_0_20px_rgba(139,92,246,0.15)]">
+            <ChefHat className="w-4.5 h-4.5 text-violet-300" />
+          </div>
+          <span className="font-bold text-[15px] tracking-wide text-[#EEEEEE]">AutoRFP</span>
+        </div>
+
+        <h1 className="text-3xl font-black tracking-tight text-[#EEEEEE] mb-2">Set up your account</h1>
+        <p className="text-[14px] text-[#8A8F98] mb-8 leading-relaxed">
+          AutoRFP automates your ingredient procurement — from menu analysis to negotiated supplier contracts.
+        </p>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-[11px] font-bold uppercase tracking-widest text-[#8A8F98] mb-1.5">Restaurant name</label>
+            <input
+              type="text"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="e.g. The Oak Room"
+              className="w-full px-4 py-3 bg-white/[0.03] border border-white/10 rounded-lg text-[14px] text-[#EEEEEE] placeholder:text-[#8A8F98]/40 focus:outline-none focus:ring-1 focus:ring-violet-500/40 focus:border-violet-500/40 transition-all"
+              autoFocus
+            />
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold uppercase tracking-widest text-[#8A8F98] mb-1.5">Work email</label>
+            <input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="you@restaurant.com"
+              className="w-full px-4 py-3 bg-white/[0.03] border border-white/10 rounded-lg text-[14px] text-[#EEEEEE] placeholder:text-[#8A8F98]/40 focus:outline-none focus:ring-1 focus:ring-violet-500/40 focus:border-violet-500/40 transition-all"
+            />
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold uppercase tracking-widest text-[#8A8F98] mb-1.5">Location</label>
+            <input
+              type="text"
+              value={location}
+              onChange={e => setLocation(e.target.value)}
+              placeholder="e.g. New York, NY"
+              className="w-full px-4 py-3 bg-white/[0.03] border border-white/10 rounded-lg text-[14px] text-[#EEEEEE] placeholder:text-[#8A8F98]/40 focus:outline-none focus:ring-1 focus:ring-violet-500/40 focus:border-violet-500/40 transition-all"
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={!valid || loading}
+            className="w-full mt-2 py-3 px-6 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-[14px] font-bold text-white transition-all duration-200 shadow-[0_0_20px_rgba(139,92,246,0.3)] flex items-center justify-center gap-2"
+          >
+            {loading ? (
+              <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Setting up…</>
+            ) : (
+              <>Start Procurement →</>
+            )}
+          </button>
+        </form>
+
+        <p className="mt-6 text-center text-[11px] text-[#8A8F98]">
+          Your data is processed locally and never shared with third parties.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
+
+  // ── Onboarding ────────────────────────────────────────────────────────────
+  const [onboarded, setOnboarded] = useState(false);
+  const [restaurantName, setRestaurantName] = useState('');
+  const [restaurantEmail, setRestaurantEmail] = useState('');
+
+  useEffect(() => {
+    const saved = localStorage.getItem('autorfp_account');
+    if (saved) {
+      try {
+        const { name, email, location } = JSON.parse(saved);
+        setRestaurantName(name || '');
+        setRestaurantEmail(email || '');
+        if (location) setDistributorLocation(location);
+        setOnboarded(true);
+      } catch {}
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── State ─────────────────────────────────────────────────────────────────
   const [menuText, setMenuText] = useState('');
   const [loading, setLoading] = useState(false);
+  const [pipelineStatus, setPipelineStatus] = useState('');
   const [recipes, setRecipes] = useState<any[]>([]);
   const [ingredients, setIngredients] = useState<any[]>([]);
   const [parseModelSource, setParseModelSource] = useState<string | null>(null);
@@ -166,39 +278,36 @@ export default function Home() {
   const currentStep = steps.findIndex(s => !s.done) + 1 || 5;
 
   // ── Handlers ──────────────────────────────────────────────────────────────
-  const handleParseMenu = async () => {
-    if (!menuText.trim()) return;
-    setLoading(true); setError('');
-    try {
-      const res = await fetch('/api/parse-menu', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ menuText }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to parse menu');
-      setRecipes(data.recipes);
-      setParseModelSource(data.modelSource ?? null);
-      const map = new Map<string, any>();
-      data.recipes.forEach((r: any) => r.ingredients.forEach((ing: any) => {
-        if (!map.has(ing.name)) map.set(ing.name, { ...ing });
-        else {
-          const ex = map.get(ing.name);
-          if (ex.unit === ing.unit && typeof ex.quantity === 'number' && typeof ing.quantity === 'number')
-            ex.quantity += ing.quantity;
-        }
-      }));
-      setIngredients(Array.from(map.values()));
-    } catch (err: any) { setError(err.message); }
-    finally { setLoading(false); }
+  // Resolve location: existing input → browser geolocation → default
+  const resolveLocation = (): Promise<string> => {
+    if (distributorLocation.trim()) return Promise.resolve(distributorLocation.trim());
+    return new Promise(resolve => {
+      if (!navigator.geolocation) return resolve('New York, NY');
+      navigator.geolocation.getCurrentPosition(
+        async pos => {
+          try {
+            const { latitude: lat, longitude: lon } = pos.coords;
+            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`, {
+              headers: { 'User-Agent': 'AutoRFP/1.0' }
+            });
+            const d = await res.json();
+            const city = d.address?.city || d.address?.town || d.address?.county || 'New York, NY';
+            resolve(city);
+          } catch { resolve('New York, NY'); }
+        },
+        () => resolve('New York, NY'),
+        { timeout: 5000 }
+      );
+    });
   };
 
-  const handleFetchPricing = async () => {
-    if (!ingredients.length) return;
-    setLoadingPricing(true); setError('');
+  const handleFetchPricing = async (ingredientList: any[] = ingredients) => {
+    if (!ingredientList.length) return;
+    setLoadingPricing(true);
     try {
       const res = await fetch('/api/pricing', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ingredients }),
+        body: JSON.stringify({ ingredients: ingredientList }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -217,20 +326,56 @@ export default function Home() {
     finally { setLoadingPricing(false); }
   };
 
-  const handleFindDistributors = async () => {
-    if (!distributorLocation.trim()) return;
-    setLoadingDistributors(true); setError('');
+  const handleFindDistributors = async (locationOverride?: string) => {
+    const loc = locationOverride ?? distributorLocation.trim();
+    if (!loc) return;
+    setLoadingDistributors(true);
     try {
       const res = await fetch('/api/distributors', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ location: distributorLocation }),
+        body: JSON.stringify({ location: loc }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to find distributors');
       setDistributors(data.distributors);
       setDistributorSource(data.source || null);
+      setDistributorLocation(loc);
     } catch (err: any) { setError(err.message); }
     finally { setLoadingDistributors(false); }
+  };
+
+  const handleParseMenu = async () => {
+    if (!menuText.trim()) return;
+    setLoading(true); setError(''); setPipelineStatus('Extracting dishes…');
+    try {
+      const res = await fetch('/api/parse-menu', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ menuText }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to parse menu');
+      setRecipes(data.recipes);
+      setParseModelSource(data.modelSource ?? null);
+      const map = new Map<string, any>();
+      data.recipes.forEach((r: any) => r.ingredients.forEach((ing: any) => {
+        if (!map.has(ing.name)) map.set(ing.name, { ...ing });
+        else {
+          const ex = map.get(ing.name);
+          if (ex.unit === ing.unit && typeof ex.quantity === 'number' && typeof ing.quantity === 'number')
+            ex.quantity += ing.quantity;
+        }
+      }));
+      const extracted = Array.from(map.values());
+      setIngredients(extracted);
+
+      // Auto-chain: pricing → find suppliers
+      setPipelineStatus('Fetching live market prices…');
+      await handleFetchPricing(extracted);
+      setPipelineStatus('Finding nearby suppliers…');
+      const loc = await resolveLocation();
+      await handleFindDistributors(loc);
+    } catch (err: any) { setError(err.message); }
+    finally { setLoading(false); setPipelineStatus(''); }
   };
 
   const handleSendRFPs = async () => {
@@ -343,6 +488,17 @@ export default function Home() {
   // ─────────────────────────────────────────────────────────────────────────
   // RENDER
   // ─────────────────────────────────────────────────────────────────────────
+
+  if (!onboarded) {
+    return <OnboardingScreen onComplete={(name, email, location) => {
+      localStorage.setItem('autorfp_account', JSON.stringify({ name, email, location }));
+      setRestaurantName(name);
+      setRestaurantEmail(email);
+      setDistributorLocation(location);
+      setOnboarded(true);
+    }} />;
+  }
+
   return (
     <div className="min-h-screen bg-[#000000] page-ambient text-[#EEEEEE] font-sans selection:bg-violet-500/30 selection:text-white">
 
@@ -365,9 +521,18 @@ export default function Home() {
                 {anomalyCount} {anomalyCount === 1 ? 'anomaly' : 'anomalies'}
               </span>
             )}
-            <span className="text-[11px] text-[#8A8F98] font-bold uppercase tracking-widest">
-              Step {currentStep} <span className="opacity-40">/ 5</span>
-            </span>
+            {restaurantName && (
+              <div className="flex items-center gap-2.5">
+                <div className="h-7 w-7 rounded-full bg-violet-500/20 border border-violet-500/30 flex items-center justify-center text-[10px] font-black text-violet-300 uppercase">
+                  {restaurantName.charAt(0)}
+                </div>
+                <span className="hidden sm:block text-[12px] font-semibold text-[#EEEEEE] tracking-tight">{restaurantName}</span>
+                <button
+                  onClick={() => { localStorage.removeItem('autorfp_account'); setOnboarded(false); }}
+                  className="text-[10px] font-bold text-[#8A8F98] hover:text-[#EEEEEE] uppercase tracking-widest transition-colors"
+                >Sign out</button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -498,16 +663,10 @@ export default function Home() {
                 value={menuText}
                 onChange={e => setMenuText(e.target.value)}
               />
-              <div className="flex items-center justify-between gap-3">
-                <button
-                  onClick={() => setMenuText(SAMPLE_MENU)}
-                  className="text-[11px] font-bold text-[#8A8F98] hover:text-[#EEEEEE] transition-colors uppercase tracking-widest"
-                >
-                  Load sample →
-                </button>
+              <div className="flex items-center justify-end gap-3">
                 <Btn onClick={handleParseMenu} disabled={!menuText.trim()} loading={loading}>
                   <Sparkles className="w-4 h-4" />
-                  {loading ? 'Analyzing with Ollama + Groq…' : 'Extract Ingredients'}
+                  {loading ? (pipelineStatus || 'Extracting dishes…') : 'Run Pipeline'}
                 </Btn>
               </div>
             </Card>
@@ -573,7 +732,7 @@ export default function Home() {
             <div className="flex items-center gap-3 flex-wrap">
               {liveCount > 0 && <Tag color="green" className="bg-emerald-500/20 border-emerald-500/30"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]" />{liveCount} live</Tag>}
               {Object.keys(mlForecasts).length > 0 && <Tag color="indigo" className="bg-indigo-500/20 border-indigo-500/30"><Activity className="w-3.5 h-3.5" />ML active</Tag>}
-              <Btn onClick={handleFetchPricing} disabled={!ingredients.length} loading={loadingPricing}>
+              <Btn onClick={() => handleFetchPricing()} disabled={!ingredients.length} loading={loadingPricing}>
                 <BarChart3 className="w-4 h-4" />
                 {loadingPricing ? 'Fetching…' : 'Run Analysis'}
               </Btn>
@@ -711,7 +870,7 @@ export default function Home() {
                   className="w-full pl-11 pr-4 py-2.5 bg-[#000000] border border-white/10 rounded-lg text-[13px] text-[#EEEEEE] placeholder:text-[#8A8F98]/50 focus:outline-none focus:ring-1 focus:ring-white/20 focus:border-white/20 shadow-inner"
                 />
               </div>
-              <Btn onClick={handleFindDistributors} disabled={!distributorLocation.trim()} loading={loadingDistributors}>
+              <Btn onClick={() => handleFindDistributors()} disabled={!distributorLocation.trim()} loading={loadingDistributors}>
                 <Search className="w-4 h-4" />
                 {loadingDistributors ? 'Searching…' : 'Find Suppliers'}
               </Btn>
@@ -726,15 +885,6 @@ export default function Home() {
 
             {distributors.length > 0 && (
               <>
-                {distributorSource && (
-                  <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-[#8A8F98]">
-                    <span>Source:</span>
-                    <Tag color={['Google Places', 'Foursquare', 'Yelp', 'OpenStreetMap'].some(s => distributorSource.startsWith(s)) ? 'green' : 'gray'}>
-                      {['Google Places', 'Foursquare', 'Yelp', 'OpenStreetMap'].some(s => distributorSource.startsWith(s)) && <span className="w-1 h-1 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_5px_rgba(16,185,129,0.5)]" />}
-                      {distributorSource}
-                    </Tag>
-                  </div>
-                )}
                 <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
                   {distributors.map((dist, i) => (
                     <div key={i} className="border border-white/10 rounded-lg p-5 hover:border-white/20 hover:bg-white/[0.03] transition-all duration-300 flex flex-col gap-3 group relative overflow-hidden">

@@ -40,10 +40,30 @@ function pickMockDistributors(location: string, count = 5) {
     return pool.slice(0, count);
 }
 
+const KNOWN_DOMAINS: [string, string][] = [
+    ['sysco',             'orders@sysco.com'],
+    ['us foods',          'rfp@usfoods.com'],
+    ['gordon food',       'procurement@gfs.com'],
+    ['performance food',  'sales@pfgc.com'],
+    ['reinhart',          'procurement@reinhartfoodservice.com'],
+    ['ben e. keith',      'orders@benekeith.com'],
+    ['nicholas',          'info@nicholasandco.com'],
+    ['shamrock',          'orders@shamrockfoods.com'],
+    ["chef's warehouse",  'sales@chefswarehouse.com'],
+    ['baldor',            'orders@baldorfood.com'],
+    ['restaurant depot',  'wholesale@restaurantdepot.com'],
+];
+
 function generateEmail(name: string) {
     if (process.env.MOCK_EMAIL) return process.env.MOCK_EMAIL;
-    const clean = name.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 22);
-    return `${clean}@gmail.com`;
+    const lower = name.toLowerCase();
+    for (const [key, email] of KNOWN_DOMAINS) {
+        if (lower.includes(key)) return email;
+    }
+    // Generate a professional domain from the business name
+    const words = name.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim().split(/\s+/);
+    const domain = words.slice(0, 2).join('').slice(0, 20);
+    return `procurement@${domain}.com`;
 }
 
 // ─── Google Places Text Search ────────────────────────────────────────────────
@@ -107,14 +127,14 @@ export async function POST(req: Request) {
             candidates = picks.map(p => ({ name: p.name, location, specialty: p.specialty }));
         }
 
-        // 3. Upsert to DB and attach email
+        // 3. Save to DB — always update email so stale records get fixed
         const savedDistributors = [];
         for (const d of candidates.slice(0, 5)) {
             const email = generateEmail(d.name);
-            let dist = await prisma.distributor.findFirst({ where: { name: d.name, location: d.location } });
-            if (!dist) {
-                dist = await prisma.distributor.create({ data: { name: d.name, location: d.location, email } });
-            }
+            const existing = await prisma.distributor.findFirst({ where: { name: d.name, location: d.location } });
+            const dist = existing
+                ? await prisma.distributor.update({ where: { id: existing.id }, data: { email } })
+                : await prisma.distributor.create({ data: { name: d.name, location: d.location, email } });
             savedDistributors.push({ ...dist, specialty: d.specialty ?? null });
         }
 

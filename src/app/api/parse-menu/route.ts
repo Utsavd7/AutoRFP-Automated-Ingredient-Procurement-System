@@ -1,10 +1,6 @@
 import { NextResponse } from 'next/server';
-import OpenAI from 'openai';
 import { PrismaClient } from '@prisma/client';
-
-const openai = process.env.GROQ_API_KEY
-    ? new OpenAI({ apiKey: process.env.GROQ_API_KEY, baseURL: 'https://api.groq.com/openai/v1' })
-    : null;
+import { callOllama, callGroq, parseJSON } from '@/lib/llm';
 
 const prisma = new PrismaClient();
 
@@ -168,7 +164,9 @@ export async function POST(req: Request) {
             }
         }
 
-        const prompt = `
+        const sysMsg = { role: 'system' as const, content: 'You are a JSON-only API. Output strictly valid JSON and nothing else.' };
+
+        const buildPrompt = (content: string) => `
 You are an expert culinary assistant and a JSON-only API.
 Parse the following restaurant menu and extract every dish into a structured recipe format.
 
@@ -192,46 +190,53 @@ Output ONLY valid JSON matching this exact schema. No markdown, no explanation, 
 }
 
 Menu:
-${menuContent}
+${content}
 `;
+        // Ollama (3B model) gets first 4k chars; Groq (70B) gets full content
+        const ollamaMessages = [sysMsg, { role: 'user' as const, content: buildPrompt(menuContent.slice(0, 4000)) }];
+        const groqMessages   = [sysMsg, { role: 'user' as const, content: buildPrompt(menuContent) }];
 
-        // Call Groq with up to 2 retries for JSON parsing stability
         let parsedData: { dishes: any[] } | null = null;
-        const MAX_RETRIES = 2;
+        let modelSource = 'Mock';
 
-        if (openai) {
-            for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-                try {
-                    const response = await openai.chat.completions.create({
-                        model: 'llama-3.3-70b-versatile',
-                        messages: [
-                            { role: 'system', content: 'You are a JSON-only API. Output strictly valid JSON and nothing else.' },
-                            { role: 'user', content: prompt }
-                        ],
-                        response_format: { type: 'json_object' }
-                    });
-
-                    let resultText = response.choices[0].message.content;
-                    if (!resultText) throw new Error('Empty response from Groq');
-
-                    // Strip markdown code fences if model injects them
-                    resultText = resultText.replace(/^```json\s*/i, '').replace(/\s*```$/, '').trim();
-                    parsedData = JSON.parse(resultText);
-                    break; // Success — exit retry loop
-                } catch (attemptError: any) {
-                    console.warn(`Groq attempt ${attempt + 1}/${MAX_RETRIES + 1} failed:`, attemptError.message);
-                    if (attempt === MAX_RETRIES) {
-                        console.error('All Groq retries exhausted, falling back to mock data.');
-                    }
-                }
+        // 1. Try Ollama (local model — our own LLM)
+        try {
+            const text = await callOllama(ollamaMessages, true);
+            parsedData = parseJSON<{ dishes: any[] }>(text);
+            if (parsedData?.dishes?.length) {
+                modelSource = 'Ollama (llama3.2)';
+                console.log('parse-menu: Ollama succeeded');
+            } else {
+                parsedData = null;
+                console.warn('parse-menu: Ollama returned bad JSON, falling back to Groq');
             }
-        } else {
-            console.warn('No GROQ_API_KEY found, falling back to mock data.');
+        } catch (err: any) {
+            console.warn('parse-menu: Ollama failed:', err.message);
         }
 
-        // Use mock data if Groq failed or was unavailable
+        // 2. Fall back to Groq if Ollama failed (with one retry on 400)
+        if (!parsedData) {
+            for (let attempt = 0; attempt < 2; attempt++) {
+                try {
+                    const text = await callGroq(groqMessages, true);
+                    parsedData = parseJSON<{ dishes: any[] }>(text);
+                    if (parsedData?.dishes?.length) {
+                        modelSource = 'Groq (llama-3.3-70b)';
+                        console.log('parse-menu: Groq succeeded');
+                        break;
+                    } else {
+                        parsedData = null;
+                    }
+                } catch (err: any) {
+                    console.warn(`parse-menu: Groq attempt ${attempt + 1} failed:`, err.message);
+                }
+            }
+        }
+
+        // 3. Last resort: mock data
         if (!parsedData || !parsedData.dishes?.length) {
             parsedData = { dishes: MOCK_DISHES };
+            modelSource = 'Mock';
         }
 
         // Save to Database
@@ -268,6 +273,7 @@ ${menuContent}
             success: true,
             menuId: newMenu.id,
             recipes: savedDishes,
+            modelSource,
         });
 
     } catch (error: any) {

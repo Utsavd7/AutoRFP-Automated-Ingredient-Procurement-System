@@ -6,10 +6,10 @@ AutoRFP automates the entire restaurant ingredient procurement pipeline in five 
 
 ## Demo walkthrough
 
-1. **Paste a menu** (text or URL) → Groq LLaMA 3.3 70B extracts every dish and ingredient
+1. **Paste a menu** (text or URL) → Ollama (llama3.2, local) extracts every dish and ingredient; Groq cross-verifies the result
 2. **Run Market Analysis** → live CME/CBOT futures + BLS retail prices + ML price forecasting with anomaly detection
-3. **Find Suppliers** → geosearch via OpenStreetMap/Overpass (50 km radius); curated distributor pool as last-resort fallback
-4. **Generate vendor responses** → Groq negotiates multi-turn email conversations grounded in real quantities × market prices
+3. **Find Suppliers** → real distributors via Google Places API (50 km radius); curated pool as fallback
+4. **Generate vendor responses** → Groq simulates multi-turn email negotiations grounded in real quantities × market prices
 5. **Launch Agent Pipeline** → 5 specialized AI agents negotiate autonomously via SSE-streamed email thread
 
 ---
@@ -19,22 +19,23 @@ AutoRFP automates the entire restaurant ingredient procurement pipeline in five 
 ### AI & ML
 | Feature | How it works |
 |---|---|
-| Menu parsing | Groq LLaMA 3.3 70B with `response_format: json_object`; URL inputs fetch page HTML server-side and strip to readable text before sending |
+| Menu parsing | Ollama llama3.2 (local, primary) → Groq llama-3.3-70b (fallback). Both return structured JSON; source shown in UI |
+| Dual-LLM verification | Recommendation step runs both models in parallel; compares picks and shows agreement score + confidence % |
 | Price forecasting | OLS linear regression on 6-month price history; 3-month forward projection with 95% confidence intervals |
 | Anomaly detection | Z-score on ingredient price history; flags SPIKE / DIP at \|z\| > 1.4 |
 | Buy/Wait signals | Derived from trend direction + anomaly type; e.g. DIP → BUY\_NOW, SPIKE + RISING → WAIT |
 | Quote simulation | Multi-turn Groq conversation grounded in `quantity × market_price` per ingredient; vendors quote at 5–20% margin |
-| AI recommendation | Groq compares all quotes against live market prices from DB and returns structured reasoning |
+| AI recommendation | Ollama + Groq both analyze quotes independently; final answer shows which distributor each model chose and whether they agree |
 | 5-agent negotiation | Server-Sent Events pipeline: Orchestrator → Market Analyst → Negotiation Agent (per vendor) ↔ Vendor Simulator → Deal Auditor |
 
-### Data sources (all free, no API key)
-| Source | Used for |
-|---|---|
-| Yahoo Finance (`query1.finance.yahoo.com`) | CME Live Cattle (LE=F), CME Lean Hogs (HE=F), CBOT Wheat (ZW=F), CBOT Corn (ZC=F), CBOT Soybeans (ZS=F), CBOT Oats (ZO=F), ICE Coffee (KC=F), ICE Sugar (SB=F), ICE Cocoa (CC=F), ICE OJ (OJ=F) |
-| BLS Public API (`api.bls.gov`) | Retail prices for chicken, eggs, milk, butter, cheese, tomatoes, potatoes, apples, bananas — no key required |
-| Nominatim (OpenStreetMap) | Geocode user-supplied city/zip to lat/lon |
-| Overpass API | OSM POI search for wholesale/food businesses within 50 km; includes cash & carry, restaurant supply, named distributors |
-| Curated distributor pool | 15 real distributor names (Sysco, US Foods, Gordon Food Service, etc.); seeded Fisher-Yates shuffle; used only when Overpass returns 0 results |
+### Data sources
+| Source | Key required | Used for |
+|---|---|---|
+| Ollama (local) | No | Primary LLM — menu parsing and recommendations |
+| Groq API | Yes (free) | Cross-verifier LLM + negotiation pipeline |
+| Google Places API | Yes (billing) | Real food distributor search by location |
+| Yahoo Finance | No | CME Live Cattle, CME Lean Hogs, CBOT Wheat/Corn/Soybeans/Oats, ICE Coffee/Sugar/Cocoa/OJ |
+| BLS Public API | No | Retail prices — chicken, eggs, milk, butter, cheese, produce |
 
 ---
 
@@ -47,32 +48,37 @@ AutoRFP automates the entire restaurant ingredient procurement pipeline in five 
 | Styling | Tailwind CSS v4 |
 | Charts | Recharts (ComposedChart — Area + dashed Line for forecast overlay) |
 | Icons | Lucide React |
-| AI | Groq API via OpenAI SDK (`baseURL: https://api.groq.com/openai/v1`, model: `llama-3.3-70b-versatile`) |
+| Primary LLM | Ollama — llama3.2 running locally at `localhost:11434` |
+| Cross-verifier LLM | Groq API via OpenAI SDK (`baseURL: https://api.groq.com/openai/v1`, model: `llama-3.3-70b-versatile`) |
 | Streaming | Server-Sent Events (`ReadableStream` + `EventSource`) |
 | Database | PostgreSQL via Prisma ORM |
+| Supplier search | Google Places Text Search API |
 
 ---
 
 ## Project structure
 
 ```
-src/app/
-├── page.tsx                          # Main UI — 5-step procurement pipeline
-├── quote/[rfpId]/page.tsx            # Vendor self-serve quote portal
-└── api/
-    ├── parse-menu/route.ts           # Groq menu parsing (text or URL)
-    ├── pricing/route.ts              # Yahoo Finance → BLS → estimated fallback
-    ├── ml/forecast/route.ts          # OLS regression, z-score anomaly, buy signals
-    ├── distributors/route.ts         # Nominatim → Overpass (50 km) → curated pool
-    ├── send-rfp/route.ts             # RFP dispatch (logged, not emailed for safety)
-    ├── simulate-conversation/route.ts # Groq multi-turn vendor negotiation
-    ├── quotes/route.ts               # Fetch quotes by menuId
-    ├── recommend/route.ts            # Groq AI supplier recommendation
-    ├── agent/negotiate/route.ts      # 5-agent SSE negotiation pipeline
-    └── webhooks/inbound-email/route.ts # Parse manual vendor email replies
+src/
+├── lib/
+│   └── llm.ts                            # Shared Ollama + Groq clients and helpers
+└── app/
+    ├── page.tsx                          # Main UI — 5-step procurement pipeline
+    ├── quote/[rfpId]/page.tsx            # Vendor self-serve quote portal
+    └── api/
+        ├── parse-menu/route.ts           # Ollama → Groq menu parsing (text or URL)
+        ├── pricing/route.ts              # Yahoo Finance → BLS → estimated fallback
+        ├── ml/forecast/route.ts          # OLS regression, z-score anomaly, buy signals
+        ├── distributors/route.ts         # Google Places → curated pool fallback
+        ├── send-rfp/route.ts             # RFP dispatch (Resend if key set, else logged)
+        ├── simulate-conversation/route.ts # Groq multi-turn vendor negotiation
+        ├── quotes/route.ts               # Fetch quotes by menuId
+        ├── recommend/route.ts            # Dual-LLM recommendation with verification
+        ├── agent/negotiate/route.ts      # 5-agent SSE negotiation pipeline
+        └── webhooks/inbound-email/route.ts # Parse manual vendor email replies
 
-prisma/schema.prisma                  # DB schema
-.env.sample                           # Required environment variables (template)
+prisma/schema.prisma                      # DB schema
+.env.sample                               # Environment variable template
 ```
 
 ---
@@ -95,7 +101,16 @@ Distributor ──< RFP
 npm install
 ```
 
-### 2. Configure environment
+### 2. Install Ollama and pull the model
+
+```bash
+# Install Ollama: https://ollama.com
+ollama pull llama3.2
+```
+
+Ollama runs locally — no API key, no cost, no rate limits.
+
+### 3. Configure environment
 
 ```bash
 cp .env.sample .env
@@ -106,19 +121,19 @@ Edit `.env` with your values:
 | Variable | Required | Purpose |
 |---|---|---|
 | `DATABASE_URL` | ✅ | PostgreSQL connection |
-| `GROQ_API_KEY` | ✅ | All AI/LLM features — free at [console.groq.com/keys](https://console.groq.com/keys) |
-| `MOCK_EMAIL` | Optional | Route all demo emails to one address instead of vendor@gmail.com |
+| `GROQ_API_KEY` | ✅ | Cross-verifier LLM + negotiation — free at [console.groq.com/keys](https://console.groq.com/keys) |
+| `GOOGLE_MAPS_API_KEY` | ✅ | Real distributor search — [console.cloud.google.com](https://console.cloud.google.com), enable Places API + billing |
+| `RESEND_API_KEY` | Optional | Real email delivery — free at [resend.com](https://resend.com) |
+| `MOCK_EMAIL` | Optional | Route all demo emails to one address |
 
-No Google Maps key, no USDA key, no paid APIs required.
-
-### 3. Initialize the database
+### 4. Initialize the database
 
 ```bash
 npx prisma generate
 npx prisma db push
 ```
 
-### 4. Run
+### 5. Run
 
 ```bash
 npm run dev
@@ -138,11 +153,11 @@ Paste this directly into the menu input field:
 https://carminesnyc.com/menus/menus-c44-q420-dining#
 ```
 
-AutoRFP fetches the page server-side, strips all HTML, and passes clean text to Groq. Carmine's NYC is a large Italian-American menu with dozens of dishes — great for demoing bulk ingredient extraction.
+AutoRFP fetches the page server-side, strips all HTML, and passes clean text to the LLMs. Carmine's NYC is a large Italian-American menu with dozens of dishes — great for demoing bulk ingredient extraction.
 
 ### Option 2 — Click "Load sample →"
 
-The input card has a **Load sample →** button that pre-fills a diverse 8-dish menu optimized to trigger live prices across multiple data sources (beef → CME, chicken/eggs → BLS, pasta → CBOT, salmon → futures proxy, coffee → ICE).
+Pre-fills a diverse 8-dish menu optimized to trigger live prices across multiple data sources (beef → CME, chicken/eggs → BLS, pasta → CBOT, salmon → futures proxy, coffee → ICE).
 
 ### Option 3 — Plain text
 
@@ -161,14 +176,14 @@ Tiramisu $10
 
 ## Architecture notes
 
-**Why Groq instead of OpenAI?**
-Groq's free tier has very high rate limits and near-instant inference on LLaMA 3.3 70B — well-suited for a demo that makes 6–10 sequential LLM calls in the negotiation pipeline. The OpenAI SDK is used via `baseURL` override; no OpenAI account required.
+**Why dual LLM (Ollama + Groq)?**
+Ollama runs llama3.2 locally — zero cost, zero latency overhead, fully private. Groq runs llama-3.3-70b in the cloud as a cross-verifier. For menu parsing, Ollama is the primary and Groq is fallback. For supplier recommendations, both models run in parallel and their picks are compared — if they agree, confidence is 96%; if they differ, both choices are shown so the user can decide.
 
-**Why no email sending?**
-RFPs are generated and tracked in the database but not delivered to real vendors. This is intentional — the vendor side is simulated by the Groq Vendor Simulator agent to complete the demo loop without spamming real inboxes.
+**Why Google Places for suppliers?**
+Google Places Text Search returns real, up-to-date businesses including Sysco branches, Restaurant Depot, food co-ops, and regional distributors — far more accurate than OSM tags for commercial food distribution. Falls back to a curated pool of 15 known distributors when the API returns no results.
 
-**Why deterministic mock distributors?**
-A seeded Fisher-Yates shuffle (djb2 hash of the location string) ensures the same city always returns the same distributors. The mock pool is only used when Overpass returns zero real results, making demos reproducible without sacrificing real data when available.
+**Why no email sending by default?**
+RFPs are generated and tracked in the database but not delivered to real vendors unless `RESEND_API_KEY` is set. The vendor side is simulated by Groq to complete the demo loop without spamming real inboxes.
 
 **Pricing fallback chain:**
 1. Yahoo Finance futures (live, no key) — meat, grains, soy, oats, coffee, sugar, cocoa, OJ

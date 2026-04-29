@@ -110,6 +110,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [recipes, setRecipes] = useState<any[]>([]);
   const [ingredients, setIngredients] = useState<any[]>([]);
+  const [parseModelSource, setParseModelSource] = useState<string | null>(null);
 
   const [pricingData, setPricingData] = useState<any[]>([]);
   const [loadingPricing, setLoadingPricing] = useState(false);
@@ -176,6 +177,7 @@ export default function Home() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to parse menu');
       setRecipes(data.recipes);
+      setParseModelSource(data.modelSource ?? null);
       const map = new Map<string, any>();
       data.recipes.forEach((r: any) => r.ingredients.forEach((ing: any) => {
         if (!map.has(ing.name)) map.set(ing.name, { ...ing });
@@ -456,12 +458,12 @@ export default function Home() {
             <div className="flex items-center justify-center flex-wrap gap-x-5 gap-y-2 text-[11px] font-bold uppercase tracking-widest relative">
               <span className="flex items-center gap-1.5 text-violet-400">
                 <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse shadow-[0_0_5px_rgba(167,139,250,0.8)]" />
-                Groq LLaMA 3.3 70B
+                Ollama · Groq Dual-LLM
               </span>
               <span className="text-white/20">/</span>
               <span className="text-blue-400">CME · CBOT · BLS live prices</span>
               <span className="text-white/20">/</span>
-              <span className="text-[#8A8F98]">OpenStreetMap suppliers</span>
+              <span className="text-[#8A8F98]">Google Places suppliers</span>
               <span className="text-white/20">/</span>
               <span className="text-[#8A8F98]">5-agent negotiation pipeline</span>
             </div>
@@ -505,7 +507,7 @@ export default function Home() {
                 </button>
                 <Btn onClick={handleParseMenu} disabled={!menuText.trim()} loading={loading}>
                   <Sparkles className="w-4 h-4" />
-                  {loading ? 'Analyzing with Groq…' : 'Extract Ingredients'}
+                  {loading ? 'Analyzing with Ollama + Groq…' : 'Extract Ingredients'}
                 </Btn>
               </div>
             </Card>
@@ -515,7 +517,15 @@ export default function Home() {
                <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 blur-[80px] rounded-full pointer-events-none" />
               <div className="flex items-center justify-between mb-5 relative z-10">
                 <span className="text-[11px] font-bold text-[#8A8F98] uppercase tracking-widest">Extracted Dishes</span>
-                {recipes.length > 0 && <Tag color="blue" className="bg-white/8 border-white/15">{recipes.length} dishes</Tag>}
+                <div className="flex items-center gap-2">
+                  {parseModelSource && parseModelSource !== 'Mock' && (
+                    <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-violet-500/10 border border-violet-500/20 text-[10px] font-bold text-violet-400">
+                      <span className="w-1 h-1 rounded-full bg-violet-400 animate-pulse" />
+                      {parseModelSource}
+                    </span>
+                  )}
+                  {recipes.length > 0 && <Tag color="blue" className="bg-white/8 border-white/15">{recipes.length} dishes</Tag>}
+                </div>
               </div>
               <div className="flex-1 overflow-y-auto space-y-2 min-h-[220px] relative z-10">
                 {recipes.length === 0 ? (
@@ -719,8 +729,8 @@ export default function Home() {
                 {distributorSource && (
                   <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-[#8A8F98]">
                     <span>Source:</span>
-                    <Tag color={distributorSource.startsWith('OpenStreetMap') ? 'green' : 'gray'}>
-                      {distributorSource.startsWith('OpenStreetMap') && <span className="w-1 h-1 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_5px_rgba(16,185,129,0.5)]" />}
+                    <Tag color={['Google Places', 'Foursquare', 'Yelp', 'OpenStreetMap'].some(s => distributorSource.startsWith(s)) ? 'green' : 'gray'}>
+                      {['Google Places', 'Foursquare', 'Yelp', 'OpenStreetMap'].some(s => distributorSource.startsWith(s)) && <span className="w-1 h-1 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_5px_rgba(16,185,129,0.5)]" />}
                       {distributorSource}
                     </Tag>
                   </div>
@@ -912,6 +922,25 @@ export default function Home() {
                           <span className="inline-block px-1.5 py-0.5 bg-emerald-500/10 border border-emerald-500/20 rounded mr-2">−${Number(recommendation.savings).toFixed(2)}</span>
                           saved vs most expensive quote
                         </p>
+                      )}
+                      {recommendation.verification && (
+                        <div className="border-t border-white/10 pt-3 mt-1 relative z-10">
+                          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#8A8F98] mb-2">Dual-Model Verification</p>
+                          <div className="flex flex-wrap gap-2 items-center">
+                            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-[11px] font-semibold text-[#EEEEEE]">
+                              <span className="w-1.5 h-1.5 rounded-full bg-violet-400" />
+                              Ollama · {recommendation.verification.ollamaChoice ?? '—'}
+                            </span>
+                            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-[11px] font-semibold text-[#EEEEEE]">
+                              <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
+                              Groq · {recommendation.verification.groqChoice ?? '—'}
+                            </span>
+                            <span className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border ${recommendation.verification.agreed ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-amber-500/10 border-amber-500/20 text-amber-400'}`}>
+                              {recommendation.verification.agreed ? '✓ Models agree' : '⚠ Models differ'}
+                              <span className="opacity-70">· {recommendation.verification.confidence}% confidence</span>
+                            </span>
+                          </div>
+                        </div>
                       )}
                     </div>
                   ) : (
@@ -1171,11 +1200,11 @@ export default function Home() {
         <div className="max-w-6xl mx-auto px-6 py-6 flex flex-col md:flex-row md:items-center justify-between text-[11px] font-bold text-[#8A8F98] uppercase tracking-widest gap-4">
           <span className="flex items-center gap-2"><ChefHat className="w-3.5 h-3.5 text-white" /> AutoRFP Engine</span>
           <div className="flex items-center flex-wrap gap-3">
-            <span className="hover:text-[#EEEEEE] transition-colors cursor-default">Groq LLaMA 3.3 70B</span>
+            <span className="hover:text-[#EEEEEE] transition-colors cursor-default">Ollama · Groq Dual-LLM</span>
             <span className="opacity-30">/</span>
             <span className="hover:text-[#EEEEEE] transition-colors cursor-default">CME · CBOT · BLS Pricing</span>
             <span className="opacity-30">/</span>
-            <span className="hover:text-[#EEEEEE] transition-colors cursor-default">OpenStreetMap Suppliers</span>
+            <span className="hover:text-[#EEEEEE] transition-colors cursor-default">Google Places Suppliers</span>
             <span className="opacity-30">/</span>
             <span className="hover:text-[#EEEEEE] transition-colors cursor-default">5-Agent Pipeline</span>
           </div>

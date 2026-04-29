@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-// ─── Pool of 15 realistic food distributors ──────────────────────────────────
+// ─── Pool of 15 realistic food distributors (last resort only) ───────────────
 const MOCK_POOL = [
     { name: 'Sysco Distribution Hub',         specialty: 'Full-line broadline distributor' },
     { name: 'US Foods Regional Center',        specialty: 'Fresh, frozen & dry goods' },
@@ -22,7 +22,6 @@ const MOCK_POOL = [
     { name: 'Imperial Fresh Market Supply',    specialty: 'Farm-direct produce & herbs' },
 ];
 
-// Seeded Fisher-Yates: same location string → same 5 vendors every time
 function pickMockDistributors(location: string, count = 5) {
     let seed = 5381;
     for (let i = 0; i < location.length; i++) {
@@ -33,7 +32,6 @@ function pickMockDistributors(location: string, count = 5) {
         seed = (seed * 1664525 + 1013904223) & 0x7fffffff;
         return seed;
     };
-
     const pool = [...MOCK_POOL];
     for (let i = pool.length - 1; i > 0; i--) {
         const j = lcg() % (i + 1);
@@ -42,70 +40,47 @@ function pickMockDistributors(location: string, count = 5) {
     return pool.slice(0, count);
 }
 
-function generateMockEmail(name: string) {
+function generateEmail(name: string) {
     if (process.env.MOCK_EMAIL) return process.env.MOCK_EMAIL;
     const clean = name.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 22);
     return `${clean}@gmail.com`;
 }
 
-// ─── Nominatim geocoding (free OpenStreetMap, no key needed) ─────────────────
-async function geocode(location: string): Promise<{ lat: number; lon: number } | null> {
-    try {
-        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(location)}&format=json&limit=1`;
-        const res = await fetch(url, {
-            headers: {
-                'User-Agent': 'AutoRFP-Procurement/1.0 (open-source demo)',
-                'Accept-Language': 'en',
-            },
-            signal: AbortSignal.timeout(6000),
-        });
-        if (!res.ok) return null;
-        const data = await res.json();
-        if (!data.length) return null;
-        return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) };
-    } catch {
-        return null;
+// ─── Google Places Text Search ────────────────────────────────────────────────
+async function searchGooglePlaces(location: string): Promise<{ name: string; location: string }[]> {
+    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+    if (!apiKey) return [];
+
+    const queries = [
+        `food distributor wholesale near ${location}`,
+        `restaurant food supply wholesale near ${location}`,
+    ];
+
+    const seen = new Set<string>();
+    const results: { name: string; location: string }[] = [];
+
+    for (const query of queries) {
+        if (results.length >= 8) break;
+        try {
+            const url = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&key=${apiKey}`;
+            const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+            if (!res.ok) continue;
+            const data = await res.json();
+            if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
+                console.error('Google Places error:', data.status, data.error_message);
+                continue;
+            }
+            for (const place of data.results ?? []) {
+                if (seen.has(place.place_id)) continue;
+                seen.add(place.place_id);
+                results.push({ name: place.name, location: place.formatted_address ?? location });
+            }
+        } catch (err) {
+            console.error('Google Places fetch error:', err);
+        }
     }
-}
 
-// ─── Overpass API (free OSM POI data, no key needed) ─────────────────────────
-async function searchOverpass(lat: number, lon: number, location: string): Promise<{ name: string; location: string }[]> {
-    const radius = 50000; // 50 km
-    const query = `[out:json][timeout:20];
-(
-  nwr["shop"="wholesale"](around:${radius},${lat},${lon});
-  nwr["shop"="cash_and_carry"](around:${radius},${lat},${lon});
-  nwr["shop"="food"](around:${radius},${lat},${lon});
-  nwr["shop"="supermarket"]["name"~"wholesale|restaurant|supply|distribut|food service",i](around:${radius},${lat},${lon});
-  nwr["landuse"="industrial"]["name"~"food|distribut|supply|provisions|wholesale|restaurant",i](around:${radius},${lat},${lon});
-  nwr["industrial"="warehouse"]["name"~"food|wholesale|distribut|supply|provisions",i](around:${radius},${lat},${lon});
-  nwr["office"~"company|logistics"]["name"~"food|wholesale|provisions|supply|distribut",i](around:${radius},${lat},${lon});
-  nwr["name"~"Sysco|US Foods|Gordon Food|Shamrock|Performance Food|Reinhart|Ben E. Keith|Chef.s Warehouse|Baldor|Restaurant Depot",i](around:${radius},${lat},${lon});
-);
-out body center 15;`;
-
-    try {
-        const res = await fetch('https://overpass-api.de/api/interpreter', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: `data=${encodeURIComponent(query)}`,
-            signal: AbortSignal.timeout(14000),
-        });
-        if (!res.ok) return [];
-        const data = await res.json();
-
-        return (data.elements ?? [])
-            .filter((el: any) => el.tags?.name)
-            .slice(0, 10)
-            .map((el: any) => {
-                const t = el.tags;
-                const addr = [t['addr:housenumber'], t['addr:street'], t['addr:city'] || location]
-                    .filter(Boolean).join(' ');
-                return { name: t.name as string, location: addr || location };
-            });
-    } catch {
-        return [];
-    }
+    return results;
 }
 
 // ─── Main handler ─────────────────────────────────────────────────────────────
@@ -117,29 +92,25 @@ export async function POST(req: Request) {
         }
 
         let candidates: { name: string; location: string; specialty?: string }[] = [];
-        let dataSource = 'Mock Data';
+        let dataSource = 'Curated';
 
-        // 1. Try Nominatim geocoding → Overpass POI search (both free, no key)
-        const coords = await geocode(location);
-        if (coords) {
-            const osmResults = await searchOverpass(coords.lat, coords.lon, location);
-            if (osmResults.length > 0) {
-                candidates = osmResults;
-                dataSource = 'OpenStreetMap';
-            }
+        // 1. Try Google Places API (uses GOOGLE_MAPS_API_KEY)
+        const googleResults = await searchGooglePlaces(location);
+        if (googleResults.length > 0) {
+            candidates = googleResults;
+            dataSource = 'Google Places';
         }
 
-        // 2. Only use mock pool as absolute last resort (0 real results)
+        // 2. Fall back to curated mock pool only if Google Places returns nothing
         if (candidates.length === 0) {
             const picks = pickMockDistributors(location, 5);
             candidates = picks.map(p => ({ name: p.name, location, specialty: p.specialty }));
-            dataSource = 'Curated';
         }
 
         // 3. Upsert to DB and attach email
         const savedDistributors = [];
         for (const d of candidates.slice(0, 5)) {
-            const email = generateMockEmail(d.name);
+            const email = generateEmail(d.name);
             let dist = await prisma.distributor.findFirst({ where: { name: d.name, location: d.location } });
             if (!dist) {
                 dist = await prisma.distributor.create({ data: { name: d.name, location: d.location, email } });

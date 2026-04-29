@@ -1,5 +1,6 @@
 import OpenAI from 'openai';
 import { PrismaClient } from '@prisma/client';
+import { Resend } from 'resend';
 
 const groq = process.env.GROQ_API_KEY
     ? new OpenAI({ apiKey: process.env.GROQ_API_KEY, baseURL: 'https://api.groq.com/openai/v1' })
@@ -56,6 +57,123 @@ async function callAgent(agentKey: keyof typeof AGENTS, prompt: string): Promise
     });
     const content = res.choices[0].message.content || '{}';
     return JSON.parse(content);
+}
+
+// ─── Buyer Report Email ───────────────────────────────────────────────────────
+async function sendBuyerReport(result: any, quotes: any[]) {
+    const buyerEmail = process.env.BUYER_EMAIL;
+    const resendKey  = process.env.RESEND_API_KEY;
+    if (!buyerEmail || !resendKey) return;
+
+    const resend = new Resend(resendKey);
+    const now = new Date().toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short' });
+
+    const verdictColor = result.verdict === 'EXCELLENT' ? '#10b981' : result.verdict === 'GOOD' ? '#3b82f6' : '#f59e0b';
+
+    const rows = (result.negotiationResults ?? []).map((r: any) => `
+        <tr style="border-bottom:1px solid #1f2937;">
+          <td style="padding:10px 16px;font-weight:600;color:#f9fafb;">${r.vendorName}</td>
+          <td style="padding:10px 16px;text-align:right;color:#9ca3af;text-decoration:line-through;">$${Number(r.originalPrice).toFixed(2)}</td>
+          <td style="padding:10px 16px;text-align:right;color:#f9fafb;font-weight:700;">$${Number(r.negotiatedPrice).toFixed(2)}</td>
+          <td style="padding:10px 16px;text-align:right;color:${r.savings > 0 ? '#10b981' : '#9ca3af'};font-weight:700;">
+            ${r.savings > 0 ? `−$${Number(r.savings).toFixed(2)}` : '—'}
+          </td>
+          <td style="padding:10px 16px;text-align:center;">
+            <span style="padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;letter-spacing:.05em;
+              background:${r.decision==='ACCEPT'?'#064e3b':r.decision==='COUNTER'?'#451a03':'#1f2937'};
+              color:${r.decision==='ACCEPT'?'#10b981':r.decision==='COUNTER'?'#f59e0b':'#9ca3af'}">
+              ${r.decision}
+            </span>
+          </td>
+        </tr>`).join('');
+
+    const actionItems = (result.actionItems ?? []).map((a: string) =>
+        `<li style="margin-bottom:6px;color:#d1d5db;">${a}</li>`).join('');
+
+    const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"/></head>
+<body style="margin:0;padding:0;background:#030712;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <div style="max-width:640px;margin:0 auto;padding:40px 24px;">
+
+    <!-- Header -->
+    <div style="margin-bottom:32px;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+        <div style="width:28px;height:28px;border-radius:6px;background:#4c1d95;border:1px solid #6d28d9;display:flex;align-items:center;justify-content:center;font-size:14px;">🍽️</div>
+        <span style="font-size:13px;font-weight:700;color:#8b5cf6;letter-spacing:.08em;text-transform:uppercase;">AutoRFP</span>
+      </div>
+      <h1 style="margin:0 0 6px;font-size:26px;font-weight:800;color:#f9fafb;letter-spacing:-.5px;">Procurement Report</h1>
+      <p style="margin:0;font-size:13px;color:#6b7280;">${now}</p>
+    </div>
+
+    <!-- Verdict banner -->
+    <div style="background:#0f172a;border:1px solid #1e293b;border-left:4px solid ${verdictColor};border-radius:8px;padding:20px 24px;margin-bottom:24px;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;">
+        <div>
+          <p style="margin:0 0 4px;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#6b7280;">Recommended Supplier</p>
+          <p style="margin:0;font-size:22px;font-weight:800;color:#f9fafb;">${result.winner}</p>
+          <p style="margin:4px 0 0;font-size:15px;color:#d1d5db;">Final price: <strong style="color:#f9fafb;">$${Number(result.winnerPrice).toFixed(2)}</strong></p>
+        </div>
+        <div style="text-align:right;flex-shrink:0;">
+          <p style="margin:0 0 2px;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#6b7280;">Total Saved</p>
+          <p style="margin:0;font-size:28px;font-weight:900;color:#10b981;">−$${Number(result.totalSavings).toFixed(2)}</p>
+          <p style="margin:2px 0 0;font-size:12px;color:#6b7280;">${Number(result.savingsPercentage).toFixed(1)}% reduction</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Executive summary -->
+    <div style="background:#0f172a;border:1px solid #1e293b;border-radius:8px;padding:20px 24px;margin-bottom:24px;">
+      <p style="margin:0 0 10px;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#8b5cf6;">Executive Summary</p>
+      <p style="margin:0;font-size:14px;color:#d1d5db;line-height:1.7;">${result.executiveSummary}</p>
+    </div>
+
+    <!-- Negotiation results table -->
+    <div style="background:#0f172a;border:1px solid #1e293b;border-radius:8px;overflow:hidden;margin-bottom:24px;">
+      <div style="padding:14px 16px;border-bottom:1px solid #1e293b;">
+        <p style="margin:0;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#6b7280;">Negotiation Results</p>
+      </div>
+      <table style="width:100%;border-collapse:collapse;">
+        <thead>
+          <tr style="background:#111827;border-bottom:1px solid #1f2937;">
+            <th style="padding:10px 16px;text-align:left;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#6b7280;">Supplier</th>
+            <th style="padding:10px 16px;text-align:right;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#6b7280;">Original</th>
+            <th style="padding:10px 16px;text-align:right;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#6b7280;">Final</th>
+            <th style="padding:10px 16px;text-align:right;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#6b7280;">Saved</th>
+            <th style="padding:10px 16px;text-align:center;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#6b7280;">Status</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+
+    <!-- Action items -->
+    ${actionItems ? `
+    <div style="background:#0f172a;border:1px solid #1e293b;border-radius:8px;padding:20px 24px;margin-bottom:24px;">
+      <p style="margin:0 0 12px;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#f59e0b;">Action Items</p>
+      <ul style="margin:0;padding-left:20px;">${actionItems}</ul>
+    </div>` : ''}
+
+    <!-- Footer -->
+    <p style="margin:32px 0 0;font-size:11px;color:#374151;text-align:center;">
+      Generated by AutoRFP Procurement Engine · ${now}
+    </p>
+  </div>
+</body>
+</html>`;
+
+    try {
+        await resend.emails.send({
+            from: 'AutoRFP <onboarding@resend.dev>',
+            to: buyerEmail,
+            subject: `Procurement Report — ${result.winner} selected · −$${Number(result.totalSavings).toFixed(2)} saved`,
+            html,
+        });
+        console.log('Buyer report sent to', buyerEmail);
+    } catch (err: any) {
+        console.error('Failed to send buyer report:', err.message);
+    }
 }
 
 // GET /api/agent/negotiate?menuId=xxx  (SSE stream)
@@ -460,7 +578,7 @@ Return JSON:
                 // ══════════════════════════════════════════════════════════
                 // COMPLETE: Send final summary event
                 // ══════════════════════════════════════════════════════════
-                send('complete', {
+                const completePayload = {
                     winner: auditResult.winner ?? bestDeal.vendorName,
                     winnerPrice: auditResult.winnerFinalPrice ?? bestDeal.negotiatedPrice,
                     totalSavings: auditResult.totalSavingsAchieved ?? totalSavings,
@@ -469,7 +587,11 @@ Return JSON:
                     executiveSummary: auditResult.executiveSummary,
                     actionItems: auditResult.actionItems ?? [],
                     negotiationResults
-                });
+                };
+                send('complete', completePayload);
+
+                // ── Send consolidated buyer report via email ───────────────
+                await sendBuyerReport(completePayload, quotes);
 
             } catch (error: any) {
                 send('error', { message: error.message || 'Negotiation pipeline failed' });

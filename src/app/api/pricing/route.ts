@@ -288,6 +288,9 @@ export async function POST(req: Request) {
                 id: ing.id,
                 currentPrice: latestTrend.price,
                 unit: 'per lb',
+                orderQuantity: typeof ing.quantity === 'number' ? ing.quantity : null,
+                orderUnit: ing.unit ?? null,
+                lineTotal: typeof ing.quantity === 'number' ? +(latestTrend.price * ing.quantity).toFixed(2) : latestTrend.price,
                 source: isLive ? latestTrend.source : 'Estimated',
                 isLive,
                 history: trends

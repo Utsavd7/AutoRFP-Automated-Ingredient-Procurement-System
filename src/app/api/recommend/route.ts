@@ -19,10 +19,13 @@ export async function GET(req: Request) {
         const { searchParams } = new URL(req.url);
         const menuId = searchParams.get('menuId');
         const tenantId = searchParams.get('tenantId') ?? 'tenant_demo';
+        const mealName = searchParams.get('mealName') ?? '';
+        const guestCount = Number(searchParams.get('guestCount') ?? 0);
+        const marketValue = Number(searchParams.get('marketValue') ?? 0);
         if (!menuId) return NextResponse.json({ error: 'menuId is required' }, { status: 400 });
 
         const rfps = await prisma.rFP.findMany({
-            where: { menuId, status: 'REPLIED' } as any,
+            where: { menuId, tenantId, status: 'REPLIED' } as any,
             include: {
                 distributor: true,
                 quotes: { orderBy: { price: 'asc' }, take: 1 },
@@ -38,7 +41,11 @@ export async function GET(req: Request) {
             location: rfp.distributor.location,
             price: rfp.quotes[0]?.price,
             details: rfp.quotes[0]?.details || 'No details provided',
-        }));
+        })).filter((q: any) => typeof q.price === 'number');
+
+        if (quotesSummary.length === 0) {
+            return NextResponse.json({ error: 'No valid quote prices received yet.' }, { status: 404 });
+        }
 
         const menu = await prisma.menu.findUnique({
             where: { id: menuId },
@@ -65,6 +72,11 @@ export async function GET(req: Request) {
         const marketContext = ingredientPricingMap.size > 0
             ? `\nCurrent wholesale market prices:\n${Array.from(ingredientPricingMap.entries()).map(([n, p]) => `  - ${n}: $${p.toFixed(2)}/unit`).join('\n')}\nUse this to evaluate whether each vendor's quote is fair.`
             : '';
+        const orderContext = [
+            mealName ? `Meal being procured: ${mealName}` : '',
+            guestCount > 0 ? `Guest count: ${guestCount}` : '',
+            marketValue > 0 ? `Calculated market baseline for this sized order: $${marketValue.toFixed(2)}` : '',
+        ].filter(Boolean).join('\n') || 'No order context provided.';
 
         // RAG: embed the current situation and retrieve similar past procurement decisions
         const situationText = `Procurement decision: ${quotesSummary.map(q => `${q.distributorName} quoted $${q.price} from ${q.location}`).join('; ')}`;
@@ -83,11 +95,15 @@ export async function GET(req: Request) {
         const systemMsg = 'You are an expert restaurant procurement advisor. Return ONLY valid JSON, no markdown.';
         const userMsg = `Analyze these supplier quotes and recommend the best one.
 
+Order context:
+${orderContext}
+
 Quotes:
 ${JSON.stringify(quotesSummary, null, 2)}
 ${marketContext}${ragContext}
 
-Evaluate based on: price vs market rates, delivery terms, reliability signals, red flags, and any historical patterns.
+Evaluate based on: total quote for this sized order, price vs calculated market baseline, delivery terms, reliability signals, red flags, and any historical patterns.
+Do not mention ingredient counts unless they appear in the order context. Do not use markdown.
 
 Return ONLY this JSON:
 {
@@ -141,9 +157,17 @@ Return ONLY this JSON:
             };
         }
 
+        const highestQuote = Math.max(...quotesSummary.map((q: any) => q.price));
+        const lowestQuote = Math.min(...quotesSummary.map((q: any) => q.price));
+        const recommendedQuote = quotesSummary.find((q: any) =>
+            q.distributorName.trim().toLowerCase() === recommendation!.recommendedDistributor.trim().toLowerCase()
+        );
+        const computedSavings = recommendedQuote ? highestQuote - recommendedQuote.price : highestQuote - lowestQuote;
+
         return NextResponse.json({
             recommendation: {
                 ...recommendation,
+                savings: Math.max(0, +computedSavings.toFixed(2)),
                 verification: {
                     ollamaChoice: ollamaRec?.recommendedDistributor ?? null,
                     groqChoice: groqRec?.recommendedDistributor ?? null,

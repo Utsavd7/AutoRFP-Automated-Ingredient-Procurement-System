@@ -173,9 +173,10 @@ Parse the following restaurant menu and extract every dish into a structured rec
 For each dish, provide:
 1. The dish name.
 2. A list of ingredients required to make it.
-3. For each ingredient, a realistic quantity (Number) and unit (String) for a restaurant-scale portion.
+3. For each ingredient, a realistic quantity (Number) and unit (String) for ONE plated guest portion of that dish.
    - Infer standard ingredients if not listed (e.g., "Burger" → bun, ground beef, lettuce, tomato, cheese).
-   - Keep quantities practical (e.g., 0.25, 1, 2).
+   - Keep quantities practical for one guest (e.g., 0.25 lb beef, 2 oz cheese, 1 bun).
+   - Do not estimate quantities for the full restaurant menu or a bulk order. The app will scale portions by guest count later.
 
 Output ONLY valid JSON matching this exact schema. No markdown, no explanation, just the JSON:
 {

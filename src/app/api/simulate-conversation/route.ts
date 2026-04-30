@@ -51,7 +51,7 @@ function buildIngredientBreakdown(
 // POST /api/simulate-conversation
 export async function POST(req: Request) {
     try {
-        const { rfpId, ingredients = [], pricingData = [], tenantId = 'tenant_demo' } = await req.json();
+        const { rfpId, ingredients = [], pricingData = [], tenantId = 'tenant_demo', mealName, guestCount, bufferPct } = await req.json();
 
         if (!openai) {
             return NextResponse.json({ error: 'GROQ_API_KEY is missing.' }, { status: 500 });
@@ -76,6 +76,11 @@ export async function POST(req: Request) {
         // Compute the estimated market total from real data
         const estimatedTotal = computeEstimatedTotal(ingredients, pricingData);
         const ingredientBreakdown = buildIngredientBreakdown(ingredients, pricingData);
+        const orderContext = [
+            mealName ? `Meal: ${mealName}` : '',
+            guestCount ? `Guest count: ${guestCount}` : '',
+            typeof bufferPct === 'number' ? `Buffer already included in requested quantities: ${bufferPct}%` : '',
+        ].filter(Boolean).join('\n');
 
         // Vendors typically quote 5–20% above market cost
         const vendorMarkupLow = (estimatedTotal * 1.05).toFixed(2);
@@ -95,11 +100,12 @@ export async function POST(req: Request) {
                 const pricingContext = hasRealPricing
                     ? `
 The following real wholesale market data was used to estimate the order cost:
+${orderContext ? `${orderContext}\n` : ''}
 ${ingredientBreakdown}
 TOTAL estimated market cost: $${estimatedTotal.toFixed(2)}
 A typical vendor would quote between $${vendorMarkupLow} and $${vendorMarkupHigh} (5–20% margin).
 Your quote MUST fall within or near this range to be realistic.`
-                    : `Quote a realistic total between $600 and $1200 for a standard restaurant bulk ingredient order.`;
+                    : `Quote a realistic total for the requested meal order.${orderContext ? `\n${orderContext}` : ''}`;
 
                 const vendorPrompt = isFollowUp
                     ? `You are a real food wholesale vendor (${rfp.distributor.name}). 

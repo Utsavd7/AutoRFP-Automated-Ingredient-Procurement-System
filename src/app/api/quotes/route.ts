@@ -8,6 +8,7 @@ export async function GET(req: Request) {
     try {
         const { searchParams } = new URL(req.url);
         const menuId = searchParams.get('menuId');
+        const tenantId = searchParams.get('tenantId');
 
         if (!menuId) {
             return NextResponse.json({ error: 'Menu ID is required' }, { status: 400 });
@@ -17,6 +18,7 @@ export async function GET(req: Request) {
         const rfps = await prisma.rFP.findMany({
             where: {
                 menuId: menuId,
+                ...(tenantId ? { tenantId } : {}),
                 status: 'REPLIED'
             },
             include: {

@@ -8,7 +8,7 @@ const prisma = new PrismaClient();
 
 export async function POST(req: Request) {
     try {
-        const { distributorIds, menuId, ingredients, tenantId = 'tenant_demo' } = await req.json();
+        const { distributorIds, menuId, ingredients, tenantId = 'tenant_demo', mealName, guestCount, bufferPct } = await req.json();
 
         if (!distributorIds || distributorIds.length === 0 || !menuId || !ingredients) {
             return NextResponse.json(
@@ -31,6 +31,11 @@ export async function POST(req: Request) {
 
         // Format the ingredient list for the email body
         const ingredientListText = ingredients.map((ing: any) => `- ${ing.quantity} ${ing.unit} of ${ing.name}`).join('\n');
+        const orderContext = [
+            mealName ? `Meal: ${mealName}` : '',
+            guestCount ? `Guest count: ${guestCount}` : '',
+            typeof bufferPct === 'number' ? `Procurement buffer: ${bufferPct}%` : '',
+        ].filter(Boolean).join('\n');
 
         // Generate and send an RFP for each distributor
         for (const distributor of distributors) {
@@ -38,6 +43,7 @@ export async function POST(req: Request) {
             const rfp = await prisma.rFP.create({
                 data: {
                     menuId: menuId,
+                    tenantId,
                     distributorId: distributor.id,
                     status: 'SENT'
                 }
@@ -55,6 +61,7 @@ Dear ${distributor.name} Team,
 
 We are looking to source the following ingredients for our upcoming menu cycle.
 Please provide your best wholesale pricing and estimated delivery times.
+${orderContext ? `\nOrder context:\n${orderContext}\n` : ''}
 
 Ingredients Required:
 ${ingredientListText}

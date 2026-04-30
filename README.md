@@ -12,6 +12,7 @@ The demo is designed to degrade gracefully: Groq powers the cloud AI path, Ollam
 - Persistent app sidebar: Dashboard, New Procurement, History, Intelligence, Settings.
 - Dashboard with active RFPs, savings to date, last negotiation outcome, and market alerts.
 - New Procurement workbench with menu parsing, market pricing, supplier discovery, quote collection, AI recommendation, and SSE negotiation stream.
+- Meal order sizing: select one extracted dish, enter guest count, apply a buffer, then procure only the scaled ingredients for that event.
 - Procurement History with spend, savings, best vendor, and "run again" retention flow.
 - Intelligence page with price spike alerts, savings analytics, category savings, and supplier scorecards.
 - Restaurant Settings for profile, budget targets, preferred suppliers, and integration status.
@@ -188,13 +189,17 @@ demo.sh                              One-command local demo setup
 
 ### Real Restaurant URL
 
-Paste this directly into the menu input field:
+Paste either of these directly into the menu input field:
 
 ```text
 https://carminesnyc.com/menus/menus-c44-q420-dining#
 ```
 
-AutoRFP fetches the page server-side, strips all HTML, and passes clean text to the LLMs. Carmine's NYC is a large Italian-American menu with dozens of dishes - great for demoing bulk ingredient extraction.
+```text
+https://www.tavernonthegreen.com/menu/
+```
+
+AutoRFP fetches the page server-side, strips all HTML, and passes clean text to the LLMs. Carmine's NYC is a large Italian-American menu with dozens of dishes - great for demoing bulk ingredient extraction. Tavern on the Green is useful as a second polished restaurant sample for testing higher-end menu language.
 
 ### Plain Text Sample
 

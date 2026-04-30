@@ -1,6 +1,8 @@
 import OpenAI from 'openai';
 import { PrismaClient } from '@prisma/client';
 import { Resend } from 'resend';
+import { getEmbedding } from '@/lib/embeddings';
+import { ingestQuote } from '@/lib/chroma';
 
 const groq = process.env.GROQ_API_KEY
     ? new OpenAI({ apiKey: process.env.GROQ_API_KEY, baseURL: 'https://api.groq.com/openai/v1' })
@@ -589,6 +591,29 @@ Return JSON:
                     negotiationResults
                 };
                 send('complete', completePayload);
+
+                // ── Ingest negotiation outcomes into ChromaDB for RAG ─────
+                for (const result of negotiationResults) {
+                    const vendor = quotes.find((q: any) => q.vendorName === result.vendorName);
+                    const text = `Procurement decision: ${result.vendorName} (${vendor?.location ?? 'unknown'}) quoted $${result.originalPrice.toFixed(2)}, negotiated to $${result.negotiatedPrice.toFixed(2)}, saving $${result.savings.toFixed(2)}. Decision: ${result.decision}. Ingredients: ${Object.keys(marketPrices).join(', ') || 'N/A'}.`;
+                    try {
+                        const embedding = await getEmbedding(text);
+                        if (embedding) {
+                            await ingestQuote({
+                                id: `${menuId}-${result.vendorName}-${Date.now()}`,
+                                text,
+                                embedding,
+                                metadata: {
+                                    distributorName: result.vendorName,
+                                    location: vendor?.location ?? '',
+                                    price: result.negotiatedPrice,
+                                    ingredients: Object.keys(marketPrices).join(', '),
+                                    timestamp: new Date().toISOString(),
+                                },
+                            });
+                        }
+                    } catch { /* non-critical */ }
+                }
 
                 // ── Send consolidated buyer report via email ───────────────
                 await sendBuyerReport(completePayload, quotes);

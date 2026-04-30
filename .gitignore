@@ -54,5 +54,12 @@ next-env.d.ts
 # ── Vercel ────────────────────────────────────────────────
 .vercel
 
+# ── ChromaDB vector store data ────────────────────────────
+/chroma_data/
+
 # ── Local scripts ─────────────────────────────────────────
 /scripts/show-tables.sh
+
+# ── One-off test files ────────────────────────────────────
+test.js
+test-groq.js

@@ -15,21 +15,65 @@ type ParsedDish = {
     ingredients: ParsedIngredient[];
 };
 
+const DROP_INGREDIENTS = new Set([
+    'salt',
+    'black pepper',
+    'pepper',
+    'water',
+    'ice',
+]);
+
+function normalizeIngredientName(name: string) {
+    return name
+        .replace(/\s+/g, ' ')
+        .replace(/\b(fresh|chopped|diced|minced|sliced|grated|shaved|toasted|roasted|grilled)\b/gi, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function portionDefaultForIngredient(name: string): ParsedIngredient {
+    const lower = name.toLowerCase();
+
+    const count = (quantity: number, unit = 'ct') => ({ name, quantity, unit });
+    const oz = (quantity: number) => ({ name, quantity, unit: 'oz' });
+    const lb = (quantity: number) => ({ name, quantity, unit: 'lb' });
+
+    if (/\b(bun|roll|bagel|english muffin|tortilla|pita|flatbread)\b/.test(lower)) return count(1);
+    if (/\b(egg|eggs)\b/.test(lower)) return count(2);
+    if (/\b(ribeye|steak|filet|sirloin|short rib|brisket)\b/.test(lower)) return oz(8);
+    if (/\b(beef|burger|patty|lamb|pork|chicken|turkey|duck|salmon|tuna|cod|fish|shrimp|scallop|lobster|crab)\b/.test(lower)) return oz(6);
+    if (/\b(pasta|spaghetti|rigatoni|linguine|fettuccine|noodle|rice|risotto|grain|quinoa|couscous)\b/.test(lower)) return oz(4);
+    if (/\b(flour|dough|pizza dough|breadcrumb|panko|bread crumb)\b/.test(lower)) return oz(4);
+    if (/\b(lettuce|romaine|greens|spinach|arugula|kale|salad)\b/.test(lower)) return oz(3);
+    if (/\b(potato|fries|vegetable|broccoli|carrot|tomato|onion|pepper|mushroom|asparagus|zucchini|squash|corn|peas|beans)\b/.test(lower)) return oz(4);
+    if (/\b(cheese|cheddar|mozzarella|parmesan|pecorino|ricotta|cream cheese|mascarpone|feta|goat cheese)\b/.test(lower)) return oz(1.5);
+    if (/\b(butter|oil|olive oil|canola oil|aioli|mayo|mayonnaise|dressing|vinaigrette|sauce|pesto|marinara|gravy|jus|glaze)\b/.test(lower)) return oz(1);
+    if (/\b(cream|milk|yogurt|broth|stock|wine)\b/.test(lower)) return oz(2);
+    if (/\b(herb|basil|parsley|cilantro|thyme|rosemary|oregano|chive|dill|mint|garlic|ginger|shallot|lemon|lime)\b/.test(lower)) return oz(0.25);
+    if (/\b(sugar|honey|syrup|chocolate|cocoa|nuts|almond|walnut|pecan|fruit|berry|apple|banana|citrus)\b/.test(lower)) return oz(2);
+
+    return oz(2);
+}
+
 function sanitizeDishes(dishes: any[] = []): ParsedDish[] {
     return dishes
         .filter(dish => typeof dish?.name === 'string' && dish.name.trim())
-        .map(dish => ({
-            name: dish.name.trim(),
-            ingredients: Array.isArray(dish.ingredients)
-                ? dish.ingredients
-                    .filter((ing: any) => typeof ing?.name === 'string' && ing.name.trim())
-                    .map((ing: any) => ({
-                        name: ing.name.trim(),
-                        quantity: Number.isFinite(Number(ing.quantity)) && Number(ing.quantity) > 0 ? Number(ing.quantity) : 1,
-                        unit: typeof ing.unit === 'string' && ing.unit.trim() ? ing.unit.trim() : 'unit',
-                    }))
-                : [],
-        }));
+        .map(dish => {
+            const seen = new Set<string>();
+            const ingredients = (Array.isArray(dish.ingredients) ? dish.ingredients : [])
+                .filter((ing: any) => typeof ing?.name === 'string' && ing.name.trim())
+                .map((ing: any) => normalizeIngredientName(ing.name))
+                .filter((name: string) => name && !DROP_INGREDIENTS.has(name.toLowerCase()))
+                .filter((name: string) => {
+                    const key = name.toLowerCase();
+                    if (seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                })
+                .map(portionDefaultForIngredient);
+
+            return { name: dish.name.trim(), ingredients };
+        });
 }
 
 function needsIngredientEnrichment(dishes: ParsedDish[]) {
@@ -40,109 +84,113 @@ const MOCK_DISHES = [
     {
         name: "Truffle Arancini (4pc)",
         ingredients: [
-            { name: "Arborio Rice", quantity: 0.5, unit: "lbs" },
-            { name: "Truffle Oil", quantity: 1, unit: "oz" },
-            { name: "Mozzarella", quantity: 4, unit: "oz" },
-            { name: "Breadcrumbs", quantity: 2, unit: "oz" }
+            { name: "Arborio Rice" },
+            { name: "Truffle Oil" },
+            { name: "Mozzarella" },
+            { name: "Breadcrumbs" }
         ]
     },
     {
         name: "Crispy Calamari Fritti",
         ingredients: [
-            { name: "Fresh Squid", quantity: 0.75, unit: "lbs" },
-            { name: "Flour", quantity: 4, unit: "oz" },
-            { name: "Lemon", quantity: 1, unit: "piece" },
-            { name: "Marinara Sauce", quantity: 4, unit: "oz" }
+            { name: "Squid" },
+            { name: "Flour" },
+            { name: "Lemon" },
+            { name: "Marinara Sauce" }
         ]
     },
     {
         name: "Classic Cheeseburger",
         ingredients: [
-            { name: "Ground Beef", quantity: 20, unit: "lbs" },
-            { name: "Hamburger Buns", quantity: 50, unit: "ct" },
-            { name: "Cheddar Cheese Slices", quantity: 5, unit: "lbs" },
-            { name: "Iceberg Lettuce", quantity: 10, unit: "heads" }
+            { name: "Ground Beef" },
+            { name: "Hamburger Bun" },
+            { name: "Cheddar Cheese" },
+            { name: "Iceberg Lettuce" },
+            { name: "Tomato" }
         ]
     },
     {
         name: "Margarita Pizza",
         ingredients: [
-            { name: "Pizza Flour (Type 00)", quantity: 50, unit: "lbs" },
-            { name: "San Marzano Tomatoes", quantity: 6, unit: "cans (#10)" },
-            { name: "Fresh Mozzarella", quantity: 15, unit: "lbs" },
-            { name: "Fresh Basil", quantity: 2, unit: "lbs" }
+            { name: "Pizza Dough" },
+            { name: "San Marzano Tomatoes" },
+            { name: "Mozzarella" },
+            { name: "Basil" },
+            { name: "Olive Oil" }
         ]
     },
     {
         name: "Caesar Salad",
         ingredients: [
-            { name: "Romaine Hearts", quantity: 24, unit: "ct" },
-            { name: "Parmesan Cheese", quantity: 10, unit: "lbs" },
-            { name: "Anchovy Paste", quantity: 2, unit: "tubes" },
-            { name: "Croutons", quantity: 5, unit: "lbs" }
+            { name: "Romaine Hearts" },
+            { name: "Parmesan Cheese" },
+            { name: "Caesar Dressing" },
+            { name: "Croutons" }
         ]
     },
     {
         name: "Spaghetti Carbonara",
         ingredients: [
-            { name: "Dry Spaghetti", quantity: 20, unit: "lbs" },
-            { name: "Guanciale", quantity: 5, unit: "lbs" },
-            { name: "Large Eggs", quantity: 15, unit: "doz" },
-            { name: "Pecorino Romano", quantity: 8, unit: "lbs" }
+            { name: "Spaghetti" },
+            { name: "Guanciale" },
+            { name: "Eggs" },
+            { name: "Pecorino Romano" }
         ]
     },
     {
         name: "Grilled Ribeye Steak",
         ingredients: [
-            { name: "Bone-in Ribeye Steaks", quantity: 30, unit: "ct" },
-            { name: "Unsalted Butter", quantity: 10, unit: "lbs" },
-            { name: "Fresh Garlic", quantity: 3, unit: "lbs" },
-            { name: "Fresh Thyme", quantity: 1, unit: "lb" }
+            { name: "Ribeye Steak" },
+            { name: "Butter" },
+            { name: "Garlic" },
+            { name: "Thyme" }
         ]
     },
     {
         name: "Fish and Chips",
         ingredients: [
-            { name: "Cod Fillets", quantity: 25, unit: "lbs" },
-            { name: "Idaho Potatoes", quantity: 50, unit: "lbs" },
-            { name: "All-Purpose Flour", quantity: 25, unit: "lbs" },
-            { name: "Canola Oil", quantity: 35, unit: "lbs" }
+            { name: "Cod Fillets" },
+            { name: "Potatoes" },
+            { name: "Flour" },
+            { name: "Canola Oil" }
         ]
     },
     {
         name: "Chicken Tikka Masala",
         ingredients: [
-            { name: "Chicken Breast", quantity: 40, unit: "lbs" },
-            { name: "Basmati Rice", quantity: 50, unit: "lbs" },
-            { name: "Heavy Cream", quantity: 4, unit: "gallons" },
-            { name: "Garam Masala", quantity: 2, unit: "lbs" }
+            { name: "Chicken Breast" },
+            { name: "Basmati Rice" },
+            { name: "Heavy Cream" },
+            { name: "Garam Masala" },
+            { name: "Tomato Sauce" }
         ]
     },
     {
         name: "Vegetable Stir Fry",
         ingredients: [
-            { name: "Broccoli Florets", quantity: 15, unit: "lbs" },
-            { name: "Bell Peppers", quantity: 10, unit: "lbs" },
-            { name: "Soy Sauce", quantity: 2, unit: "gallons" },
-            { name: "Fresh Ginger", quantity: 3, unit: "lbs" }
+            { name: "Broccoli" },
+            { name: "Bell Peppers" },
+            { name: "Soy Sauce" },
+            { name: "Ginger" },
+            { name: "Rice" }
         ]
     },
     {
         name: "Classic Tiramisu",
         ingredients: [
-            { name: "Mascarpone Cheese", quantity: 10, unit: "lbs" },
-            { name: "Ladyfingers", quantity: 20, unit: "packs" },
-            { name: "Espresso Beans", quantity: 5, unit: "lbs" },
-            { name: "Cocoa Powder", quantity: 2, unit: "lbs" }
+            { name: "Mascarpone Cheese" },
+            { name: "Ladyfingers" },
+            { name: "Espresso" },
+            { name: "Cocoa Powder" }
         ]
     },
     {
         name: "New York Cheesecake",
         ingredients: [
-            { name: "Cream Cheese", quantity: 30, unit: "lbs" },
-            { name: "Graham Cracker Crumbs", quantity: 10, unit: "lbs" },
-            { name: "Granulated Sugar", quantity: 25, unit: "lbs" },
-            { name: "Vanilla Extract", quantity: 32, unit: "oz" }
+            { name: "Cream Cheese" },
+            { name: "Graham Cracker Crumbs" },
+            { name: "Sugar" },
+            { name: "Vanilla Extract" }
         ]
     }
 ];
@@ -205,14 +253,12 @@ Parse the following restaurant menu and extract every dish into a structured rec
 For each dish, provide:
 1. The dish name.
 2. A complete list of ingredients required to make it.
-3. For each ingredient, a realistic quantity (Number) and unit (String) for ONE plated guest portion of that dish.
+3. For each ingredient, provide ONLY the ingredient name. Quantity/unit may be omitted because the app assigns deterministic portion defaults.
    - First use ingredients explicitly named in the menu item title or description.
-   - If the menu only gives a dish name or incomplete description, infer the missing core ingredients with culinary knowledge.
-   - Include proteins, starches, buns/breads/pasta, produce, dairy, sauces, oils/fats, aromatics, garnish, and major seasonings when relevant.
-   - Do not return a dish with fewer than 3 ingredients unless it is genuinely a single-ingredient item.
-   - Infer standard ingredients if not listed (e.g., "Burger" → bun, ground beef, lettuce, tomato, cheese).
-   - Keep quantities practical for one guest (e.g., 0.25 lb beef, 2 oz cheese, 1 bun).
-   - Do not estimate quantities for the full restaurant menu or a bulk order. The app will scale portions by guest count later.
+   - If the menu only gives a dish name or incomplete description, infer only the missing CORE ingredients with culinary knowledge.
+   - Include proteins, starches, buns/breads/pasta, main produce, dairy, signature sauces, and important fats/oils.
+   - Exclude salt, pepper, water, generic seasoning blends, tiny garnish, and optional micro-ingredients unless explicitly named as a signature component.
+   - Aim for 4-8 procurement-relevant ingredients per entree, 3-6 per appetizer or dessert, unless the menu description clearly requires more.
 
 Output ONLY valid JSON matching this exact schema. No markdown, no explanation, just the JSON:
 {
@@ -220,7 +266,7 @@ Output ONLY valid JSON matching this exact schema. No markdown, no explanation, 
     {
       "name": "String",
       "ingredients": [
-        { "name": "String", "quantity": Number, "unit": "String" }
+        { "name": "String" }
       ]
     }
   ]
@@ -238,11 +284,12 @@ The first extraction may be incomplete. Enrich every dish so each has the full i
 Rules:
 - Preserve every dish name from the current extraction.
 - Use the menu title and description as the source of truth when they mention ingredients.
-- If an ingredient is not listed but required to make the dish, infer it with Groq culinary knowledge.
-- Include proteins, starches, breads/pasta, produce, dairy, sauces, oils/fats, aromatics, garnish, and major seasonings where relevant.
+- If an ingredient is not listed but required to make the dish, infer only core procurement-relevant ingredients with Groq culinary knowledge.
+- Include proteins, starches, breads/pasta, main produce, dairy, signature sauces, and important fats/oils.
+- Exclude salt, pepper, water, generic seasoning blends, tiny garnish, and optional micro-ingredients unless explicitly named as a signature component.
 - Do not include packaging, labor, beverages, or equipment.
-- Quantities must be for ONE guest portion only. The frontend will multiply by guest count.
-- Return at least 3 ingredients per dish unless the dish is truly single-ingredient.
+- Do not invent quantities. Return ingredient names only.
+- Aim for 4-8 procurement-relevant ingredients per entree, 3-6 per appetizer or dessert, unless the description clearly requires more.
 
 Current extraction:
 ${JSON.stringify({ dishes: currentDishes }, null, 2)}
@@ -256,7 +303,7 @@ Return ONLY this JSON:
     {
       "name": "String",
       "ingredients": [
-        { "name": "String", "quantity": Number, "unit": "String" }
+        { "name": "String" }
       ]
     }
   ]

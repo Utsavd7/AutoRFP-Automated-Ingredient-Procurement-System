@@ -100,7 +100,12 @@ function scaleIngredientForGuests(ingredient: any, guestCount: number, bufferPct
   let quantity = perGuestQuantity * Math.max(1, guestCount) * (1 + Math.max(0, bufferPct) / 100);
   let unit = originalUnit || 'unit';
 
-  if (['oz', 'ounce', 'ounces'].includes(normalizedUnit)) {
+  const countLike = /^(ct|count|piece|pieces|each|ea|bun|buns|head|heads|pack|packs|can|cans|doz|dozen|unit)$/i.test(unit);
+  const liquidLike = /sauce|dressing|vinaigrette|oil|cream|milk|broth|stock|wine|juice|espresso|syrup|glaze|aioli|mayo/i.test(String(ingredient.name));
+
+  if (countLike) {
+    // keep count-based procurement as counts
+  } else if (['oz', 'ounce', 'ounces'].includes(normalizedUnit)) {
     quantity = quantity / 16;
     unit = 'lb';
   } else if (['g', 'gram', 'grams'].includes(normalizedUnit)) {
@@ -112,20 +117,19 @@ function scaleIngredientForGuests(ingredient: any, guestCount: number, bufferPct
   } else if (['lb', 'lbs', 'pound', 'pounds'].includes(normalizedUnit)) {
     unit = 'lb';
   } else if (['gal', 'gallon', 'gallons'].includes(normalizedUnit)) {
-    quantity = quantity * 8.34;
-    unit = 'lb';
+    if (liquidLike) unit = 'gal';
+    else { quantity = quantity * 8.34; unit = 'lb'; }
   } else if (['qt', 'quart', 'quarts'].includes(normalizedUnit)) {
-    quantity = quantity * 2.085;
-    unit = 'lb';
+    if (liquidLike) unit = 'qt';
+    else { quantity = quantity * 2.085; unit = 'lb'; }
   } else if (['pt', 'pint', 'pints'].includes(normalizedUnit)) {
-    quantity = quantity * 1.04;
-    unit = 'lb';
+    if (liquidLike) unit = 'pt';
+    else { quantity = quantity * 1.04; unit = 'lb'; }
   } else if (['cup', 'cups'].includes(normalizedUnit)) {
-    quantity = quantity * 0.52;
-    unit = 'lb';
+    if (liquidLike) unit = 'cup';
+    else { quantity = quantity * 0.52; unit = 'lb'; }
   }
 
-  const countLike = /^(ct|count|piece|pieces|each|ea|bun|buns|head|heads|pack|packs|can|cans|doz|dozen)$/i.test(unit);
   const roundedQuantity = countLike ? Math.ceil(quantity) : Number(quantity.toFixed(quantity >= 10 ? 1 : 2));
 
   return {

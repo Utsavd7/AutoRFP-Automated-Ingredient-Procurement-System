@@ -12,7 +12,8 @@ The demo is designed to degrade gracefully: Groq powers the cloud AI path, Ollam
 - Persistent app sidebar: Dashboard, New Procurement, History, Intelligence, Settings.
 - Dashboard with active RFPs, savings to date, last negotiation outcome, and market alerts.
 - New Procurement workbench with menu parsing, market pricing, supplier discovery, quote collection, AI recommendation, and SSE negotiation stream.
-- Ingredient-complete parsing: menu descriptions are used first; when a dish is missing detail, Groq infers the required core ingredients for one guest portion.
+- Ingredient-complete parsing: menu descriptions are used first; when a dish is missing detail, Groq infers only procurement-relevant core ingredients.
+- Deterministic portions: AI identifies ingredients, but app-owned portion defaults assign sane per-guest quantities before scaling.
 - Whole-menu order sizing: enter guest count once, apply a buffer, combine duplicate ingredients across every extracted dish, then automatically price, find suppliers, and send RFPs.
 - Procurement History with spend, savings, best vendor, and "run again" retention flow.
 - Intelligence page with price spike alerts, savings analytics, category savings, and supplier scorecards.
@@ -113,7 +114,7 @@ Open [http://localhost:3000](http://localhost:3000).
 
 | Capability | Primary path | Fallback path |
 |---|---|---|
-| Menu parsing | Groq `llama-3.3-70b-versatile` with menu-description extraction | Groq enrichment pass fills missing dish ingredients |
+| Menu parsing | Groq `llama-3.3-70b-versatile` extracts dish and ingredient names from menu descriptions | Groq enrichment pass fills missing core ingredients; deterministic portion rules set quantities |
 | Recommendations | Ollama + Groq comparison when both are available | Groq result when local model is down |
 | Agent negotiation | Groq `llama-3.3-70b-versatile` | Helpful API/toast error if `GROQ_API_KEY` is missing |
 | Embeddings | Ollama `nomic-embed-text` | Deterministic 768-dim local embedding fallback |
@@ -127,11 +128,11 @@ The goal is simple: missing local services should never take down the demo.
 
 1. Paste a menu or restaurant menu URL.
 2. AutoRFP fetches URL content server-side when needed and strips it into clean menu text.
-3. Groq extracts every dish and uses menu item descriptions to identify ingredients.
-4. If a dish has missing detail, a second Groq enrichment pass infers required core ingredients for one guest portion.
+3. Groq extracts every dish and uses menu item descriptions to identify procurement-relevant ingredients.
+4. If a dish has missing detail, a second Groq enrichment pass infers missing core ingredients while excluding tiny seasonings/garnish.
 5. Enter the guest count and buffer percentage for the whole menu.
 6. Click `Apply and send RFPs`.
-7. AutoRFP scales every dish, combines duplicate ingredients across the full menu, fetches market prices, finds suppliers, and sends RFPs automatically.
+7. AutoRFP applies deterministic per-guest portion defaults, scales every dish, combines duplicate ingredients across the full menu, fetches market prices, finds suppliers, and sends RFPs automatically.
 
 ---
 

@@ -336,7 +336,6 @@ export default function ProcurementPage() {
   const [ingredients, setIngredients] = useState<any[]>([]);
   const [parseModelSource, setParseModelSource] = useState<string | null>(null);
   const [menuInsight, setMenuInsight] = useState<string | null>(null);
-  const [selectedRecipeId, setSelectedRecipeId] = useState('');
   const [guestCount, setGuestCount] = useState(50);
   const [bufferPct, setBufferPct] = useState(10);
 
@@ -371,11 +370,6 @@ export default function ProcurementPage() {
 
   const [error, setError] = useState('');
 
-  const selectedRecipe = useMemo(
-    () => recipes.find((recipe: any) => recipe.id === selectedRecipeId) ?? recipes[0] ?? null,
-    [recipes, selectedRecipeId]
-  );
-
   useEffect(() => {
     const saved = readAccount();
     if (saved) {
@@ -397,7 +391,7 @@ export default function ProcurementPage() {
 
   const handleReset = () => {
     setMenuText(''); setRecipes([]); setIngredients([]); setParseModelSource(null); setMenuInsight(null);
-    setSelectedRecipeId(''); setGuestCount(50); setBufferPct(10);
+    setGuestCount(50); setBufferPct(10);
     setPricingData([]); setMlForecasts({}); setDistributors([]); setDistributorSource(null);
     setSentRFPs([]); setQuotes([]); setConversationLogs({}); setRecommendation(null); setRiskScores([]);
     setAgentEvents([]); setEmailThread([]); setNegotiationComplete(null); setError('');
@@ -450,16 +444,32 @@ export default function ProcurementPage() {
     });
   };
 
-  const buildMealProcurementList = (recipe: any, guests = guestCount, buffer = bufferPct) => {
-    if (!recipe?.ingredients?.length) return [];
-    return recipe.ingredients.map((ing: any) => scaleIngredientForGuests(ing, guests, buffer));
+  const buildWholeMenuProcurementList = (menuRecipes = recipes, guests = guestCount, buffer = bufferPct) => {
+    const map = new Map<string, any>();
+    menuRecipes.forEach((recipe: any) => {
+      (recipe.ingredients ?? []).forEach((ing: any) => {
+        const scaled = scaleIngredientForGuests(ing, guests, buffer);
+        const key = `${String(scaled.name).trim().toLowerCase()}::${String(scaled.unit).trim().toLowerCase()}`;
+        const existing = map.get(key);
+        if (existing) {
+          existing.quantity = Number((Number(existing.quantity) + Number(scaled.quantity)).toFixed(existing.unit === 'lb' ? 2 : 0));
+          existing.sourceDishes = Array.from(new Set([...(existing.sourceDishes ?? []), recipe.name]));
+        } else {
+          map.set(key, { ...scaled, sourceDishes: [recipe.name] });
+        }
+      });
+    });
+    return Array.from(map.values()).map(ing => ({
+      ...ing,
+      quantity: /^(ct|count|piece|pieces|each|ea|bun|buns|head|heads|pack|packs|can|cans|doz|dozen)$/i.test(String(ing.unit))
+        ? Math.ceil(Number(ing.quantity))
+        : Number(Number(ing.quantity).toFixed(Number(ing.quantity) >= 10 ? 1 : 2)),
+    }));
   };
 
-  const applyMealSizing = async (recipeId = selectedRecipeId, guests = guestCount, buffer = bufferPct) => {
-    const recipe = recipes.find((r: any) => r.id === recipeId) ?? recipes[0];
-    if (!recipe) return;
-    const sized = buildMealProcurementList(recipe, guests, buffer);
-    setSelectedRecipeId(recipe.id);
+  const applyWholeMenuSizing = async (guests = guestCount, buffer = bufferPct) => {
+    if (!recipes.length) return;
+    const sized = buildWholeMenuProcurementList(recipes, guests, buffer);
     setIngredients(sized);
     setPricingData([]);
     setMlForecasts({});
@@ -471,7 +481,16 @@ export default function ProcurementPage() {
     setAgentEvents([]);
     setEmailThread([]);
     setNegotiationComplete(null);
+    setPipelineStatus('Fetching live market prices…');
     await handleFetchPricing(sized);
+    setPipelineStatus('Finding nearby suppliers…');
+    const loc = await resolveLocation();
+    const foundDistributors = await handleFindDistributors(loc);
+    if (foundDistributors.length) {
+      setPipelineStatus('Sending RFPs…');
+      await handleSendRFPs({ distributorList: foundDistributors, ingredientList: sized, guests, buffer });
+    }
+    setPipelineStatus('');
   };
 
   const handleFetchPricing = async (ingredientList: any[] = ingredients) => {
@@ -495,7 +514,7 @@ export default function ProcurementPage() {
 
   const handleFindDistributors = async (locationOverride?: string) => {
     const loc = locationOverride ?? distributorLocation.trim();
-    if (!loc) return;
+    if (!loc) return [];
     setLoadingDistributors(true);
     try {
       const res = await fetch('/api/distributors', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: loc }) });
@@ -504,8 +523,10 @@ export default function ProcurementPage() {
       setDistributors(data.distributors);
       setDistributorSource(data.source || null);
       setDistributorLocation(loc);
+      return data.distributors ?? [];
     } catch (err: any) { setError(err.message); toastApiError(err, 'Supplier search failed'); }
     finally { setLoadingDistributors(false); }
+    return [];
   };
 
   const handleParseMenu = async () => {
@@ -518,25 +539,30 @@ export default function ProcurementPage() {
       setRecipes(data.recipes);
       setParseModelSource(data.modelSource ?? null);
       setMenuInsight(data.menuInsight ?? null);
-      const firstRecipe = data.recipes[0];
-      const extracted = firstRecipe ? firstRecipe.ingredients.map((ing: any) => scaleIngredientForGuests(ing, guestCount, bufferPct)) : [];
-      setSelectedRecipeId(firstRecipe?.id ?? '');
-      setIngredients(extracted);
-      setPipelineStatus('Fetching live market prices…');
-      await handleFetchPricing(extracted);
-      setPipelineStatus('Finding nearby suppliers…');
-      const loc = await resolveLocation();
-      await handleFindDistributors(loc);
+      setIngredients([]);
+      setPricingData([]);
+      setMlForecasts({});
+      setDistributors([]);
+      setDistributorSource(null);
+      setSentRFPs([]);
+      setQuotes([]);
+      setRecommendation(null);
+      setRiskScores([]);
+      setPipelineStatus('Enter guests and apply quantities…');
     } catch (err: any) { setError(err.message); toastApiError(err, 'Menu parsing failed'); }
     finally { setLoading(false); setPipelineStatus(''); }
   };
 
-  const handleSendRFPs = async () => {
-    if (!distributors.length || !ingredients.length) return;
+  const handleSendRFPs = async (opts?: { distributorList?: any[]; ingredientList?: any[]; guests?: number; buffer?: number }) => {
+    const targetDistributors = opts?.distributorList ?? distributors;
+    const targetIngredients = opts?.ingredientList ?? ingredients;
+    const targetGuests = opts?.guests ?? guestCount;
+    const targetBuffer = opts?.buffer ?? bufferPct;
+    if (!targetDistributors.length || !targetIngredients.length) return;
     setSendingRFPs(true); setError('');
     try {
       const tenantId = account?.tenantId ?? 'tenant_demo';
-      const res = await fetch('/api/send-rfp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ distributorIds: distributors.map(d => d.id), menuId: recipes[0]?.menuId || 'demo-menu-id', ingredients, tenantId, mealName: selectedRecipe?.name, guestCount, bufferPct }) });
+      const res = await fetch('/api/send-rfp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ distributorIds: targetDistributors.map(d => d.id), menuId: recipes[0]?.menuId || 'demo-menu-id', ingredients: targetIngredients, tenantId, mealName: 'Full menu', guestCount: targetGuests, bufferPct: targetBuffer }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to send RFPs');
       setSentRFPs(data.rfps);
@@ -545,8 +571,8 @@ export default function ProcurementPage() {
         date: new Date().toISOString(),
         tenantId,
         restaurantName,
-        ingredientsCount: ingredients.length,
-        distributorsCount: data.rfps?.length ?? distributors.length,
+        ingredientsCount: targetIngredients.length,
+        distributorsCount: data.rfps?.length ?? targetDistributors.length,
         quotesCount: 0,
         status: 'RFPs in market',
       });
@@ -617,7 +643,7 @@ export default function ProcurementPage() {
     try {
       const unresolved = sentRFPs.filter(rfp => !quotes.some(q => q.rfpId === rfp.id));
       for (const rfp of unresolved) {
-        const res = await fetch('/api/simulate-conversation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rfpId: rfp.id, ingredients, pricingData, tenantId: account?.tenantId, mealName: selectedRecipe?.name, guestCount, bufferPct }) });
+        const res = await fetch('/api/simulate-conversation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rfpId: rfp.id, ingredients, pricingData, tenantId: account?.tenantId, mealName: 'Full menu', guestCount, bufferPct }) });
         const data = await res.json();
         newLogs[rfp.id] = [
           { role: 'system', message: `Processing vendor response from ${rfp.distributorName}...` },
@@ -641,7 +667,7 @@ export default function ProcurementPage() {
       const params = new URLSearchParams({
         menuId,
         tenantId,
-        mealName: selectedRecipe?.name ?? '',
+        mealName: 'Full menu',
         guestCount: String(guestCount),
         marketValue: String(marketValue),
       });
@@ -841,7 +867,7 @@ export default function ProcurementPage() {
         {/* ════════════════════
             Menu Analysis
         ════════════════════ */}
-        <Section done={recipes.length > 0} title="Menu Intelligence" subtitle="Paste your menu or a URL — AI extracts every dish and ingredient automatically">
+        <Section done={recipes.length > 0} title="Menu Intelligence" subtitle="Paste your menu or a URL — AI uses menu descriptions first, then Groq inference to complete missing ingredients">
           <div className="grid lg:grid-cols-5 gap-6">
             <Card className="lg:col-span-2 p-6 flex flex-col gap-5 border border-white/10">
               <label className="text-[11px] font-bold text-[#8A8F98] uppercase tracking-widest">Menu Input</label>
@@ -894,44 +920,28 @@ export default function ProcurementPage() {
 
             {recipes.length > 0 && (
               <Card className="lg:col-span-5 p-6 border border-blue-500/20 bg-blue-500/[0.03]">
-                <div className="flex items-start justify-between gap-4 flex-wrap mb-5">
-                  <div>
-                    <span className="text-[11px] font-bold text-blue-300 uppercase tracking-widest">Meal Order Sizing</span>
-                    <p className="text-[13px] text-[#8A8F98] mt-1">Choose one meal, enter the guest count, and AutoRFP scales one-portion ingredients with a buffer before procurement.</p>
-                  </div>
-                  <Tag color="blue">{selectedRecipe?.name ?? 'Select meal'}</Tag>
-                </div>
-                <div className="grid md:grid-cols-[1fr_130px_130px_auto] gap-3 items-end">
-                  <label className="space-y-2">
-                    <span className="text-[10px] font-black text-[#8A8F98] uppercase tracking-widest">Meal</span>
-                    <select
-                      className="w-full bg-black border border-white/10 rounded-lg px-3 py-2.5 text-[13px] text-[#EEEEEE] focus:outline-none focus:ring-1 focus:ring-white/20"
-                      value={selectedRecipeId}
-                      onChange={e => {
-                        const nextId = e.target.value;
-                        setSelectedRecipeId(nextId);
-                        const recipe = recipes.find((r: any) => r.id === nextId);
-                        if (recipe) setIngredients(buildMealProcurementList(recipe));
-                        setPricingData([]); setMlForecasts({}); setQuotes([]); setSentRFPs([]); setRecommendation(null);
-                      }}
-                    >
-                      {recipes.map((recipe: any) => <option key={recipe.id} value={recipe.id}>{recipe.name}</option>)}
-                    </select>
-                  </label>
-                  <label className="space-y-2">
-                    <span className="text-[10px] font-black text-[#8A8F98] uppercase tracking-widest">Guests</span>
-                    <input
+	                <div className="flex items-start justify-between gap-4 flex-wrap mb-5">
+	                  <div>
+	                    <span className="text-[11px] font-bold text-blue-300 uppercase tracking-widest">Whole Menu Order Sizing</span>
+	                    <p className="text-[13px] text-[#8A8F98] mt-1">Enter the guest count once. AutoRFP scales every extracted dish, combines duplicate ingredients, then runs pricing, supplier discovery, and sends RFPs.</p>
+	                  </div>
+	                  <Tag color="blue">{recipes.length} dishes</Tag>
+	                </div>
+	                <div className="grid md:grid-cols-[130px_130px_auto] gap-3 items-end">
+	                  <label className="space-y-2">
+	                    <span className="text-[10px] font-black text-[#8A8F98] uppercase tracking-widest">Guests</span>
+	                    <input
                       type="number"
                       min={1}
                       value={guestCount}
-                      onChange={e => {
-                        const next = Math.max(1, Number(e.target.value) || 1);
-                        setGuestCount(next);
-                        if (selectedRecipe) setIngredients(buildMealProcurementList(selectedRecipe, next, bufferPct));
-                        setPricingData([]); setMlForecasts({}); setQuotes([]); setSentRFPs([]); setRecommendation(null);
-                      }}
-                      className="w-full bg-black border border-white/10 rounded-lg px-3 py-2.5 text-[13px] text-[#EEEEEE] focus:outline-none focus:ring-1 focus:ring-white/20"
-                    />
+	                      onChange={e => {
+	                        const next = Math.max(1, Number(e.target.value) || 1);
+	                        setGuestCount(next);
+	                        setIngredients([]);
+	                        setPricingData([]); setMlForecasts({}); setQuotes([]); setSentRFPs([]); setRecommendation(null); setDistributors([]);
+	                      }}
+	                      className="w-full bg-black border border-white/10 rounded-lg px-3 py-2.5 text-[13px] text-[#EEEEEE] focus:outline-none focus:ring-1 focus:ring-white/20"
+	                    />
                   </label>
                   <label className="space-y-2">
                     <span className="text-[10px] font-black text-[#8A8F98] uppercase tracking-widest">Buffer %</span>
@@ -940,20 +950,20 @@ export default function ProcurementPage() {
                       min={0}
                       max={50}
                       value={bufferPct}
-                      onChange={e => {
-                        const next = Math.max(0, Math.min(50, Number(e.target.value) || 0));
-                        setBufferPct(next);
-                        if (selectedRecipe) setIngredients(buildMealProcurementList(selectedRecipe, guestCount, next));
-                        setPricingData([]); setMlForecasts({}); setQuotes([]); setSentRFPs([]); setRecommendation(null);
-                      }}
-                      className="w-full bg-black border border-white/10 rounded-lg px-3 py-2.5 text-[13px] text-[#EEEEEE] focus:outline-none focus:ring-1 focus:ring-white/20"
-                    />
-                  </label>
-                  <Btn onClick={() => applyMealSizing()} disabled={!selectedRecipe || loadingPricing} loading={loadingPricing}>
-                    <Target className="w-4 h-4" />
-                    Apply quantities
-                  </Btn>
-                </div>
+	                      onChange={e => {
+	                        const next = Math.max(0, Math.min(50, Number(e.target.value) || 0));
+	                        setBufferPct(next);
+	                        setIngredients([]);
+	                        setPricingData([]); setMlForecasts({}); setQuotes([]); setSentRFPs([]); setRecommendation(null); setDistributors([]);
+	                      }}
+	                      className="w-full bg-black border border-white/10 rounded-lg px-3 py-2.5 text-[13px] text-[#EEEEEE] focus:outline-none focus:ring-1 focus:ring-white/20"
+	                    />
+	                  </label>
+	                  <Btn onClick={() => applyWholeMenuSizing()} disabled={!recipes.length || loadingPricing || loadingDistributors || sendingRFPs} loading={loadingPricing || loadingDistributors || sendingRFPs}>
+	                    <Target className="w-4 h-4" />
+	                    {pipelineStatus || 'Apply and send RFPs'}
+	                  </Btn>
+	                </div>
               </Card>
             )}
 

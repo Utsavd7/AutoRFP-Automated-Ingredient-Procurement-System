@@ -4,6 +4,38 @@ import { callOllama, callGroq, parseJSON } from '@/lib/llm';
 
 const prisma = new PrismaClient();
 
+type ParsedIngredient = {
+    name: string;
+    quantity: number;
+    unit: string;
+};
+
+type ParsedDish = {
+    name: string;
+    ingredients: ParsedIngredient[];
+};
+
+function sanitizeDishes(dishes: any[] = []): ParsedDish[] {
+    return dishes
+        .filter(dish => typeof dish?.name === 'string' && dish.name.trim())
+        .map(dish => ({
+            name: dish.name.trim(),
+            ingredients: Array.isArray(dish.ingredients)
+                ? dish.ingredients
+                    .filter((ing: any) => typeof ing?.name === 'string' && ing.name.trim())
+                    .map((ing: any) => ({
+                        name: ing.name.trim(),
+                        quantity: Number.isFinite(Number(ing.quantity)) && Number(ing.quantity) > 0 ? Number(ing.quantity) : 1,
+                        unit: typeof ing.unit === 'string' && ing.unit.trim() ? ing.unit.trim() : 'unit',
+                    }))
+                : [],
+        }));
+}
+
+function needsIngredientEnrichment(dishes: ParsedDish[]) {
+    return dishes.some(dish => dish.ingredients.length < 3);
+}
+
 const MOCK_DISHES = [
     {
         name: "Truffle Arancini (4pc)",
@@ -172,8 +204,12 @@ Parse the following restaurant menu and extract every dish into a structured rec
 
 For each dish, provide:
 1. The dish name.
-2. A list of ingredients required to make it.
+2. A complete list of ingredients required to make it.
 3. For each ingredient, a realistic quantity (Number) and unit (String) for ONE plated guest portion of that dish.
+   - First use ingredients explicitly named in the menu item title or description.
+   - If the menu only gives a dish name or incomplete description, infer the missing core ingredients with culinary knowledge.
+   - Include proteins, starches, buns/breads/pasta, produce, dairy, sauces, oils/fats, aromatics, garnish, and major seasonings when relevant.
+   - Do not return a dish with fewer than 3 ingredients unless it is genuinely a single-ingredient item.
    - Infer standard ingredients if not listed (e.g., "Burger" → bun, ground beef, lettuce, tomato, cheese).
    - Keep quantities practical for one guest (e.g., 0.25 lb beef, 2 oz cheese, 1 bun).
    - Do not estimate quantities for the full restaurant menu or a bulk order. The app will scale portions by guest count later.
@@ -192,6 +228,39 @@ Output ONLY valid JSON matching this exact schema. No markdown, no explanation, 
 
 Menu:
 ${content}
+`;
+
+        const buildEnrichmentPrompt = (content: string, currentDishes: ParsedDish[]) => `
+You are an expert chef and procurement analyst. Return ONLY valid JSON.
+
+The first extraction may be incomplete. Enrich every dish so each has the full ingredient list needed for one plated guest portion.
+
+Rules:
+- Preserve every dish name from the current extraction.
+- Use the menu title and description as the source of truth when they mention ingredients.
+- If an ingredient is not listed but required to make the dish, infer it with Groq culinary knowledge.
+- Include proteins, starches, breads/pasta, produce, dairy, sauces, oils/fats, aromatics, garnish, and major seasonings where relevant.
+- Do not include packaging, labor, beverages, or equipment.
+- Quantities must be for ONE guest portion only. The frontend will multiply by guest count.
+- Return at least 3 ingredients per dish unless the dish is truly single-ingredient.
+
+Current extraction:
+${JSON.stringify({ dishes: currentDishes }, null, 2)}
+
+Original menu text:
+${content}
+
+Return ONLY this JSON:
+{
+  "dishes": [
+    {
+      "name": "String",
+      "ingredients": [
+        { "name": "String", "quantity": Number, "unit": "String" }
+      ]
+    }
+  ]
+}
 `;
         const groqMessages = [sysMsg, { role: 'user' as const, content: buildPrompt(menuContent) }];
 
@@ -212,7 +281,7 @@ ${menuContent.slice(0, 2000)}`;
             new Promise<string>((_, reject) => setTimeout(() => reject(new Error('AI insight timeout')), 16000)),
         ]);
 
-        let parsedData: { dishes: any[] } | null = null;
+        let parsedData: { dishes: ParsedDish[] } | null = null;
         let modelSource = 'Mock';
         let menuInsight: string | null = null;
 
@@ -223,7 +292,8 @@ ${menuContent.slice(0, 2000)}`;
                     try {
                         const text = await callGroq(groqMessages, true);
                         const data = parseJSON<{ dishes: any[] }>(text);
-                        if (data?.dishes?.length) return { data, source: 'Groq (llama-3.3-70b)' };
+                        const dishes = sanitizeDishes(data?.dishes);
+                        if (dishes.length) return { data: { dishes }, source: 'Groq (llama-3.3-70b)' };
                     } catch (err: any) {
                         console.warn(`parse-menu: Groq attempt ${attempt + 1} failed:`, err.message);
                     }
@@ -248,8 +318,24 @@ ${menuContent.slice(0, 2000)}`;
 
         // Last resort: mock data
         if (!parsedData || !parsedData.dishes?.length) {
-            parsedData = { dishes: MOCK_DISHES };
+            parsedData = { dishes: sanitizeDishes(MOCK_DISHES) };
             modelSource = 'Mock';
+        }
+
+        if (parsedData.dishes.length && modelSource !== 'Mock' && needsIngredientEnrichment(parsedData.dishes)) {
+            try {
+                const enrichmentMessages = [sysMsg, { role: 'user' as const, content: buildEnrichmentPrompt(menuContent, parsedData.dishes) }];
+                const enrichedText = await callGroq(enrichmentMessages, true);
+                const enriched = parseJSON<{ dishes: any[] }>(enrichedText);
+                const enrichedDishes = sanitizeDishes(enriched?.dishes);
+                if (enrichedDishes.length >= parsedData.dishes.length && !needsIngredientEnrichment(enrichedDishes)) {
+                    parsedData = { dishes: enrichedDishes };
+                    modelSource = `${modelSource} + ingredient enrichment`;
+                    console.log('parse-menu: Groq ingredient enrichment succeeded');
+                }
+            } catch (err: any) {
+                console.warn('parse-menu: ingredient enrichment skipped:', err.message);
+            }
         }
 
         // Save to Database

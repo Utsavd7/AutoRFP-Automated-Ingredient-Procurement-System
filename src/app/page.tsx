@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { signIn } from 'next-auth/react';
 import {
   ChefHat, ArrowRight, CheckCircle, Sparkles, TrendingUp,
-  Zap, Building2, Brain, Shield, Loader2
+  Zap, Building2, Brain, Shield
 } from 'lucide-react';
 import {
   accountFromForm,
@@ -15,6 +15,7 @@ import {
   parseSuppliers,
   verifyPassword,
 } from '@/lib/tenant';
+import { toastApiError } from '@/lib/toast';
 
 export default function LandingPage() {
   const router = useRouter();
@@ -85,6 +86,7 @@ export default function LandingPage() {
       router.push('/dashboard');
     } catch (err: any) {
       setAuthError(err.message || 'Unable to create restaurant session.');
+      toastApiError(err, mode === 'signin' ? 'Sign in failed' : 'Sign up failed');
     } finally {
       setLoading(false);
     }
@@ -125,15 +127,15 @@ export default function LandingPage() {
       <main className="relative z-10 max-w-5xl mx-auto px-6 pt-24 pb-20 text-center">
         <div className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-violet-500/10 border border-violet-500/20 rounded-full text-[11px] font-bold text-violet-300 tracking-widest uppercase mb-10">
           <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
-          Dual-LLM · CME live pricing · 5-agent pipeline
+          Resilient AI · CME live pricing · 5-agent pipeline
         </div>
 
         <h1 className="text-[52px] md:text-[72px] font-black tracking-tight leading-[0.92] mb-7">
           <span className="gradient-text">Cut food costs</span>
           <br />
-          <span className="text-white">on food costs</span>
+          <span className="text-white">with market-aware</span>
           <br />
-          <span className="text-[#5A5F6A]">with autonomous</span>
+          <span className="text-[#5A5F6A]">autonomous</span>
           <br />
           <span className="gradient-text">AI negotiation.</span>
         </h1>
@@ -254,7 +256,6 @@ export default function LandingPage() {
                 disabled={!valid || loading}
                 className="w-full py-3.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-[14px] rounded-xl transition-all duration-200 shadow-[0_0_20px_rgba(139,92,246,0.3)] flex items-center justify-center gap-2"
               >
-                {loading && <Loader2 className="w-4 h-4 animate-spin" />}
                 {loading ? (mode === 'signin' ? 'Signing in…' : 'Setting up…') : (mode === 'signin' ? 'Sign in →' : 'Launch workspace →')}
               </button>
             </form>
@@ -304,7 +305,7 @@ export default function LandingPage() {
               accent: 'violet',
               step: '01',
               title: 'AI Menu Parsing',
-              desc: 'Paste any menu text or URL. Dual-LLM (Ollama + Groq) extracts every dish, ingredient, and quantity with 95%+ accuracy.',
+              desc: 'Paste any menu text or URL. AI extraction pulls every dish, ingredient, and quantity, with Groq fallback when local models are unavailable.',
             },
             {
               icon: TrendingUp,
@@ -374,7 +375,7 @@ export default function LandingPage() {
           <span className="flex items-center gap-2">
             <ChefHat className="w-3.5 h-3.5 text-white/40" /> AutoRFP Engine
           </span>
-          <span>Ollama · Groq · CME · CBOT · Google Places</span>
+          <span>Local AI optional · Groq fallback · CME · CBOT · Google Places</span>
         </div>
       </footer>
     </div>

@@ -5,13 +5,15 @@ import Link from 'next/link';
 import { signOut } from 'next-auth/react';
 import {
   ChefHat, LayoutDashboard, PlusCircle, Clock, Settings,
-  Menu, X, LogOut, ChevronRight
+  Menu, X, LogOut, ChevronRight, BrainCircuit
 } from 'lucide-react';
 import { readAccount, ACCOUNT_KEY, type RestaurantAccount } from '@/lib/tenant';
+import { PageSkeleton } from '@/components/Skeleton';
 
 const NAV = [
   { href: '/dashboard',    icon: LayoutDashboard, label: 'Dashboard' },
   { href: '/procurement',  icon: PlusCircle,      label: 'New Procurement' },
+  { href: '/intelligence', icon: BrainCircuit,    label: 'Intelligence' },
   { href: '/history',      icon: Clock,           label: 'History' },
   { href: '/settings',     icon: Settings,        label: 'Settings' },
 ];
@@ -113,11 +115,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   };
 
   if (!ready || !account) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="w-5 h-5 border-2 border-white/15 border-t-white/70 rounded-full animate-spin" />
-      </div>
-    );
+    return <div className="min-h-screen bg-black"><PageSkeleton /></div>;
   }
 
   return (

@@ -4,7 +4,7 @@ import Link from 'next/link';
 import {
   DollarSign, Package, Building2, AlertTriangle,
   PlusCircle, Clock, CheckCircle, ChevronRight,
-  TrendingUp, Zap, Target, BarChart3
+  Zap, Target, BarChart3
 } from 'lucide-react';
 import {
   readAccount,
@@ -14,6 +14,7 @@ import {
   type ProcurementRecord,
   type RestaurantAccount,
 } from '@/lib/tenant';
+import { PageSkeleton } from '@/components/Skeleton';
 
 function StatCard({
   icon: Icon,
@@ -58,6 +59,7 @@ export default function DashboardPage() {
   const [account, setAccount] = useState<RestaurantAccount | null>(null);
   const [history, setHistory] = useState<ProcurementRecord[]>([]);
   const [activeRfp, setActiveRfp] = useState<ActiveRFP | null>(null);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     const saved = readAccount();
@@ -65,6 +67,7 @@ export default function DashboardPage() {
     setAccount(saved);
     setHistory(readTenantHistory(saved.tenantId));
     setActiveRfp(readActiveRfp(saved.tenantId));
+    setReady(true);
   }, []);
 
   const totalSavings = history.reduce((sum, r) => sum + (r.totalSavings ?? 0), 0);
@@ -80,7 +83,7 @@ export default function DashboardPage() {
     return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
   })();
 
-  if (!account) return null;
+  if (!ready || !account) return <PageSkeleton />;
 
   return (
     <div className="max-w-5xl mx-auto px-6 py-10 space-y-10">
@@ -311,37 +314,21 @@ export default function DashboardPage() {
 
           {/* Quick stats / recent */}
           <div className="space-y-4">
-            {/* Market alerts */}
-            {alertCount > 0 && (
-              <div className="linear-panel rounded-xl border border-amber-500/15 p-5">
-                <div className="flex items-center gap-2 mb-3">
+            <Link
+              href="/intelligence"
+              className="flex items-center justify-between gap-3 p-5 linear-panel rounded-xl border border-amber-500/15 hover:border-amber-500/25 transition-all group"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
                   <AlertTriangle className="w-4 h-4 text-amber-400" />
-                  <span className="text-[12px] font-bold text-amber-400 uppercase tracking-wider">Market Alerts</span>
                 </div>
-                <div className="space-y-1.5">
-                  {Array.from(new Set(history.flatMap(r => r.marketAlerts ?? []))).slice(0, 4).map((alert, i) => (
-                    <div key={i} className="flex items-center gap-2 text-[12px] text-amber-400/80">
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400/60 shrink-0" />
-                      {alert}
-                    </div>
-                  ))}
+                <div>
+                  <p className="text-[13px] font-bold text-[#EEEEEE]">Intelligence Inbox</p>
+                  <p className="text-[11px] text-[#8A8F98]">{alertCount || 'No'} market alerts · supplier scoring</p>
                 </div>
               </div>
-            )}
-
-            {/* Avg savings */}
-            {history.filter(r => r.savingsPercentage).length > 0 && (
-              <div className="linear-panel rounded-xl border border-emerald-500/15 p-5">
-                <div className="flex items-center gap-2 mb-3">
-                  <TrendingUp className="w-4 h-4 text-emerald-400" />
-                  <span className="text-[12px] font-bold text-emerald-400 uppercase tracking-wider">Avg Savings Rate</span>
-                </div>
-                <p className="text-[32px] font-black text-emerald-400 tracking-tighter">
-                  {(history.filter(r => r.savingsPercentage).reduce((s, r) => s + (r.savingsPercentage ?? 0), 0) / history.filter(r => r.savingsPercentage).length).toFixed(1)}%
-                </p>
-                <p className="text-[11px] text-[#8A8F98] mt-1">across {history.filter(r => r.savingsPercentage).length} negotiations</p>
-              </div>
-            )}
+              <ChevronRight className="w-4 h-4 text-[#8A8F98] group-hover:text-[#EEEEEE] transition-colors" />
+            </Link>
 
             {/* CTA */}
             <Link

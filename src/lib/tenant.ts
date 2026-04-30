@@ -29,6 +29,22 @@ export type ProcurementRecord = {
   savingsPercentage?: number;
   executiveSummary?: string;
   marketAlerts?: string[];
+  categorySavings?: Array<{
+    category: string;
+    savings: number;
+    spend: number;
+  }>;
+  supplierScorecards?: Array<{
+    supplier: string;
+    originalPrice: number;
+    finalPrice: number;
+    savings: number;
+    decision: string;
+    priceCompetitiveness: number;
+    responseSpeed: number;
+    dealQuality: number;
+    overall: number;
+  }>;
 };
 
 export type ActiveRFP = {

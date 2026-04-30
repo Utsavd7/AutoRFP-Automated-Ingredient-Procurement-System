@@ -204,10 +204,11 @@ ${menuContent.slice(0, 2000)}`;
             { role: 'user' as const, content: insightPrompt },
         ];
 
-        // Run Groq (extraction) + Ollama (insight) in parallel — no sequential blocking
+        // Run Groq extraction and local-first insight in parallel. If Ollama is unavailable,
+        // callOllama falls back to Groq so the pipeline keeps moving during demos.
         const ollamaInsightPromise = Promise.race([
             callOllama(ollamaInsightMessages, false),
-            new Promise<string>((_, reject) => setTimeout(() => reject(new Error('Ollama timeout')), 10000)),
+            new Promise<string>((_, reject) => setTimeout(() => reject(new Error('AI insight timeout')), 16000)),
         ]);
 
         let parsedData: { dishes: any[] } | null = null;
@@ -239,9 +240,9 @@ ${menuContent.slice(0, 2000)}`;
 
         if (ollamaResult.status === 'fulfilled' && ollamaResult.value?.trim()) {
             menuInsight = ollamaResult.value.trim();
-            console.log('parse-menu: Ollama insight generated');
+            console.log('parse-menu: AI insight generated');
         } else {
-            console.warn('parse-menu: Ollama insight skipped:', ollamaResult.status === 'rejected' ? ollamaResult.reason?.message : 'empty');
+            console.warn('parse-menu: AI insight skipped:', ollamaResult.status === 'rejected' ? ollamaResult.reason?.message : 'empty');
         }
 
         // Last resort: mock data

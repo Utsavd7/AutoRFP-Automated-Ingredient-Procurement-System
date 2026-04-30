@@ -1,9 +1,11 @@
 'use client';
 
 import { useState, useEffect, use } from 'react';
-import { Loader2, DollarSign, Send, CheckCircle } from 'lucide-react';
+import { DollarSign, Send, CheckCircle } from 'lucide-react';
 import clsx from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { Skeleton } from '@/components/Skeleton';
+import { toastApiError } from '@/lib/toast';
 
 export function cn(...inputs: (string | undefined | null | false)[]) {
     return twMerge(clsx(inputs));
@@ -38,6 +40,7 @@ export default function QuoteSubmissionPage({ params }: { params: Promise<{ rfpI
                 setRfpData(data.rfp);
             } catch (err: any) {
                 setError(err.message);
+                toastApiError(err, 'Could not load this RFP');
             } finally {
                 setLoading(false);
             }
@@ -69,6 +72,7 @@ export default function QuoteSubmissionPage({ params }: { params: Promise<{ rfpI
             setSubmitted(true);
         } catch (err: any) {
             setError(err.message);
+            toastApiError(err, 'Could not submit quote');
         } finally {
             setSubmitting(false);
         }
@@ -76,8 +80,15 @@ export default function QuoteSubmissionPage({ params }: { params: Promise<{ rfpI
 
     if (loading) {
         return (
-            <div className="min-h-screen bg-neutral-950 flex items-center justify-center">
-                <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+            <div className="min-h-screen bg-neutral-950 p-6">
+                <div className="max-w-2xl mx-auto space-y-8 pt-12">
+                    <div className="flex flex-col items-center gap-4">
+                        <Skeleton className="w-16 h-16 rounded-2xl" />
+                        <Skeleton className="h-9 w-64" />
+                        <Skeleton className="h-4 w-80 max-w-full" />
+                    </div>
+                    <Skeleton className="h-[460px] rounded-3xl" />
+                </div>
             </div>
         );
     }
@@ -185,7 +196,7 @@ export default function QuoteSubmissionPage({ params }: { params: Promise<{ rfpI
                                 )}
                             >
                                 {submitting ? (
-                                    <><Loader2 className="w-5 h-5 animate-spin" /> Submitting...</>
+                                    <>Submitting...</>
                                 ) : (
                                     <><Send className="w-5 h-5" /> Submit Official Quote</>
                                 )}

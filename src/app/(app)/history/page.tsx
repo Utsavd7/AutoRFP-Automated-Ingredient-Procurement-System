@@ -14,18 +14,21 @@ import {
   type ProcurementRecord,
   type RestaurantAccount,
 } from '@/lib/tenant';
+import { PageSkeleton } from '@/components/Skeleton';
 
 export default function HistoryPage() {
   const router = useRouter();
   const [account, setAccount] = useState<RestaurantAccount | null>(null);
   const [history, setHistory] = useState<ProcurementRecord[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     const saved = readAccount();
     if (!saved) return;
     setAccount(saved);
     setHistory(readTenantHistory(saved.tenantId));
+    setReady(true);
   }, []);
 
   const clearHistory = () => {
@@ -50,6 +53,8 @@ export default function HistoryPage() {
   const averageSavingsPct = history.length
     ? history.reduce((sum, run) => sum + (run.savingsPercentage ?? 0), 0) / history.length
     : 0;
+
+  if (!ready) return <PageSkeleton />;
 
   return (
     <div className="max-w-4xl mx-auto px-6 py-10 space-y-8">

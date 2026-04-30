@@ -6,7 +6,7 @@ type Message = { role: 'system' | 'user' | 'assistant'; content: string };
 const ollamaClient = new OpenAI({
     apiKey: 'ollama',
     baseURL: 'http://localhost:11434/v1',
-    timeout: 60000,
+    timeout: 8000,
 });
 
 // Groq — free tier cross-verifier
@@ -15,12 +15,17 @@ export const groqClient = process.env.GROQ_API_KEY
     : null;
 
 export async function callOllama(messages: Message[], jsonMode = false): Promise<string> {
-    const response = await ollamaClient.chat.completions.create({
-        model: 'llama3.2',
-        messages,
-        ...(jsonMode && { response_format: { type: 'json_object' } }),
-    } as any);
-    return response.choices[0].message.content ?? '';
+    try {
+        const response = await ollamaClient.chat.completions.create({
+            model: 'llama3.2',
+            messages,
+            ...(jsonMode && { response_format: { type: 'json_object' } }),
+        } as any);
+        return response.choices[0].message.content ?? '';
+    } catch (err: any) {
+        console.warn('[llm] Ollama unavailable, falling back to Groq:', err.message);
+        return callGroq(messages, jsonMode);
+    }
 }
 
 export async function callGroq(messages: Message[], jsonMode = false): Promise<string> {

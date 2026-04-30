@@ -1,7 +1,7 @@
 'use client';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import {
-  Loader2, ChefHat, Search, MapPin, Mail, Bot, Zap, Brain,
+  ChefHat, Search, MapPin, Mail, Bot, Zap, Brain,
   MessageSquare, FileText, Package, DollarSign, Building2,
   FileCheck, AlertTriangle, CheckCircle, ArrowUpRight,
   ArrowDownRight, Minus, Sparkles, ShoppingCart, BarChart3,
@@ -23,6 +23,8 @@ import {
   readTenantHistory,
   type RestaurantAccount,
 } from '@/lib/tenant';
+import { Skeleton } from '@/components/Skeleton';
+import { toastApiError } from '@/lib/toast';
 
 function cn(...inputs: (string | undefined | null | false)[]) {
   return twMerge(clsx(inputs));
@@ -82,7 +84,6 @@ function Btn({ children, onClick, disabled, loading, variant = 'primary', size =
   };
   return (
     <button onClick={onClick} disabled={disabled || loading} className={cn(base, sizes[size], variants[variant], className)}>
-      {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
       {children}
     </button>
   );
@@ -401,7 +402,7 @@ export default function ProcurementPage() {
         (fd.forecasts ?? []).forEach((f: any) => { map[f.name] = f; });
         setMlForecasts(map);
       } catch { /* non-critical */ }
-    } catch (err: any) { setError(err.message); }
+    } catch (err: any) { setError(err.message); toastApiError(err, 'Market pricing failed'); }
     finally { setLoadingPricing(false); }
   };
 
@@ -416,7 +417,7 @@ export default function ProcurementPage() {
       setDistributors(data.distributors);
       setDistributorSource(data.source || null);
       setDistributorLocation(loc);
-    } catch (err: any) { setError(err.message); }
+    } catch (err: any) { setError(err.message); toastApiError(err, 'Supplier search failed'); }
     finally { setLoadingDistributors(false); }
   };
 
@@ -446,7 +447,7 @@ export default function ProcurementPage() {
       setPipelineStatus('Finding nearby suppliers…');
       const loc = await resolveLocation();
       await handleFindDistributors(loc);
-    } catch (err: any) { setError(err.message); }
+    } catch (err: any) { setError(err.message); toastApiError(err, 'Menu parsing failed'); }
     finally { setLoading(false); setPipelineStatus(''); }
   };
 
@@ -469,7 +470,7 @@ export default function ProcurementPage() {
         quotesCount: 0,
         status: 'RFPs in market',
       });
-    } catch (err: any) { setError(err.message); }
+    } catch (err: any) { setError(err.message); toastApiError(err, 'RFP dispatch failed'); }
     finally { setSendingRFPs(false); }
   };
 
@@ -496,7 +497,7 @@ export default function ProcurementPage() {
         });
       }
       return data.quotes;
-    } catch (err: any) { setError(err.message); return []; }
+    } catch (err: any) { setError(err.message); toastApiError(err, 'Quote refresh failed'); return []; }
     finally { setLoadingQuotes(false); }
   };
 
@@ -525,7 +526,7 @@ export default function ProcurementPage() {
         setShowEmailSimulator(false);
         await handleFetchQuotes();
       }
-    } catch (err: any) { setError(err.message); }
+    } catch (err: any) { setError(err.message); toastApiError(err, 'Vendor email processing failed'); }
     finally { setSimulatingEmail(false); }
   };
 
@@ -547,7 +548,7 @@ export default function ProcurementPage() {
       setConversationLogs(newLogs);
       const fetchedQuotes = await handleFetchQuotes();
       await Promise.all([handleGetRecommendation(), handleFetchRiskScores(fetchedQuotes)]);
-    } catch (err: any) { setError(err.message); }
+    } catch (err: any) { setError(err.message); toastApiError(err, 'Vendor response simulation failed'); }
     finally { setSimulatingConversation(false); }
   };
 
@@ -561,7 +562,7 @@ export default function ProcurementPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to get recommendation');
       setRecommendation(data.recommendation);
-    } catch (err: any) { setError(err.message); }
+    } catch (err: any) { setError(err.message); toastApiError(err, 'AI recommendation failed'); }
     finally { setLoadingRecommendation(false); }
   };
 
@@ -581,6 +582,47 @@ export default function ProcurementPage() {
     es.addEventListener('complete',          e => {
       const d = JSON.parse((e as MessageEvent).data);
       setNegotiationComplete(d); add('complete', d); setNegotiating(false); es.close();
+      const totalSavings = Number(d.totalSavings) || 0;
+      const totalMarketSpend = Number(marketValue) || Number(d.winnerPrice) || 0;
+      const categories = ingredients.reduce((acc: Record<string, { spend: number; count: number }>, ing: any) => {
+        const name = String(ing.name ?? '').toLowerCase();
+        const category =
+          /beef|steak|chicken|pork|fish|salmon|shrimp|meat|turkey/.test(name) ? 'Proteins' :
+          /cheese|milk|cream|butter|yogurt/.test(name) ? 'Dairy' :
+          /lettuce|tomato|onion|pepper|herb|vegetable|produce|potato|mushroom/.test(name) ? 'Produce' :
+          /flour|pasta|rice|bread|bun|grain/.test(name) ? 'Dry Goods' :
+          'Other';
+        const price = pricingData.find((p: any) => String(p.name).toLowerCase() === name)?.currentPrice ?? 0;
+        const spend = price * (typeof ing.quantity === 'number' ? ing.quantity : 1);
+        acc[category] = acc[category] ?? { spend: 0, count: 0 };
+        acc[category].spend += spend;
+        acc[category].count += 1;
+        return acc;
+      }, {});
+      const categorySavings = Object.entries(categories).map(([category, value]) => {
+        const share = totalMarketSpend > 0 ? value.spend / totalMarketSpend : 1 / Math.max(Object.keys(categories).length, 1);
+        return { category, spend: value.spend, savings: totalSavings * share };
+      });
+      const supplierScorecards = (d.negotiationResults ?? []).map((r: any) => {
+        const originalPrice = Number(r.originalPrice) || 0;
+        const finalPrice = Number(r.negotiatedPrice) || Number(r.finalPrice) || 0;
+        const savings = Number(r.savings) || Math.max(0, originalPrice - finalPrice);
+        const savingsPct = originalPrice > 0 ? savings / originalPrice : 0;
+        const priceCompetitiveness = Math.max(0, Math.min(100, Math.round(100 - ((finalPrice - Number(d.winnerPrice || finalPrice)) / Math.max(finalPrice, 1)) * 120)));
+        const responseSpeed = r.decision === 'ACCEPT' ? 92 : r.decision === 'COUNTER' ? 78 : r.decision === 'NOT_TARGETED' ? 50 : 58;
+        const dealQuality = Math.max(0, Math.min(100, Math.round(62 + savingsPct * 260)));
+        return {
+          supplier: r.vendorName,
+          originalPrice,
+          finalPrice,
+          savings,
+          decision: r.decision ?? 'REVIEW',
+          priceCompetitiveness,
+          responseSpeed,
+          dealQuality,
+          overall: Math.round(priceCompetitiveness * 0.4 + responseSpeed * 0.25 + dealQuality * 0.35),
+        };
+      });
       // Save to localStorage history
       const historyItem = {
         id: Date.now().toString(),
@@ -598,7 +640,11 @@ export default function ProcurementPage() {
         totalSavings: d.totalSavings,
         savingsPercentage: d.savingsPercentage,
         executiveSummary: d.executiveSummary,
-        marketAlerts: Object.values(mlForecasts).filter((f: any) => f.anomaly).map((f: any) => f.name),
+        marketAlerts: Object.entries(mlForecasts).filter(([, f]: any) => f.anomaly).map(([name, f]: any) =>
+          `${name}: ${f.anomaly?.type === 'SPIKE' ? 'price spike' : 'below average'} detected`
+        ),
+        categorySavings,
+        supplierScorecards,
       };
       const existing = readTenantHistory(tenantId);
       writeTenantHistory(tenantId, [historyItem, ...existing].slice(0, 20));
@@ -687,7 +733,7 @@ export default function ProcurementPage() {
               Paste your menu below — AI extracts ingredients, fetches live prices, finds local distributors, and negotiates the best deal.
             </p>
             <div className="flex items-center justify-center flex-wrap gap-x-5 gap-y-2 text-[11px] font-bold uppercase tracking-widest">
-              <span className="flex items-center gap-1.5 text-violet-400"><span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />Ollama · Groq Dual-LLM</span>
+              <span className="flex items-center gap-1.5 text-violet-400"><span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />Local AI optional · Groq fallback</span>
               <span className="text-white/20">/</span>
               <span className="text-blue-400">CME · CBOT · BLS live prices</span>
               <span className="text-white/20">/</span>
@@ -741,7 +787,11 @@ export default function ProcurementPage() {
                 </div>
               </div>
               <div className="flex-1 overflow-y-auto space-y-2 min-h-[220px] relative z-10">
-                {recipes.length === 0 ? (
+                {loading ? (
+                  <div className="space-y-3">
+                    {[0, 1, 2, 3].map(i => <Skeleton key={i} className="h-12" />)}
+                  </div>
+                ) : recipes.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center text-[#8A8F98] gap-3 py-10 border border-dashed border-white/10 rounded-lg">
                     <ChefHat className="w-8 h-8 opacity-20" />
                     <p className="text-[13px] font-medium">Dishes appear here after extraction</p>
@@ -780,7 +830,7 @@ export default function ProcurementPage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-2">
-                      <span className="text-[10px] font-black uppercase tracking-[0.18em] text-violet-400">Local AI · Ollama llama3.2</span>
+                      <span className="text-[10px] font-black uppercase tracking-[0.18em] text-violet-400">AI insight · local first, Groq fallback</span>
                       <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
                     </div>
                     <p className="text-[13px] text-[#CCCCCC] leading-relaxed">{menuInsight}</p>
@@ -809,7 +859,11 @@ export default function ProcurementPage() {
             </div>
           }
         >
-          {pricingData.length === 0 ? (
+          {loadingPricing ? (
+            <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-5">
+              {[0, 1, 2].map(i => <Skeleton key={i} className="h-56" />)}
+            </div>
+          ) : pricingData.length === 0 ? (
             <Card className="py-20 flex flex-col items-center border border-dashed border-white/10 text-[#8A8F98] gap-3 bg-white/[0.01] shadow-none">
               <BarChart3 className="w-10 h-10 opacity-20" />
               <p className="text-[13px] font-medium">Run market analysis after extracting ingredients</p>
@@ -916,6 +970,11 @@ export default function ProcurementPage() {
                 {loadingDistributors ? 'Searching…' : 'Find Suppliers'}
               </Btn>
             </div>
+            {loadingDistributors && (
+              <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                {[0, 1, 2].map(i => <Skeleton key={i} className="h-36" />)}
+              </div>
+            )}
             {distributors.length === 0 && !loadingDistributors && (
               <div className="py-14 flex flex-col items-center text-[#8A8F98] gap-3 border border-dashed border-white/10 rounded-lg bg-white/[0.01]">
                 <Building2 className="w-8 h-8 opacity-20" />
@@ -969,7 +1028,7 @@ export default function ProcurementPage() {
                   {simulatingConversation ? 'Generating…' : 'Generate vendor responses'}
                 </Btn>
                 <Btn variant="ghost" size="sm" onClick={handleFetchQuotes} disabled={loadingQuotes}>
-                  {loadingQuotes ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Refresh'}
+                  {loadingQuotes ? 'Refreshing…' : 'Refresh'}
                 </Btn>
               </div>
             }
@@ -1026,7 +1085,11 @@ export default function ProcurementPage() {
             )}
 
             <Card className="overflow-hidden">
-              {quotes.length === 0 ? (
+              {simulatingConversation || loadingQuotes ? (
+                <div className="p-6 space-y-3">
+                  {[0, 1, 2, 3].map(i => <Skeleton key={i} className="h-14" />)}
+                </div>
+              ) : quotes.length === 0 ? (
                 <div className="py-16 flex flex-col items-center text-[#8A8F98] gap-3">
                   <FileCheck className="w-10 h-10 opacity-20" />
                   <p className="text-[13px] font-medium">No quotes yet — click "Generate vendor responses" above</p>
@@ -1121,10 +1184,16 @@ export default function ProcurementPage() {
                   <div className="flex items-center justify-between">
                     <h3 className="text-[13px] font-bold text-[#EEEEEE] flex items-center gap-2">
                       <Sparkles className="w-4 h-4 text-violet-400" />AI Recommendation
-                      {loadingRecommendation && <Loader2 className="w-3.5 h-3.5 animate-spin text-violet-400" />}
+                      {loadingRecommendation && <span className="text-[11px] text-violet-300">Analyzing…</span>}
                     </h3>
                   </div>
-                  {recommendation ? (
+                  {loadingRecommendation ? (
+                    <div className="space-y-3">
+                      <Skeleton className="h-7 w-48" />
+                      <Skeleton className="h-24" />
+                      <Skeleton className="h-12" />
+                    </div>
+                  ) : recommendation ? (
                     <div className="bg-white/[0.02] border border-white/10 rounded-xl p-5 space-y-3 relative overflow-hidden">
                       <div className="absolute inset-0 bg-gradient-to-r from-white/[0.02] to-transparent pointer-events-none" />
                       <div className="flex items-center gap-2 relative z-10">
@@ -1152,7 +1221,7 @@ export default function ProcurementPage() {
                         <div className="border-t border-white/10 pt-3 mt-1 relative z-10">
                           <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#8A8F98] mb-2">Dual-Model Verification</p>
                           <div className="flex flex-wrap gap-2 items-center">
-                            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-[11px] font-semibold text-[#EEEEEE]"><span className="w-1.5 h-1.5 rounded-full bg-violet-400" />Ollama · {recommendation.verification.ollamaChoice ?? '—'}</span>
+                            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-[11px] font-semibold text-[#EEEEEE]"><span className="w-1.5 h-1.5 rounded-full bg-violet-400" />Local/Groq · {recommendation.verification.ollamaChoice ?? '—'}</span>
                             <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-[11px] font-semibold text-[#EEEEEE]"><span className="w-1.5 h-1.5 rounded-full bg-orange-400" />Groq · {recommendation.verification.groqChoice ?? '—'}</span>
                             <span className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border ${recommendation.verification.agreed ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-amber-500/10 border-amber-500/20 text-amber-400'}`}>
                               {recommendation.verification.agreed ? '✓ Models agree' : '⚠ Models differ'}
@@ -1255,7 +1324,6 @@ export default function ProcurementPage() {
                   </div>
                   {negotiating && (
                     <div className="border-t border-white/[0.07] px-5 py-3 flex items-center gap-2.5 text-[12px] text-[#8A8F98]">
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-violet-400/70" />
                       Agents processing…
                     </div>
                   )}
@@ -1361,7 +1429,7 @@ export default function ProcurementPage() {
         <div className="max-w-5xl mx-auto px-6 py-5 flex flex-col md:flex-row md:items-center justify-between text-[11px] font-bold text-[#8A8F98] uppercase tracking-widest gap-3">
           <span className="flex items-center gap-2"><ChefHat className="w-3.5 h-3.5 text-white/30" /> AutoRFP Engine</span>
           <div className="flex items-center flex-wrap gap-3">
-            <span>Ollama · Groq Dual-LLM</span>
+            <span>Local AI optional · Groq fallback</span>
             <span className="opacity-30">/</span>
             <span>CME · CBOT · BLS Pricing</span>
             <span className="opacity-30">/</span>

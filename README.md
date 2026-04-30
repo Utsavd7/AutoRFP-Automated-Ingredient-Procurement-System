@@ -1,106 +1,51 @@
-# AutoRFP — Intelligent Procurement Platform
+# AutoRFP - Intelligent Restaurant Procurement
 
-AutoRFP automates the entire restaurant ingredient procurement pipeline in five steps — from AI menu parsing through live market pricing, supplier discovery, vendor quote collection, and fully autonomous multi-agent price negotiation.
+AutoRFP is a SaaS-style procurement workspace for restaurants. It turns menus into ingredient demand, prices the basket against market data, finds suppliers, collects quotes, negotiates with AI agents, and tracks savings over time.
 
----
-
-## Demo walkthrough
-
-1. **Paste a menu** (text or URL) → Ollama (llama3.2, local) extracts every dish and ingredient; Groq cross-verifies the result
-2. **Run Market Analysis** → live CME/CBOT futures + BLS retail prices + ML price forecasting with anomaly detection
-3. **Find Suppliers** → real distributors via Google Places API (50 km radius); curated pool as fallback
-4. **Generate vendor responses** → Groq simulates multi-turn email negotiations grounded in real quantities × market prices
-5. **Launch Agent Pipeline** → 5 specialized AI agents negotiate autonomously via SSE-streamed email thread
+The demo is designed to degrade gracefully: Groq powers the cloud AI path, Ollama is optional local acceleration/privacy, and ChromaDB is optional RAG memory.
 
 ---
 
-## Features
+## Product Surface
 
-### AI & ML
-| Feature | How it works |
-|---|---|
-| Menu parsing | Ollama llama3.2 (local, primary) → Groq llama-3.3-70b (fallback). Both return structured JSON; source shown in UI |
-| Dual-LLM verification | Recommendation step runs both models in parallel; compares picks and shows agreement score + confidence % |
-| Price forecasting | OLS linear regression on 6-month price history; 3-month forward projection with 95% confidence intervals |
-| Anomaly detection | Z-score on ingredient price history; flags SPIKE / DIP at \|z\| > 1.4 |
-| Buy/Wait signals | Derived from trend direction + anomaly type; e.g. DIP → BUY\_NOW, SPIKE + RISING → WAIT |
-| Quote simulation | Multi-turn Groq conversation grounded in `quantity × market_price` per ingredient; vendors quote at 5–20% margin |
-| AI recommendation | Ollama + Groq both analyze quotes independently; final answer shows which distributor each model chose and whether they agree |
-| 5-agent negotiation | Server-Sent Events pipeline: Orchestrator → Market Analyst → Negotiation Agent (per vendor) ↔ Vendor Simulator → Deal Auditor |
-| RAG procurement memory | Every completed negotiation is embedded (`nomic-embed-text` via Ollama) and stored in ChromaDB. Future recommendations retrieve the 3 most semantically similar past decisions and inject them as context, improving accuracy over time |
-
-### Data sources
-| Source | Key required | Used for |
-|---|---|---|
-| Ollama (local) | No | Primary LLM — menu parsing, recommendations, embeddings |
-| Groq API | Yes (free) | Cross-verifier LLM + negotiation pipeline |
-| ChromaDB (local) | No | Vector store for RAG procurement memory |
-| Google Places API | Yes (billing) | Real food distributor search by location |
-| Yahoo Finance | No | CME Live Cattle, CME Lean Hogs, CBOT Wheat/Corn/Soybeans/Oats, ICE Coffee/Sugar/Cocoa/OJ |
-| BLS Public API | No | Retail prices — chicken, eggs, milk, butter, cheese, produce |
+- Landing and sign-in/sign-up flow with tenant-scoped restaurant workspaces.
+- Persistent app sidebar: Dashboard, New Procurement, History, Intelligence, Settings.
+- Dashboard with active RFPs, savings to date, last negotiation outcome, and market alerts.
+- New Procurement workbench with menu parsing, market pricing, supplier discovery, quote collection, AI recommendation, and SSE negotiation stream.
+- Procurement History with spend, savings, best vendor, and "run again" retention flow.
+- Intelligence page with price spike alerts, savings analytics, category savings, and supplier scorecards.
+- Restaurant Settings for profile, budget targets, preferred suppliers, and integration status.
+- Vendor quote portal at `/quote/[rfpId]`.
 
 ---
 
-## Tech stack
+## Demo Setup
 
-| Layer | Technology |
-|---|---|
-| Framework | Next.js 15 (App Router, serverless API routes) |
-| Language | TypeScript |
-| Styling | Tailwind CSS v4 |
-| Charts | Recharts (ComposedChart — Area + dashed Line for forecast overlay) |
-| Icons | Lucide React |
-| Primary LLM | Ollama — llama3.2 running locally at `localhost:11434` |
-| Cross-verifier LLM | Groq API via OpenAI SDK (`baseURL: https://api.groq.com/openai/v1`, model: `llama-3.3-70b-versatile`) |
-| Embeddings | Ollama — `nomic-embed-text` (768-dim, local, no API key) |
-| Vector store | ChromaDB — local HTTP server at `localhost:8000` |
-| Streaming | Server-Sent Events (`ReadableStream` + `EventSource`) |
-| Database | PostgreSQL via Prisma ORM |
-| Supplier search | Google Places Text Search API |
+The fastest way to run the project for an interview/demo:
 
----
-
-## Project structure
-
-```
-src/
-├── lib/
-│   ├── llm.ts                            # Shared Ollama + Groq clients and helpers
-│   ├── embeddings.ts                     # nomic-embed-text via Ollama (768-dim vectors)
-│   └── chroma.ts                         # ChromaDB client — ingest + semantic search
-└── app/
-    ├── page.tsx                          # Main UI — 5-step procurement pipeline
-    ├── quote/[rfpId]/page.tsx            # Vendor self-serve quote portal
-    └── api/
-        ├── parse-menu/route.ts           # Ollama → Groq menu parsing (text or URL)
-        ├── pricing/route.ts              # Yahoo Finance → BLS → estimated fallback
-        ├── ml/forecast/route.ts          # OLS regression, z-score anomaly, buy signals
-        ├── distributors/route.ts         # Google Places → curated pool fallback
-        ├── send-rfp/route.ts             # RFP dispatch (Resend if key set, else logged)
-        ├── simulate-conversation/route.ts # Groq multi-turn vendor negotiation
-        ├── quotes/route.ts               # Fetch quotes by menuId
-        ├── recommend/route.ts            # Dual-LLM recommendation + RAG context injection
-        ├── agent/negotiate/route.ts      # 5-agent SSE pipeline + ChromaDB ingestion
-        └── webhooks/inbound-email/route.ts # Parse manual vendor email replies
-
-prisma/schema.prisma                      # DB schema
-chroma_data/                              # ChromaDB vector store (gitignored, auto-created)
-.env.sample                               # Environment variable template
+```bash
+./demo.sh
 ```
 
+The script:
+
+1. Starts ChromaDB on `:8000` if the `chroma` command is available.
+2. Starts Next.js on `:3000` if it is not already running.
+3. Calls `/api/demo/seed-rag` to seed sample Chroma/RAG memories.
+4. Opens `/demo-seed`, which creates a local demo restaurant workspace and redirects to the dashboard.
+
+Demo credentials after sign out:
+
+```text
+email: demo@autorfp.local
+password: demo-password
+```
+
+If ChromaDB is unavailable, the app still runs. If Ollama is unavailable, AI chat calls fall back to Groq and embeddings use a deterministic local fallback so the demo does not crash.
+
 ---
 
-## Database schema
-
-```
-Menu ──< Recipe ──< Ingredient ──< PricingTrend
-Menu ──< RFP ──< Quote
-Distributor ──< RFP
-```
-
----
-
-## Setup
+## Manual Setup
 
 ### 1. Install dependencies
 
@@ -108,52 +53,51 @@ Distributor ──< RFP
 npm install
 ```
 
-### 2. Install Ollama and pull models
-
-```bash
-# Install Ollama: https://ollama.com
-ollama pull llama3.2          # primary LLM
-ollama pull nomic-embed-text  # embeddings for RAG memory
-```
-
-Ollama runs locally — no API key, no cost, no rate limits.
-
-### 3. Start ChromaDB (RAG vector store)
-
-```bash
-pip install chromadb
-chroma run --path ./chroma_data
-```
-
-ChromaDB stores embeddings of past procurement decisions so recommendations improve over time. If not running, the app falls back gracefully — RAG context is simply skipped.
-
-### 4. Configure environment
+### 2. Configure environment
 
 ```bash
 cp .env.sample .env
 ```
 
-Edit `.env` with your values:
+Edit `.env` with your values.
 
 | Variable | Required | Purpose |
-|---|---|---|
-| `DATABASE_URL` | ✅ | PostgreSQL connection |
-| `GROQ_API_KEY` | ✅ | Cross-verifier LLM + negotiation — free at [console.groq.com/keys](https://console.groq.com/keys) |
-| `GOOGLE_MAPS_API_KEY` | ✅ | Real distributor search — [console.cloud.google.com](https://console.cloud.google.com), enable Places API + billing |
-| `RESEND_API_KEY` | Optional | Real email delivery — free at [resend.com](https://resend.com) |
-| `BUYER_EMAIL` | Optional | Consolidated procurement report sent here after each negotiation |
-| `MOCK_EMAIL` | Optional | Route all demo emails to one address |
-| `CHROMA_URL` | Optional | ChromaDB URL — defaults to `http://localhost:8000` |
-| `OLLAMA_URL` | Optional | Ollama URL — defaults to `http://localhost:11434` |
+|---|---:|---|
+| `DATABASE_URL` | Yes | PostgreSQL connection string for Prisma. |
+| `NEXTAUTH_URL` | Yes | Local app URL, usually `http://localhost:3000`. |
+| `NEXTAUTH_SECRET` | Yes | Session signing secret. Generate with `openssl rand -base64 32`. |
+| `GROQ_API_KEY` | Yes for full AI demo | Cloud LLM fallback and negotiation pipeline. Get one at `https://console.groq.com/keys`. |
+| `GOOGLE_MAPS_API_KEY` | Optional | Real supplier discovery through Google Places. Without it, curated suppliers are used. |
+| `RESEND_API_KEY` | Optional | Real RFP/report email delivery. Without it, RFPs are stored/logged only. |
+| `MOCK_EMAIL` | Optional | Routes demo vendor emails to one inbox. |
+| `AUTORFP_SEND_BUYER_REPORT` | Optional | Set to `true` to email the final buyer report. |
+| `BUYER_EMAIL` | Optional | Recipient for buyer reports when enabled. |
+| `CHROMA_URL` | Optional | ChromaDB URL, defaults to `http://localhost:8000`. |
+| `OLLAMA_URL` | Optional | Ollama URL, defaults to `http://localhost:11434`. |
 
-### 5. Initialize the database
+### 3. Initialize the database
 
 ```bash
 npx prisma generate
 npx prisma db push
 ```
 
-### 6. Run
+### 4. Optional local services
+
+Ollama is optional. Use it for local/private inference and embeddings:
+
+```bash
+ollama pull llama3.2
+ollama pull nomic-embed-text
+```
+
+ChromaDB is optional. Use it for vector RAG memory:
+
+```bash
+chroma run --path ./chroma_data
+```
+
+### 5. Run the app
 
 ```bash
 npm run dev
@@ -163,25 +107,100 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ---
 
-## Sample menus for testing
+## AI Behavior
 
-### Option 1 — Real restaurant URL
+| Capability | Primary path | Fallback path |
+|---|---|---|
+| Menu parsing | Ollama `llama3.2` when available | Groq `llama-3.3-70b-versatile` |
+| Recommendations | Ollama + Groq comparison when both are available | Groq result when local model is down |
+| Agent negotiation | Groq `llama-3.3-70b-versatile` | Helpful API/toast error if `GROQ_API_KEY` is missing |
+| Embeddings | Ollama `nomic-embed-text` | Deterministic 768-dim local embedding fallback |
+| RAG memory | ChromaDB at `CHROMA_URL` | Skipped gracefully if ChromaDB is down |
+
+The goal is simple: missing local services should never take down the demo.
+
+---
+
+## Data Sources
+
+| Source | Key required | Used for |
+|---|---:|---|
+| Groq API | Yes | Cloud LLM fallback, quote simulation, and negotiation agents. |
+| Ollama | No | Optional local chat model and embeddings. |
+| ChromaDB | No | Optional vector store for tenant-scoped procurement memory. |
+| Google Places API | Optional | Real supplier search near the restaurant location. |
+| Yahoo Finance | No | Futures pricing for meat, grains, coffee, sugar, cocoa, and related commodities. |
+| BLS public data | No | Retail price context for common ingredients. |
+
+---
+
+## Project Structure
+
+```text
+src/
+  app/
+    page.tsx                         Landing/login/signup
+    (app)/
+      dashboard/page.tsx             Procurement dashboard
+      procurement/page.tsx           New procurement workflow
+      history/page.tsx               Tenant-scoped procurement history
+      intelligence/page.tsx          Alerts, analytics, scorecards
+      settings/page.tsx              Restaurant profile and integrations
+    demo-seed/page.tsx               Browser localStorage demo workspace seed
+    quote/[rfpId]/page.tsx           Vendor quote portal
+    api/
+      auth/[...nextauth]/route.ts    NextAuth credentials session
+      demo/seed-rag/route.ts         Demo Chroma/RAG seed endpoint
+      parse-menu/route.ts            Menu extraction
+      pricing/route.ts               Market pricing
+      distributors/route.ts          Supplier search
+      send-rfp/route.ts              RFP dispatch
+      simulate-conversation/route.ts Quote simulation
+      recommend/route.ts             AI recommendation + RAG context
+      agent/negotiate/route.ts       SSE agent negotiation pipeline
+  components/
+    Skeleton.tsx                     Reusable skeleton loading UI
+    ToastViewport.tsx                Toast notification viewport
+  lib/
+    auth.ts                          NextAuth options
+    tenant.ts                        Tenant account/history helpers
+    llm.ts                           Ollama/Groq chat helpers
+    embeddings.ts                    Ollama/fallback embeddings
+    chroma.ts                        ChromaDB RAG memory client
+
+prisma/schema.prisma                 Prisma schema
+demo.sh                              One-command local demo setup
+.env.sample                          Environment template
+```
+
+---
+
+## SaaS Notes
+
+- Auth is credentials-based via NextAuth, with demo-friendly local tenant account persistence.
+- Tenant IDs are deterministic from restaurant email/name and used to scope dashboard, history, active RFP state, and RAG metadata.
+- Each restaurant profile stores location, cuisine type, preferred suppliers, monthly budget target, and savings target.
+- Procurement history is tenant-scoped and powers analytics, supplier scorecards, market alerts, and the "run again" flow.
+
+---
+
+## Demo Menu
+
+### Real Restaurant URL
 
 Paste this directly into the menu input field:
 
-```
+```text
 https://carminesnyc.com/menus/menus-c44-q420-dining#
 ```
 
-AutoRFP fetches the page server-side, strips all HTML, and passes clean text to the LLMs. Carmine's NYC is a large Italian-American menu with dozens of dishes — great for demoing bulk ingredient extraction.
+AutoRFP fetches the page server-side, strips all HTML, and passes clean text to the LLMs. Carmine's NYC is a large Italian-American menu with dozens of dishes - great for demoing bulk ingredient extraction.
 
-### Option 2 — Click "Load sample →"
+### Plain Text Sample
 
-Pre-fills a diverse 8-dish menu optimized to trigger live prices across multiple data sources (beef → CME, chicken/eggs → BLS, pasta → CBOT, salmon → futures proxy, coffee → ICE).
+Paste this into New Procurement:
 
-### Option 3 — Plain text
-
-```
+```text
 Classic Cheeseburger $14
 Spaghetti Carbonara $18
 Grilled Salmon $26
@@ -192,24 +211,4 @@ Eggs Benedict $13
 Tiramisu $10
 ```
 
----
-
-## Architecture notes
-
-**Why dual LLM (Ollama + Groq)?**
-Ollama runs llama3.2 locally — zero cost, zero latency overhead, fully private. Groq runs llama-3.3-70b in the cloud as a cross-verifier. For menu parsing, Ollama is the primary and Groq is fallback. For supplier recommendations, both models run in parallel and their picks are compared — if they agree, confidence is 96%; if they differ, both choices are shown so the user can decide.
-
-**Why Google Places for suppliers?**
-Google Places Text Search returns real, up-to-date businesses including Sysco branches, Restaurant Depot, food co-ops, and regional distributors — far more accurate than OSM tags for commercial food distribution. Falls back to a curated pool of 15 known distributors when the API returns no results.
-
-**Why no email sending by default?**
-RFPs are generated and tracked in the database but not delivered to real vendors unless `RESEND_API_KEY` is set. The vendor side is simulated by Groq to complete the demo loop without spamming real inboxes.
-
-**How RAG procurement memory works:**
-After each negotiation pipeline completes, every vendor result is converted to a natural-language summary, embedded with `nomic-embed-text` (768 dimensions, local via Ollama), and upserted into ChromaDB. When the recommendation endpoint runs, it embeds the current procurement situation and queries ChromaDB for the 3 most similar past decisions. Those are injected into the LLM prompt as historical context — so the system learns from real outcomes over time. ChromaDB is optional; if not running, the app continues without RAG context and a warning is logged.
-
-**Pricing fallback chain:**
-1. Yahoo Finance futures (live, no key) — meat, grains, soy, oats, coffee, sugar, cocoa, OJ
-2. BLS Public API (live, no key) — chicken, eggs, milk, butter, cheese, produce
-3. Deterministic estimate based on ingredient name hash — everything else
-4. DB cache — if the same ingredient was priced this calendar month, skip external calls
+Or use the built-in sample menu button in the app.

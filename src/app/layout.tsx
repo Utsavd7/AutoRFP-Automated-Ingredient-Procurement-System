@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { ToastViewport } from "@/components/ToastViewport";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -17,6 +18,7 @@ export default function RootLayout({
         className="antialiased bg-black text-[#F2F2F2] selection:bg-[#5E6AD2]/30 selection:text-white"
       >
         {children}
+        <ToastViewport />
       </body>
     </html>
   );

@@ -199,8 +199,8 @@ export default function SettingsPage() {
           {[
             {
               icon: Cpu,
-              name: 'Ollama',
-              desc: 'Local LLM inference · llama3.2 · nomic-embed-text',
+              name: 'Local AI',
+              desc: 'Optional Ollama inference · app falls back to Groq when unavailable',
               status: 'local',
             },
             {

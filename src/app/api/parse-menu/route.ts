@@ -192,48 +192,59 @@ Output ONLY valid JSON matching this exact schema. No markdown, no explanation, 
 Menu:
 ${content}
 `;
-        // Ollama (3B model) gets first 4k chars; Groq (70B) gets full content
-        const ollamaMessages = [sysMsg, { role: 'user' as const, content: buildPrompt(menuContent.slice(0, 4000)) }];
-        const groqMessages   = [sysMsg, { role: 'user' as const, content: buildPrompt(menuContent) }];
+        const groqMessages = [sysMsg, { role: 'user' as const, content: buildPrompt(menuContent) }];
+
+        const insightPrompt = `You are a restaurant procurement assistant. Given the following menu text, write exactly 2 concise sentences for a buyer: identify the dominant protein sources and most cost-volatile ingredients, and flag any seasonal or price-risk items worth watching. Be specific and practical.
+
+Menu:
+${menuContent.slice(0, 2000)}`;
+
+        const ollamaInsightMessages = [
+            { role: 'system' as const, content: 'You are a concise procurement assistant. Reply in plain text, 2 sentences max.' },
+            { role: 'user' as const, content: insightPrompt },
+        ];
+
+        // Run Groq (extraction) + Ollama (insight) in parallel — no sequential blocking
+        const ollamaInsightPromise = Promise.race([
+            callOllama(ollamaInsightMessages, false),
+            new Promise<string>((_, reject) => setTimeout(() => reject(new Error('Ollama timeout')), 10000)),
+        ]);
 
         let parsedData: { dishes: any[] } | null = null;
         let modelSource = 'Mock';
+        let menuInsight: string | null = null;
 
-        // 1. Try Ollama (local model — our own LLM)
-        try {
-            const text = await callOllama(ollamaMessages, true);
-            parsedData = parseJSON<{ dishes: any[] }>(text);
-            if (parsedData?.dishes?.length) {
-                modelSource = 'Ollama (llama3.2)';
-                console.log('parse-menu: Ollama succeeded');
-            } else {
-                parsedData = null;
-                console.warn('parse-menu: Ollama returned bad JSON, falling back to Groq');
-            }
-        } catch (err: any) {
-            console.warn('parse-menu: Ollama failed:', err.message);
-        }
-
-        // 2. Fall back to Groq if Ollama failed (with one retry on 400)
-        if (!parsedData) {
-            for (let attempt = 0; attempt < 2; attempt++) {
-                try {
-                    const text = await callGroq(groqMessages, true);
-                    parsedData = parseJSON<{ dishes: any[] }>(text);
-                    if (parsedData?.dishes?.length) {
-                        modelSource = 'Groq (llama-3.3-70b)';
-                        console.log('parse-menu: Groq succeeded');
-                        break;
-                    } else {
-                        parsedData = null;
+        // Start both in parallel
+        const [groqResult, ollamaResult] = await Promise.allSettled([
+            (async () => {
+                for (let attempt = 0; attempt < 2; attempt++) {
+                    try {
+                        const text = await callGroq(groqMessages, true);
+                        const data = parseJSON<{ dishes: any[] }>(text);
+                        if (data?.dishes?.length) return { data, source: 'Groq (llama-3.3-70b)' };
+                    } catch (err: any) {
+                        console.warn(`parse-menu: Groq attempt ${attempt + 1} failed:`, err.message);
                     }
-                } catch (err: any) {
-                    console.warn(`parse-menu: Groq attempt ${attempt + 1} failed:`, err.message);
                 }
-            }
+                return null;
+            })(),
+            ollamaInsightPromise,
+        ]);
+
+        if (groqResult.status === 'fulfilled' && groqResult.value) {
+            parsedData = groqResult.value.data;
+            modelSource = groqResult.value.source;
+            console.log('parse-menu: Groq succeeded');
         }
 
-        // 3. Last resort: mock data
+        if (ollamaResult.status === 'fulfilled' && ollamaResult.value?.trim()) {
+            menuInsight = ollamaResult.value.trim();
+            console.log('parse-menu: Ollama insight generated');
+        } else {
+            console.warn('parse-menu: Ollama insight skipped:', ollamaResult.status === 'rejected' ? ollamaResult.reason?.message : 'empty');
+        }
+
+        // Last resort: mock data
         if (!parsedData || !parsedData.dishes?.length) {
             parsedData = { dishes: MOCK_DISHES };
             modelSource = 'Mock';
@@ -274,6 +285,7 @@ ${content}
             menuId: newMenu.id,
             recipes: savedDishes,
             modelSource,
+            menuInsight,
         });
 
     } catch (error: any) {

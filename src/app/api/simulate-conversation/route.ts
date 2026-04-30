@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { PrismaClient } from '@prisma/client';
+import { getEmbedding } from '@/lib/embeddings';
+import { ingestQuote } from '@/lib/chroma';
 
 const openai = process.env.GROQ_API_KEY
     ? new OpenAI({ apiKey: process.env.GROQ_API_KEY, baseURL: 'https://api.groq.com/openai/v1' })
@@ -160,6 +162,13 @@ Vendor email:
                     await prisma.rFP.update({ where: { id: rfpId }, data: { status: 'REPLIED' } });
 
                     quoteResult = newQuote;
+
+                    // Async RAG ingest — fire and forget, never blocks the response
+                    const ingText = `Supplier: ${rfp.distributor.name}, Location: ${rfp.distributor.location}. Quoted $${newQuote.price.toFixed(2)} for ${ingredients.length} ingredients. Details: ${newQuote.details ?? 'N/A'}`;
+                    getEmbedding(ingText).then(emb => {
+                        if (emb) ingestQuote({ id: newQuote.id, text: ingText, embedding: emb, metadata: { distributorName: rfp.distributor.name, location: rfp.distributor.location, price: newQuote.price, ingredients: ingredients.map((i: any) => i.name).join(', '), timestamp: new Date().toISOString() } });
+                    }).catch(() => {});
+
                     conversationLog.push({
                         role: 'AutoRFP Agent',
                         message: `✅ Quote extracted: $${Number(parsed.price).toFixed(2)}.${hasRealPricing ? ` Market baseline was $${estimatedTotal.toFixed(2)}.` : ''} Saved to database.`
@@ -213,6 +222,13 @@ Write a short, polite follow-up asking for clarification (2-3 sentences only).`;
 
             await prisma.rFP.update({ where: { id: rfpId }, data: { status: 'REPLIED' } });
             quoteResult = newQuote;
+
+            // Async RAG ingest — fire and forget
+            const ingText2 = `Supplier: ${rfp.distributor.name}, Location: ${rfp.distributor.location}. Quoted $${newQuote.price.toFixed(2)} for ${ingredients.length} ingredients. Details: ${newQuote.details ?? 'N/A'}`;
+            getEmbedding(ingText2).then(emb => {
+                if (emb) ingestQuote({ id: newQuote.id, text: ingText2, embedding: emb, metadata: { distributorName: rfp.distributor.name, location: rfp.distributor.location, price: newQuote.price, ingredients: ingredients.map((i: any) => i.name).join(', '), timestamp: new Date().toISOString() } });
+            }).catch(() => {});
+
             turn = 1;
         }
 

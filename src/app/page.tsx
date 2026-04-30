@@ -12,7 +12,7 @@ import clsx from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import {
   ComposedChart, Area, Line, XAxis, YAxis, Tooltip,
-  ResponsiveContainer
+  ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, Radar, Legend,
 } from 'recharts';
 
 function cn(...inputs: (string | undefined | null | false)[]) {
@@ -223,6 +223,7 @@ export default function Home() {
   const [recipes, setRecipes] = useState<any[]>([]);
   const [ingredients, setIngredients] = useState<any[]>([]);
   const [parseModelSource, setParseModelSource] = useState<string | null>(null);
+  const [menuInsight, setMenuInsight] = useState<string | null>(null);
 
   const [pricingData, setPricingData] = useState<any[]>([]);
   const [loadingPricing, setLoadingPricing] = useState(false);
@@ -244,6 +245,7 @@ export default function Home() {
   const [followUpEmail, setFollowUpEmail] = useState('');
   const [recommendation, setRecommendation] = useState<any>(null);
   const [loadingRecommendation, setLoadingRecommendation] = useState(false);
+  const [riskScores, setRiskScores] = useState<any[]>([]);
   const [conversationLogs, setConversationLogs] = useState<Record<string, any[]>>({});
   const [simulatingConversation, setSimulatingConversation] = useState(false);
 
@@ -356,6 +358,7 @@ export default function Home() {
       if (!res.ok) throw new Error(data.error || 'Failed to parse menu');
       setRecipes(data.recipes);
       setParseModelSource(data.modelSource ?? null);
+      setMenuInsight(data.menuInsight ?? null);
       const map = new Map<string, any>();
       data.recipes.forEach((r: any) => r.ingredients.forEach((ing: any) => {
         if (!map.has(ing.name)) map.set(ing.name, { ...ing });
@@ -397,17 +400,31 @@ export default function Home() {
     finally { setSendingRFPs(false); }
   };
 
-  const handleFetchQuotes = async () => {
+  const handleFetchQuotes = async (): Promise<any[]> => {
     const menuId = recipes[0]?.menuId;
-    if (!menuId) return;
+    if (!menuId) return [];
     setLoadingQuotes(true); setError('');
     try {
       const res = await fetch(`/api/quotes?menuId=${menuId}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to fetch quotes');
       setQuotes(data.quotes);
-    } catch (err: any) { setError(err.message); }
+      return data.quotes;
+    } catch (err: any) { setError(err.message); return []; }
     finally { setLoadingQuotes(false); }
+  };
+
+  const handleFetchRiskScores = async (quotesOverride?: any[]) => {
+    const q = quotesOverride ?? quotes;
+    if (!q.length) return;
+    try {
+      const res = await fetch('/api/risk-score', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quotes: q, pricingData, ingredients }),
+      });
+      const data = await res.json();
+      setRiskScores(data.scores ?? []);
+    } catch { /* non-critical */ }
   };
 
   const handleSimulateEmail = async () => {
@@ -451,7 +468,11 @@ export default function Home() {
         ];
       }
       setConversationLogs(newLogs);
-      await handleFetchQuotes();
+      const fetchedQuotes = await handleFetchQuotes();
+      await Promise.all([
+        handleGetRecommendation(),
+        handleFetchRiskScores(fetchedQuotes),
+      ]);
     } catch (err: any) { setError(err.message); }
     finally { setSimulatingConversation(false); }
   };
@@ -715,6 +736,24 @@ export default function Home() {
                       <p className="text-[11px] text-[#8A8F98] font-medium mt-1 truncate">{ing.quantity} {ing.unit}</p>
                     </div>
                   ))}
+                </div>
+              </Card>
+            )}
+
+            {/* Ollama local AI insight */}
+            {menuInsight && (
+              <Card className="lg:col-span-5 p-5 border border-violet-500/20 bg-violet-500/[0.03] shadow-[inset_0_1px_0_0_rgba(139,92,246,0.08)]">
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-violet-500/10 border border-violet-500/20">
+                    <Brain className="w-3.5 h-3.5 text-violet-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-[10px] font-black uppercase tracking-[0.18em] text-violet-400">Local AI · Ollama llama3.2</span>
+                      <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
+                    </div>
+                    <p className="text-[13px] text-[#CCCCCC] leading-relaxed">{menuInsight}</p>
+                  </div>
                 </div>
               </Card>
             )}
@@ -1046,20 +1085,94 @@ export default function Home() {
                 </div>
               )}
 
+              {/* Supplier Intelligence Report */}
+              {riskScores.length > 0 && (() => {
+                const COLORS = ['#34d399', '#60a5fa', '#a78bfa', '#fbbf24', '#f87171'];
+                const radarData = ['Price', 'Reliability', 'Speed', 'Market Rate', 'Coverage'].map(axis => {
+                  const point: any = { axis };
+                  riskScores.forEach(s => { point[s.distributorName] = s.axes.find((a: any) => a.axis === axis)?.score ?? 0; });
+                  return point;
+                });
+                return (
+                  <div className="border-t border-white/10 p-6 space-y-5">
+                    <div className="flex items-center gap-2">
+                      <Shield className="w-4 h-4 text-blue-400" />
+                      <h3 className="text-[13px] font-bold text-[#EEEEEE]">Supplier Intelligence Report</h3>
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-[#8A8F98] ml-1">5-axis risk scoring</span>
+                    </div>
+                    <div className="grid lg:grid-cols-2 gap-6 items-center">
+                      {/* Radar chart */}
+                      <div className="h-64">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <RadarChart data={radarData} margin={{ top: 10, right: 30, bottom: 10, left: 30 }}>
+                            <PolarGrid stroke="rgba(255,255,255,0.08)" />
+                            <PolarAngleAxis dataKey="axis" tick={{ fill: '#8A8F98', fontSize: 11, fontWeight: 600 }} />
+                            {riskScores.map((s, i) => (
+                              <Radar
+                                key={s.distributorName}
+                                name={s.distributorName}
+                                dataKey={s.distributorName}
+                                stroke={COLORS[i % COLORS.length]}
+                                fill={COLORS[i % COLORS.length]}
+                                fillOpacity={0.12}
+                                strokeWidth={2}
+                              />
+                            ))}
+                            <Legend wrapperStyle={{ fontSize: 11, color: '#8A8F98' }} />
+                            <Tooltip
+                              contentStyle={{ background: '#0a0a0a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 12 }}
+                              labelStyle={{ color: '#EEEEEE', fontWeight: 700 }}
+                              itemStyle={{ color: '#8A8F98' }}
+                            />
+                          </RadarChart>
+                        </ResponsiveContainer>
+                      </div>
+                      {/* Score cards */}
+                      <div className="space-y-3">
+                        {riskScores.map((s, i) => (
+                          <div key={s.distributorName} className="flex items-center gap-3 p-3 bg-white/[0.02] border border-white/8 rounded-lg">
+                            <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[13px] font-bold text-[#EEEEEE] truncate">{s.distributorName}</p>
+                              <div className="flex gap-2 mt-1.5 flex-wrap">
+                                {s.axes.map((a: any) => (
+                                  <span key={a.axis} className="text-[10px] text-[#8A8F98]">
+                                    {a.axis} <span className="font-bold" style={{ color: a.score >= 70 ? '#34d399' : a.score >= 45 ? '#fbbf24' : '#f87171' }}>{a.score}</span>
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <p className="text-[18px] font-black" style={{ color: COLORS[i % COLORS.length] }}>{s.overall}</p>
+                              <p className="text-[9px] font-bold uppercase tracking-widest text-[#8A8F98]">overall</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {quotes.length > 0 && (
                 <div className="border-t border-white/10 p-6 space-y-5 bg-white/[0.01]">
                   <div className="flex items-center justify-between">
                     <h3 className="text-[13px] font-bold text-[#EEEEEE] flex items-center gap-2">
                       <Sparkles className="w-4 h-4 text-violet-400" />AI Recommendation
+                      {loadingRecommendation && <Loader2 className="w-3.5 h-3.5 animate-spin text-violet-400" />}
                     </h3>
-                    <Btn size="sm" onClick={handleGetRecommendation} loading={loadingRecommendation}>
-                      {loadingRecommendation ? 'Analyzing…' : 'Get recommendation'}
-                    </Btn>
                   </div>
                   {recommendation ? (
                     <div className="bg-white/[0.02] border border-white/10 rounded-xl p-5 space-y-3 relative overflow-hidden group">
                       <div className="absolute inset-0 bg-gradient-to-r from-white/[0.02] to-transparent pointer-events-none" />
-                      <p className="text-[10px] text-white font-black uppercase tracking-[0.2em] relative z-10">Recommended supplier</p>
+                      <div className="flex items-center gap-2 relative z-10">
+                        <p className="text-[10px] text-white font-black uppercase tracking-[0.2em]">Recommended supplier</p>
+                        {recommendation.ragEnhanced && (
+                          <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-[9px] font-bold text-blue-400 uppercase tracking-widest">
+                            <span className="w-1 h-1 rounded-full bg-blue-400 animate-pulse" />RAG
+                          </span>
+                        )}
+                      </div>
                       <h4 className="text-xl font-bold text-[#EEEEEE] tracking-tight relative z-10">{recommendation.recommendedDistributor}</h4>
                       <p className="text-[13px] text-[#8A8F98] leading-relaxed relative z-10">{recommendation.reasoning}</p>
                       {recommendation.potentialRisks && (
@@ -1095,7 +1208,7 @@ export default function Home() {
                     </div>
                   ) : (
                     <div className="flex flex-col items-center justify-center p-8 border border-dashed border-white/10 rounded-xl text-[#8A8F98] text-[13px] font-medium">
-                      Click to get an AI-powered supplier recommendation
+                      AI recommendation will appear automatically after quotes are collected
                     </div>
                   )}
                 </div>

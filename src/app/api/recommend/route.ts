@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { callOllama, callGroq, parseJSON } from '@/lib/llm';
+import { getEmbedding } from '@/lib/embeddings';
+import { searchSimilarQuotes } from '@/lib/chroma';
 
 const prisma = new PrismaClient();
 
@@ -63,14 +65,28 @@ export async function GET(req: Request) {
             ? `\nCurrent wholesale market prices:\n${Array.from(ingredientPricingMap.entries()).map(([n, p]) => `  - ${n}: $${p.toFixed(2)}/unit`).join('\n')}\nUse this to evaluate whether each vendor's quote is fair.`
             : '';
 
+        // RAG: embed the current situation and retrieve similar past procurement decisions
+        const situationText = `Procurement decision: ${quotesSummary.map(q => `${q.distributorName} quoted $${q.price} from ${q.location}`).join('; ')}`;
+        let ragContext = '';
+        try {
+            const embedding = await getEmbedding(situationText);
+            if (embedding) {
+                const similar = await searchSimilarQuotes(embedding, 3);
+                if (similar?.documents?.length) {
+                    ragContext = `\n\nHistorical procurement context (semantically similar past decisions from your procurement history):\n${similar.documents.map((d, i) => `  ${i + 1}. ${d}`).join('\n')}\nFactor this history into your recommendation — patterns from past decisions are valuable signals.`;
+                    console.log(`recommend: RAG found ${similar.documents.length} similar historical quotes`);
+                }
+            }
+        } catch { /* RAG is non-critical, continue without it */ }
+
         const systemMsg = 'You are an expert restaurant procurement advisor. Return ONLY valid JSON, no markdown.';
         const userMsg = `Analyze these supplier quotes and recommend the best one.
 
 Quotes:
 ${JSON.stringify(quotesSummary, null, 2)}
-${marketContext}
+${marketContext}${ragContext}
 
-Evaluate based on: price vs market rates, delivery terms, reliability signals, red flags.
+Evaluate based on: price vs market rates, delivery terms, reliability signals, red flags, and any historical patterns.
 
 Return ONLY this JSON:
 {
@@ -133,6 +149,7 @@ Return ONLY this JSON:
                     agreed,
                     confidence,
                 },
+                ragEnhanced: ragContext.length > 0,
             },
             quotes: quotesSummary,
             lowestPrice: Math.min(...quotesSummary.map((q: any) => q.price)),

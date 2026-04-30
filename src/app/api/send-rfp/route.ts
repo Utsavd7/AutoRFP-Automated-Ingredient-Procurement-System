@@ -8,7 +8,7 @@ const prisma = new PrismaClient();
 
 export async function POST(req: Request) {
     try {
-        const { distributorIds, menuId, ingredients } = await req.json();
+        const { distributorIds, menuId, ingredients, tenantId = 'tenant_demo' } = await req.json();
 
         if (!distributorIds || distributorIds.length === 0 || !menuId || !ingredients) {
             return NextResponse.json(
@@ -87,6 +87,7 @@ AutoRFP Procurement Team
 
             sentRFPs.push({
                 id: rfp.id,
+                tenantId,
                 distributorName: distributor.name,
                 status: rfp.status,
                 email: distributor.email

@@ -12,6 +12,7 @@ async function getCollection() {
         const col = await client.getOrCreateCollection({
             name: COLLECTION,
             metadata: { description: 'AutoRFP historical procurement quotes for RAG' },
+            embeddingFunction: null,
         });
         collectionReady = true;
         return col;
@@ -27,6 +28,7 @@ export interface QuoteRecord {
     embedding: number[];
     metadata: {
         distributorName: string;
+        tenantId?: string;
         location: string;
         price: number;
         ingredients: string;
@@ -52,14 +54,18 @@ export async function ingestQuote(record: QuoteRecord): Promise<boolean> {
     }
 }
 
-export async function searchSimilarQuotes(embedding: number[], nResults = 3): Promise<{
+export async function searchSimilarQuotes(embedding: number[], nResults = 3, tenantId?: string): Promise<{
     documents: string[];
     metadatas: Record<string, any>[];
 } | null> {
     const col = await getCollection();
     if (!col) return null;
     try {
-        const results = await col.query({ queryEmbeddings: [embedding], nResults });
+        const results = await col.query({
+            queryEmbeddings: [embedding],
+            nResults,
+            ...(tenantId ? { where: { tenantId } } : {}),
+        } as any);
         return {
             documents: (results.documents[0] ?? []) as string[],
             metadatas: (results.metadatas[0] ?? []) as Record<string, any>[],

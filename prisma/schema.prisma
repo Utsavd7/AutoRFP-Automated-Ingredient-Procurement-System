@@ -9,10 +9,29 @@ datasource db {
 
 model Menu {
   id        String   @id @default(uuid())
+  tenantId  String?
   sourceUrl String?
   text      String?
   rfps      RFP[]
   recipes   Recipe[]
+  tenant    Tenant?  @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+}
+
+model Tenant {
+  id                 String              @id
+  restaurantName     String
+  email              String
+  location           String
+  cuisineType        String?
+  preferredSuppliers String[]
+  monthlyBudgetTarget Float?
+  savingsTargetPct   Float?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  menus              Menu[]
+  procurementRuns    ProcurementRun[]
 }
 
 model Recipe {
@@ -54,6 +73,7 @@ model Distributor {
 model RFP {
   id            String      @id @default(uuid())
   menuId        String
+  tenantId      String?
   distributorId String
   status        String
   sentAt        DateTime?
@@ -61,6 +81,9 @@ model RFP {
   quotes        Quote[]
   distributor   Distributor @relation(fields: [distributorId], references: [id])
   menu          Menu        @relation(fields: [menuId], references: [id])
+
+  @@index([tenantId])
+  @@index([menuId, tenantId])
 }
 
 model Quote {
@@ -69,4 +92,25 @@ model Quote {
   price   Float
   details String?
   rfp     RFP     @relation(fields: [rfpId], references: [id])
+}
+
+model ProcurementRun {
+  id                String   @id @default(uuid())
+  tenantId          String
+  menuText          String?
+  totalSpend        Float?
+  totalSavings      Float?
+  savingsPercentage Float?
+  bestVendor        String?
+  winnerPrice       Float?
+  recipesCount      Int      @default(0)
+  ingredientsCount  Int      @default(0)
+  distributorsCount Int      @default(0)
+  quotesCount       Int      @default(0)
+  executiveSummary  String?
+  marketAlerts      String[]
+  createdAt         DateTime @default(now())
+  tenant            Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, createdAt])
 }

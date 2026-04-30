@@ -18,6 +18,7 @@ export async function GET(req: Request) {
     try {
         const { searchParams } = new URL(req.url);
         const menuId = searchParams.get('menuId');
+        const tenantId = searchParams.get('tenantId') ?? 'tenant_demo';
         if (!menuId) return NextResponse.json({ error: 'menuId is required' }, { status: 400 });
 
         const rfps = await prisma.rFP.findMany({
@@ -71,7 +72,7 @@ export async function GET(req: Request) {
         try {
             const embedding = await getEmbedding(situationText);
             if (embedding) {
-                const similar = await searchSimilarQuotes(embedding, 3);
+                const similar = await searchSimilarQuotes(embedding, 3, tenantId);
                 if (similar?.documents?.length) {
                     ragContext = `\n\nHistorical procurement context (semantically similar past decisions from your procurement history):\n${similar.documents.map((d, i) => `  ${i + 1}. ${d}`).join('\n')}\nFactor this history into your recommendation — patterns from past decisions are valuable signals.`;
                     console.log(`recommend: RAG found ${similar.documents.length} similar historical quotes`);

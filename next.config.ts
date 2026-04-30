@@ -1,7 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  turbopack: {
+    root: "/Users/utsavdoshi/Desktop/Projects Coding/AutoRFP-Automated-Ingredient-Procurement-System",
+  },
 };
 
 export default nextConfig;

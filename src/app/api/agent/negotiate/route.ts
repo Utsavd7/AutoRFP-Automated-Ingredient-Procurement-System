@@ -63,6 +63,8 @@ async function callAgent(agentKey: keyof typeof AGENTS, prompt: string): Promise
 
 // ─── Buyer Report Email ───────────────────────────────────────────────────────
 async function sendBuyerReport(result: any, quotes: any[]) {
+    if (process.env.AUTORFP_SEND_BUYER_REPORT !== 'true') return;
+
     const buyerEmail = process.env.BUYER_EMAIL;
     const resendKey  = process.env.RESEND_API_KEY;
     if (!buyerEmail || !resendKey) return;
@@ -182,6 +184,7 @@ async function sendBuyerReport(result: any, quotes: any[]) {
 export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const menuId = searchParams.get('menuId');
+    const tenantId = searchParams.get('tenantId') ?? 'tenant_demo';
 
     const encoder = new TextEncoder();
 
@@ -604,6 +607,7 @@ Return JSON:
                                 text,
                                 embedding,
                                 metadata: {
+                                    tenantId,
                                     distributorName: result.vendorName,
                                     location: vendor?.location ?? '',
                                     price: result.negotiatedPrice,

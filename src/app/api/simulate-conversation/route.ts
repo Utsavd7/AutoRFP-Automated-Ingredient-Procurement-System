@@ -51,7 +51,7 @@ function buildIngredientBreakdown(
 // POST /api/simulate-conversation
 export async function POST(req: Request) {
     try {
-        const { rfpId, ingredients = [], pricingData = [] } = await req.json();
+        const { rfpId, ingredients = [], pricingData = [], tenantId = 'tenant_demo' } = await req.json();
 
         if (!openai) {
             return NextResponse.json({ error: 'GROQ_API_KEY is missing.' }, { status: 500 });
@@ -166,7 +166,7 @@ Vendor email:
                     // Async RAG ingest — fire and forget, never blocks the response
                     const ingText = `Supplier: ${rfp.distributor.name}, Location: ${rfp.distributor.location}. Quoted $${newQuote.price.toFixed(2)} for ${ingredients.length} ingredients. Details: ${newQuote.details ?? 'N/A'}`;
                     getEmbedding(ingText).then(emb => {
-                        if (emb) ingestQuote({ id: newQuote.id, text: ingText, embedding: emb, metadata: { distributorName: rfp.distributor.name, location: rfp.distributor.location, price: newQuote.price, ingredients: ingredients.map((i: any) => i.name).join(', '), timestamp: new Date().toISOString() } });
+                        if (emb) ingestQuote({ id: newQuote.id, text: ingText, embedding: emb, metadata: { tenantId, distributorName: rfp.distributor.name, location: rfp.distributor.location, price: newQuote.price, ingredients: ingredients.map((i: any) => i.name).join(', '), timestamp: new Date().toISOString() } });
                     }).catch(() => {});
 
                     conversationLog.push({

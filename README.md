@@ -4,13 +4,42 @@
 
 ---
 
+## What This Does (Plain English)
+
+Every restaurant has to buy food. Every single week.
+
+The chef or owner has to figure out: what do we need, how much of it, who sells it, what's the going rate, and are we getting a fair price? Then they call suppliers, wait for quotes, compare them manually, negotiate a little, and place an order. Then do it all over again next week.
+
+**AutoRFP automates that entire process.**
+
+You paste your menu in. The system figures out every ingredient you need — including the ones no one thinks about, like the butter used to finish a sauce or the stock a risotto is cooked in. It calculates realistic quantities based on your guest count. It looks up what those ingredients are actually trading for on commodity markets right now. It finds suppliers near you and emails them RFPs. It runs an AI negotiation to push for a better price. And it tells you exactly who to buy from and what you'll save.
+
+What used to take hours of back-and-forth every week becomes something you click through in minutes.
+
+---
+
+## Why This Problem Is Worth Solving
+
+Food is the single biggest controllable cost in a restaurant — typically 28–35% of revenue. Even small inefficiencies compound fast.
+
+But the way most restaurants actually handle procurement hasn't changed much in decades:
+
+- **No price visibility.** Suppliers quote whatever they want. Most restaurant owners have no idea if chicken breast is up 15% this month because of avian flu or if their beef distributor is padding margins. There's no live market signal in the room.
+- **No negotiation leverage.** A single restaurant calling one supplier has almost none. There's no data, no comparison, and no time to shop around.
+- **No memory.** Every procurement cycle starts from zero. Nobody knows what they paid last quarter, which vendor came in cheapest for salmon, or that the last time wheat spiked they should've locked in flour early.
+- **It's all manual.** Phone calls, emails, spreadsheets. The chef is doing this on top of running a kitchen. It's the last thing anyone wants to spend time on.
+
+The result: restaurants routinely overpay, miss pricing windows, and have no visibility into whether their food costs are trending in the right direction.
+
+This is a real operational problem for the ~1 million restaurants in the US alone. Most of them are small businesses that can't afford a procurement team. That's exactly who this is built for.
+
+---
+
 ## Why I Built This
 
-Restaurant procurement is genuinely broken. A chef or owner spends hours every week calling distributors, emailing quotes back and forth, manually comparing prices, and guessing whether they're getting ripped off. There's no live market signal, no negotiation leverage, and no institutional memory — every week starts from scratch.
+I wanted to build something that sits at the intersection of AI agents, live market data, and a real operational workflow — not a toy demo. Procurement is a good domain for that because the problem is concrete (you need X lbs of salmon at the best price), the data exists (commodity futures are public), and the workflow is well-defined enough that AI can meaningfully replace human steps.
 
-I wanted to fix that with AI. Not in a gimmicky "chatbot for restaurants" way, but with a real operational pipeline: extract ingredients from a menu, price them against live commodity futures, find suppliers nearby, fire off RFPs automatically, simulate negotiation, and tell you exactly who to buy from and why.
-
-The thing that makes this interesting to build is that every layer has a real technical problem:
+The technical challenges are also genuinely interesting:
 - How do you extract **hidden** procurement ingredients (the cooking fat, the stock base, the butter finish) from a menu description, not just the hero ingredient?
 - How do you assign **realistic per-guest quantities** for a wholesale order without hallucinating?
 - How do you connect dish costs to **live commodity markets** (CME futures, BLS retail series) rather than static price tables?

@@ -34,7 +34,7 @@ export default function QuoteSubmissionPage({ params }: { params: Promise<{ rfpI
                 const data = await response.json();
 
                 if (!response.ok) throw new Error(data.error || 'Failed to load RFP');
-                if (data.rfp.status === 'REPLIED') {
+                if (data.rfp.status !== 'SENT' && data.rfp.status !== 'VIEWED') {
                     setSubmitted(true);
                 }
                 setRfpData(data.rfp);

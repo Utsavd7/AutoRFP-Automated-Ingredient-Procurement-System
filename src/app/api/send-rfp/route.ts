@@ -1,7 +1,5 @@
 import { NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/prisma';
 
 // In a real application, you would use an email service like Resend or Nodemailer
 // e.g., import { Resend } from 'resend'; const resend = new Resend(process.env.RESEND_API_KEY);
@@ -28,6 +26,20 @@ export async function POST(req: Request) {
         }
 
         const sentRFPs = [];
+        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+        await prisma.menu.update({
+            where: { id: menuId },
+            data: {
+                tenantId,
+                mealName: mealName || 'Full menu',
+                guestCount: typeof guestCount === 'number' ? guestCount : null,
+                bufferPct: typeof bufferPct === 'number' ? bufferPct : null,
+                requestedIngredients: Array.isArray(ingredients) ? ingredients : [],
+                workflowStatus: 'RFP_SENT',
+                lastActivityAt: new Date(),
+            },
+        });
 
         // Format the ingredient list for the email body
         const ingredientListText = ingredients.map((ing: any) => `- ${ing.quantity} ${ing.unit} of ${ing.name}`).join('\n');
@@ -45,7 +57,9 @@ export async function POST(req: Request) {
                     menuId: menuId,
                     tenantId,
                     distributorId: distributor.id,
-                    status: 'SENT'
+                    status: 'SENT',
+                    sentAt: new Date(),
+                    expiresAt,
                 }
             });
 

@@ -6,7 +6,8 @@
     "dev": "next dev --webpack",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "jest --runInBand"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

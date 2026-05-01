@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
-import { callOllama, callGroq, parseJSON } from '@/lib/llm';
-
-const prisma = new PrismaClient();
+import { callOllama, callGroq, groqClient, parseJSON } from '@/lib/llm';
+import { prisma } from '@/lib/prisma';
 
 type ParsedIngredient = {
     name: string;
@@ -223,7 +221,7 @@ const MOCK_DISHES = [
 
 export async function POST(req: Request) {
     try {
-        const { menuText, sourceUrl } = await req.json();
+        const { menuText, sourceUrl, tenantId } = await req.json();
 
         if (!menuText && !sourceUrl) {
             return NextResponse.json(
@@ -359,17 +357,24 @@ ${menuContent.slice(0, 2000)}`;
         let modelSource = 'Mock';
         let menuInsight: string | null = null;
 
+        const envKey = process.env.GROQ_API_KEY;
+        console.log('parse-menu: GROQ_API_KEY present =', !!envKey, '| prefix =', envKey?.slice(0, 8));
+        console.log('parse-menu: groqClient.value =', !!groqClient.value);
+
         // Start both in parallel
         const [groqResult, ollamaResult] = await Promise.allSettled([
             (async () => {
                 for (let attempt = 0; attempt < 2; attempt++) {
                     try {
                         const text = await callGroq(groqMessages, true);
+                        console.log(`parse-menu: Groq raw response (attempt ${attempt + 1}):`, text?.slice(0, 200));
                         const data = parseJSON<{ dishes: any[] }>(text);
+                        console.log(`parse-menu: parseJSON result dishes count:`, data?.dishes?.length ?? 'null');
                         const dishes = sanitizeDishes(data?.dishes);
                         if (dishes.length) return { data: { dishes }, source: 'Groq (llama-3.3-70b)' };
+                        console.warn(`parse-menu: Groq attempt ${attempt + 1} — parsed but sanitizeDishes returned empty`);
                     } catch (err: any) {
-                        console.warn(`parse-menu: Groq attempt ${attempt + 1} failed:`, err.message);
+                        console.warn(`parse-menu: Groq attempt ${attempt + 1} FULL ERROR:`, err.message, err.status, err.error);
                     }
                 }
                 return null;
@@ -390,10 +395,30 @@ ${menuContent.slice(0, 2000)}`;
             console.warn('parse-menu: AI insight skipped:', ollamaResult.status === 'rejected' ? ollamaResult.reason?.message : 'empty');
         }
 
-        // Last resort: mock data
+        // Groq failed — try Ollama directly for extraction before falling to static data
+        if (!parsedData || !parsedData.dishes?.length) {
+            try {
+                const fallbackContent = menuContent.trim() || 'Generate a realistic restaurant menu with 8 popular dishes covering appetizers, mains, and desserts.';
+                const ollamaText = await callOllama(
+                    [sysMsg, { role: 'user' as const, content: buildPrompt(fallbackContent) }],
+                    true
+                );
+                const ollamaData = parseJSON<{ dishes: any[] }>(ollamaText);
+                const ollamaDishes = sanitizeDishes(ollamaData?.dishes);
+                if (ollamaDishes.length) {
+                    parsedData = { dishes: ollamaDishes };
+                    modelSource = 'Ollama (llama3.2) fallback';
+                    console.log('parse-menu: Ollama fallback extraction succeeded');
+                }
+            } catch (ollamaErr: any) {
+                console.warn('parse-menu: Ollama fallback also failed:', ollamaErr.message);
+            }
+        }
+
+        // Absolute last resort: static dataset — only reached when both Groq and Ollama are unavailable
         if (!parsedData || !parsedData.dishes?.length) {
             parsedData = { dishes: sanitizeDishes(MOCK_DISHES) };
-            modelSource = 'Mock';
+            modelSource = 'Static fallback (all AI providers unavailable)';
         }
 
         if (parsedData.dishes.length && modelSource !== 'Mock' && needsIngredientEnrichment(parsedData.dishes)) {
@@ -415,8 +440,10 @@ ${menuContent.slice(0, 2000)}`;
         // Save to Database
         const newMenu = await prisma.menu.create({
             data: {
+                tenantId: typeof tenantId === 'string' && tenantId.trim() ? tenantId.trim() : null,
                 text: menuText || 'Manual Text Input',
                 sourceUrl: sourceUrl || 'Manual Input',
+                workflowStatus: 'PARSED',
             },
         });
 

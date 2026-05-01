@@ -269,12 +269,11 @@ Missing local services never take down the app.
 
 ## What's Next
 
-- Move active RFP state from localStorage to Postgres for multi-device support
 - Add team member roles within a restaurant workspace
-- Vendor-facing quote lifecycle: status tracking, reminders, buyer review states
+- Add admin/demo controls for seeding, clearing, and replaying procurement runs safely
 - Production email/domain setup for real supplier outreach
 - Observability for failed AI calls and slow API routes
-- Regression tests around auth isolation and tenant-scoped APIs
+- Broader regression tests around auth isolation and tenant-scoped APIs
 
 ---
 

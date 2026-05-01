@@ -8,13 +8,19 @@ datasource db {
 }
 
 model Menu {
-  id        String   @id @default(uuid())
-  tenantId  String?
-  sourceUrl String?
-  text      String?
-  rfps      RFP[]
-  recipes   Recipe[]
-  tenant    Tenant?  @relation(fields: [tenantId], references: [id])
+  id                 String   @id @default(uuid())
+  tenantId           String?
+  sourceUrl          String?
+  text               String?
+  mealName           String?
+  guestCount         Int?
+  bufferPct          Float?
+  requestedIngredients Json?
+  workflowStatus     String   @default("DRAFT")
+  lastActivityAt     DateTime @default(now())
+  rfps               RFP[]
+  recipes            Recipe[]
+  tenant             Tenant?  @relation(fields: [tenantId], references: [id])
 
   @@index([tenantId])
 }
@@ -79,7 +85,13 @@ model RFP {
   distributorId String
   status        String
   sentAt        DateTime?
+  viewedAt      DateTime?
+  repliedAt     DateTime?
+  negotiatedAt  DateTime?
+  acceptedAt    DateTime?
+  expiresAt     DateTime?
   createdAt     DateTime    @default(now())
+  statusUpdatedAt DateTime  @default(now()) @updatedAt
   quotes        Quote[]
   distributor   Distributor @relation(fields: [distributorId], references: [id])
   menu          Menu        @relation(fields: [menuId], references: [id])
@@ -89,11 +101,13 @@ model RFP {
 }
 
 model Quote {
-  id      String  @id @default(uuid())
-  rfpId   String
-  price   Float
-  details String?
-  rfp     RFP     @relation(fields: [rfpId], references: [id])
+  id          String   @id @default(uuid())
+  rfpId       String
+  price       Float
+  details     String?
+  status      String   @default("SUBMITTED")
+  submittedAt DateTime @default(now())
+  rfp         RFP      @relation(fields: [rfpId], references: [id])
 }
 
 model ProcurementRun {

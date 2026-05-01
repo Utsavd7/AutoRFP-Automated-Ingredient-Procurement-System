@@ -1,7 +1,5 @@
 import { NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/prisma';
 
 // GET endpoint to fetch RFP details for the Quote Submission page
 export async function GET(
@@ -29,6 +27,29 @@ export async function GET(
 
         if (!rfp) {
             return NextResponse.json({ error: 'RFP not found' }, { status: 404 });
+        }
+
+        if (rfp.status === 'SENT') {
+            const updated = await prisma.rFP.update({
+                where: { id: rfpId },
+                data: {
+                    status: 'VIEWED',
+                    viewedAt: rfp.viewedAt ?? new Date(),
+                },
+                include: {
+                    distributor: true,
+                    menu: {
+                        include: {
+                            recipes: {
+                                include: {
+                                    ingredients: true
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+            return NextResponse.json({ rfp: updated });
         }
 
         return NextResponse.json({ rfp });
@@ -67,7 +88,7 @@ export async function POST(
             return NextResponse.json({ error: 'RFP not found' }, { status: 404 });
         }
 
-        if (rfp.status === 'REPLIED') {
+        if (rfp.status === 'REPLIED' || rfp.status === 'ACCEPTED' || rfp.status === 'DECLINED') {
             return NextResponse.json({ error: 'A quote has already been submitted for this RFP' }, { status: 400 });
         }
 
@@ -77,13 +98,17 @@ export async function POST(
                 data: {
                     rfpId,
                     price: parseFloat(price),
-                    details: details || null
+                    details: details || null,
+                    status: 'SUBMITTED',
                 }
             });
 
             const updatedRFP = await tx.rFP.update({
                 where: { id: rfpId },
-                data: { status: 'REPLIED' }
+                data: {
+                    status: 'REPLIED',
+                    repliedAt: new Date(),
+                }
             });
 
             return { newQuote, updatedRFP };

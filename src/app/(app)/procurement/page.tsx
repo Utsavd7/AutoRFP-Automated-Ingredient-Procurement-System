@@ -15,10 +15,8 @@ import {
   ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, Radar, Legend,
 } from 'recharts';
 import {
-  clearActiveRfp,
   readAccount,
   tenantKey,
-  writeActiveRfp,
   writeTenantHistory,
   readTenantHistory,
   type RestaurantAccount,
@@ -91,6 +89,17 @@ function Btn({ children, onClick, disabled, loading, variant = 'primary', size =
 
 function Card({ children, className }: { children: React.ReactNode; className?: string }) {
   return <div className={cn('linear-panel rounded-xl', className)}>{children}</div>;
+}
+
+// Restaurant menu-mix: as menu grows, fewer guests order any single dish.
+// Based on NRA contribution-margin analysis benchmarks.
+function menuMixFactor(numDishes: number): number {
+  if (numDishes <= 2) return 1.00;
+  if (numDishes <= 4) return 0.80;
+  if (numDishes <= 7) return 0.65;
+  if (numDishes <= 11) return 0.50;
+  if (numDishes <= 17) return 0.38;
+  return 0.28;
 }
 
 function scaleIngredientForGuests(ingredient: any, guestCount: number, bufferPct: number) {
@@ -326,6 +335,127 @@ function ChatThread({ messages }: { messages: any[] }) {
   );
 }
 
+// ─── Vendor conversation thread (simulate-conversation logs) ──────────────────
+
+function VendorConvoThread({ logs, vendorName }: { logs: any[]; vendorName: string }) {
+  const bottomRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [logs.length]);
+
+  // Assign staggered fake timestamps so messages feel like a real exchange
+  const baseTime = Date.now() - logs.length * 4 * 60 * 1000;
+
+  return (
+    <div className="space-y-3 overflow-y-auto max-h-[420px] pr-1">
+      {logs.map((entry, i) => {
+        const isAgent  = entry.role === 'AutoRFP Agent';
+        const isSystem = entry.role === 'system';
+        const ts = new Date(baseTime + i * 4 * 60 * 1000).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
+        if (isSystem) {
+          return (
+            <div key={i} className="flex items-center gap-2 justify-center py-1">
+              <div className="h-px flex-1 bg-white/[0.06]" />
+              <span className="text-[10px] font-mono text-[#8A8F98]/60 italic px-2 shrink-0">{entry.message}</span>
+              <div className="h-px flex-1 bg-white/[0.06]" />
+            </div>
+          );
+        }
+
+        // Extract a price mention from the message for a chip
+        const priceMatch = entry.message.match(/\$\s?([\d,]+(?:\.\d{2})?)/);
+        const mentionedPrice = priceMatch ? priceMatch[1].replace(',', '') : null;
+        const isQuoteConfirm = isAgent && entry.message.startsWith('✅');
+
+        return (
+          <div key={i} className={cn('flex gap-3 chat-message', isAgent ? 'flex-row-reverse' : 'flex-row')}>
+            {/* Avatar */}
+            <div className={cn(
+              'w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-1 border text-[15px]',
+              isAgent
+                ? 'bg-violet-500/15 border-violet-500/25'
+                : 'bg-white/[0.05] border-white/10'
+            )}>
+              {isAgent ? '🤖' : '🏢'}
+            </div>
+
+            {/* Bubble */}
+            <div className={cn('max-w-[78%] flex flex-col gap-1.5', isAgent ? 'items-end' : 'items-start')}>
+              {/* Sender row */}
+              <div className={cn('flex items-center gap-2 text-[10px] font-bold text-[#8A8F98] uppercase tracking-wide', isAgent ? 'flex-row-reverse' : 'flex-row')}>
+                <span>{isAgent ? 'AutoRFP Agent' : vendorName}</span>
+                <span className="opacity-40">{ts}</span>
+              </div>
+
+              {/* Message bubble */}
+              <div className={cn(
+                'rounded-2xl px-4 py-3 border text-[13px] leading-relaxed whitespace-pre-line',
+                isQuoteConfirm
+                  ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300 rounded-tr-sm'
+                  : isAgent
+                    ? 'bg-violet-500/10 border-violet-500/20 text-[#EEEEEE] rounded-tr-sm'
+                    : 'bg-white/[0.03] border-white/[0.08] text-[#CCCCCC] rounded-tl-sm'
+              )}>
+                {entry.message}
+              </div>
+
+              {/* Price chip — only on vendor messages with a dollar amount */}
+              {!isAgent && mentionedPrice && (
+                <span className="text-[11px] font-black text-blue-300 bg-blue-500/10 border border-blue-500/20 px-2.5 py-1 rounded-lg">
+                  ${mentionedPrice} quoted
+                </span>
+              )}
+            </div>
+          </div>
+        );
+      })}
+      <div ref={bottomRef} />
+    </div>
+  );
+}
+
+// ─── Countdown timer ───────────────────────────────────────────────────────────
+
+function CountdownTimer({ active, estimatedSecs, label }: { active: boolean; estimatedSecs: number; label?: string }) {
+  const [remaining, setRemaining] = useState(estimatedSecs);
+
+  useEffect(() => {
+    setRemaining(estimatedSecs);
+    if (!active) return;
+    const start = Date.now();
+    const id = setInterval(() => {
+      setRemaining(Math.max(0, estimatedSecs - (Date.now() - start) / 1000));
+    }, 100);
+    return () => clearInterval(id);
+  }, [active, estimatedSecs]);
+
+  if (!active) return null;
+
+  const pct = Math.min(100, ((estimatedSecs - remaining) / estimatedSecs) * 100);
+  const done = remaining < 0.5;
+
+  return (
+    <div className="space-y-1.5 mt-3">
+      {label && (
+        <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-widest text-[#8A8F98]">
+          <span className="flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
+            {label}
+          </span>
+          <span className={cn('font-mono', done ? 'text-amber-400' : 'text-[#8A8F98]')}>
+            {done ? 'finishing up…' : `~${Math.ceil(remaining)}s`}
+          </span>
+        </div>
+      )}
+      <div className="h-0.5 w-full bg-white/[0.06] rounded-full overflow-hidden">
+        <div
+          className={cn('h-full rounded-full transition-all duration-100', done ? 'bg-amber-400/60' : 'bg-violet-500/70')}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
 // ─── Main page ─────────────────────────────────────────────────────────────────
 
 export default function ProcurementPage() {
@@ -366,6 +496,7 @@ export default function ProcurementPage() {
   const [riskScores, setRiskScores] = useState<any[]>([]);
   const [conversationLogs, setConversationLogs] = useState<Record<string, any[]>>({});
   const [simulatingConversation, setSimulatingConversation] = useState(false);
+  const [vendorProgress, setVendorProgress] = useState<Record<string, 'pending' | 'contacting' | 'replied' | 'error'>>({});
 
   const [negotiating, setNegotiating] = useState(false);
   const [agentEvents, setAgentEvents] = useState<any[]>([]);
@@ -393,7 +524,25 @@ export default function ProcurementPage() {
     }
   }, []);
 
+  useEffect(() => {
+    fetch('/api/procurement-session/active')
+      .then(async res => res.ok ? await res.json() : null)
+      .then(data => {
+        const session = data?.session;
+        if (!session) return;
+        if (session.menuText) setMenuText(session.menuText);
+        if (Array.isArray(session.recipes) && session.recipes.length) setRecipes(session.recipes);
+        if (Array.isArray(session.ingredients) && session.ingredients.length) setIngredients(session.ingredients);
+        if (typeof session.guestCount === 'number' && session.guestCount > 0) setGuestCount(session.guestCount);
+        if (typeof session.bufferPct === 'number') setBufferPct(session.bufferPct);
+        if (Array.isArray(session.sentRFPs)) setSentRFPs(session.sentRFPs);
+        if (Array.isArray(session.quotes)) setQuotes(session.quotes);
+      })
+      .catch(() => {});
+  }, []);
+
   const handleReset = () => {
+    fetch('/api/procurement-session/active', { method: 'DELETE' }).catch(() => {});
     setMenuText(''); setRecipes([]); setIngredients([]); setParseModelSource(null); setMenuInsight(null);
     setGuestCount(20); setBufferPct(10);
     setPricingData([]); setMlForecasts({}); setDistributors([]); setDistributorSource(null);
@@ -409,7 +558,8 @@ export default function ProcurementPage() {
       const priced = pricingData.find(p => p.name.toLowerCase() === ing.name.toLowerCase());
       if (typeof priced?.lineTotal === 'number') return sum + priced.lineTotal;
       const price = priceMap.get(ing.name.toLowerCase()) ?? 0;
-      return sum + (typeof ing.quantity === 'number' ? price * ing.quantity : price);
+      const qty = typeof ing.quantity === 'number' ? ((ing.unit ?? '').toLowerCase() === 'oz' ? ing.quantity / 16 : ing.quantity) : 1;
+      return sum + price * qty;
     }, 0);
   }, [pricingData, ingredients]);
 
@@ -449,10 +599,13 @@ export default function ProcurementPage() {
   };
 
   const buildWholeMenuProcurementList = (menuRecipes = recipes, guests = guestCount, buffer = bufferPct) => {
+    const numDishes = menuRecipes.length;
+    const mixFactor = menuMixFactor(numDishes);
+    const effectiveCoversPerDish = Math.max(1, guests * mixFactor);
     const map = new Map<string, any>();
     menuRecipes.forEach((recipe: any) => {
       (recipe.ingredients ?? []).forEach((ing: any) => {
-        const scaled = scaleIngredientForGuests(ing, guests, buffer);
+        const scaled = scaleIngredientForGuests(ing, effectiveCoversPerDish, buffer);
         const key = `${String(scaled.name).trim().toLowerCase()}::${String(scaled.unit).trim().toLowerCase()}`;
         const existing = map.get(key);
         if (existing) {
@@ -537,7 +690,11 @@ export default function ProcurementPage() {
     if (!menuText.trim()) return;
     setLoading(true); setError(''); setPipelineStatus('Extracting dishes…');
     try {
-      const res = await fetch('/api/parse-menu', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ menuText }) });
+      const res = await fetch('/api/parse-menu', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ menuText, tenantId: account?.tenantId ?? null }),
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to parse menu');
       setRecipes(data.recipes);
@@ -570,16 +727,6 @@ export default function ProcurementPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to send RFPs');
       setSentRFPs(data.rfps);
-      writeActiveRfp(tenantId, {
-        id: recipes[0]?.menuId || Date.now().toString(),
-        date: new Date().toISOString(),
-        tenantId,
-        restaurantName,
-        ingredientsCount: targetIngredients.length,
-        distributorsCount: data.rfps?.length ?? targetDistributors.length,
-        quotesCount: 0,
-        status: 'RFPs in market',
-      });
     } catch (err: any) { setError(err.message); toastApiError(err, 'RFP dispatch failed'); }
     finally { setSendingRFPs(false); }
   };
@@ -594,18 +741,6 @@ export default function ProcurementPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to fetch quotes');
       setQuotes(data.quotes);
-      if (sentRFPs.length > 0) {
-        writeActiveRfp(tenantId, {
-          id: recipes[0]?.menuId || Date.now().toString(),
-          date: new Date().toISOString(),
-          tenantId,
-          restaurantName,
-          ingredientsCount: ingredients.length,
-          distributorsCount: distributors.length,
-          quotesCount: data.quotes?.length ?? 0,
-          status: 'Quotes received',
-        });
-      }
       return data.quotes;
     } catch (err: any) { setError(err.message); toastApiError(err, 'Quote refresh failed'); return []; }
     finally { setLoadingQuotes(false); }
@@ -643,17 +778,25 @@ export default function ProcurementPage() {
   const handleAutoConversation = async () => {
     if (!sentRFPs.length) return;
     setSimulatingConversation(true); setError('');
+    const unresolved = sentRFPs.filter(rfp => !quotes.some(q => q.rfpId === rfp.id));
+    // Initialise all unresolved as pending
+    setVendorProgress(Object.fromEntries(unresolved.map(r => [r.id, 'pending'])));
     const newLogs: Record<string, any[]> = {};
     try {
-      const unresolved = sentRFPs.filter(rfp => !quotes.some(q => q.rfpId === rfp.id));
       for (const rfp of unresolved) {
-        const res = await fetch('/api/simulate-conversation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rfpId: rfp.id, ingredients, pricingData, tenantId: account?.tenantId, mealName: 'Full menu', guestCount, bufferPct }) });
-        const data = await res.json();
-        newLogs[rfp.id] = [
-          { role: 'system', message: `Processing vendor response from ${rfp.distributorName}...` },
-          ...(data.conversationLog || []),
-          { role: 'system', message: data.message },
-        ];
+        setVendorProgress(p => ({ ...p, [rfp.id]: 'contacting' }));
+        try {
+          const res = await fetch('/api/simulate-conversation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rfpId: rfp.id, ingredients, pricingData, tenantId: account?.tenantId, mealName: 'Full menu', guestCount, bufferPct }) });
+          const data = await res.json();
+          newLogs[rfp.id] = [
+            { role: 'system', message: `Processing vendor response from ${rfp.distributorName}...` },
+            ...(data.conversationLog || []),
+            { role: 'system', message: data.message },
+          ];
+          setVendorProgress(p => ({ ...p, [rfp.id]: 'replied' }));
+        } catch {
+          setVendorProgress(p => ({ ...p, [rfp.id]: 'error' }));
+        }
       }
       setConversationLogs(newLogs);
       const fetchedQuotes = await handleFetchQuotes();
@@ -770,7 +913,6 @@ export default function ProcurementPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(historyItem),
       }).catch(() => {});
-      clearActiveRfp(tenantId);
     });
     es.addEventListener('error', e => { const raw = (e as MessageEvent).data; if (raw) add('error', JSON.parse(raw)); setNegotiating(false); es.close(); });
     es.onerror = () => { setNegotiating(false); es.close(); };
@@ -897,7 +1039,7 @@ export default function ProcurementPage() {
 
             <Card className="lg:col-span-3 p-6 flex flex-col border border-white/10 bg-black/60 relative overflow-hidden">
               <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 blur-[80px] rounded-full pointer-events-none" />
-              <div className="flex items-center justify-between mb-5 relative z-10">
+              <div className="flex items-center justify-between mb-4 relative z-10 shrink-0">
                 <span className="text-[11px] font-bold text-[#8A8F98] uppercase tracking-widest">Extracted Dishes</span>
                 <div className="flex items-center gap-2">
                   {parseModelSource && parseModelSource !== 'Mock' && (
@@ -908,22 +1050,31 @@ export default function ProcurementPage() {
                   {recipes.length > 0 && <Tag color="blue">{recipes.length} dishes</Tag>}
                 </div>
               </div>
-              <div className="flex-1 overflow-y-auto space-y-2 min-h-[220px] relative z-10">
-                {loading ? (
-                  <div className="space-y-3">
-                    {[0, 1, 2, 3].map(i => <Skeleton key={i} className="h-12" />)}
-                  </div>
-                ) : recipes.length === 0 ? (
-                  <div className="h-full flex flex-col items-center justify-center text-[#8A8F98] gap-3 py-10 border border-dashed border-white/10 rounded-lg">
-                    <ChefHat className="w-8 h-8 opacity-20" />
-                    <p className="text-[13px] font-medium">Dishes appear here after extraction</p>
-                  </div>
-                ) : recipes.map((recipe, i) => (
-                  <div key={i} className="flex items-center justify-between px-4 py-3 bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-white/10 rounded-lg transition-all">
-                    <span className="text-[13px] text-[#EEEEEE] font-bold">{recipe.name}</span>
-                    <span className="text-[11px] text-[#8A8F98] uppercase tracking-widest">{recipe.ingredients?.length ?? 0} ingredients</span>
-                  </div>
-                ))}
+              <div className="relative flex-1 min-h-0 z-10">
+                <div
+                  className="absolute inset-0 overflow-y-auto space-y-1.5 scroll-smooth pr-1"
+                  style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,255,255,0.12) transparent' }}
+                >
+                  {loading ? (
+                    <div className="space-y-2">
+                      {[0, 1, 2, 3].map(i => <Skeleton key={i} className="h-8" />)}
+                      <CountdownTimer active={loading} estimatedSecs={9} label="AI extracting dishes" />
+                    </div>
+                  ) : recipes.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center text-[#8A8F98] gap-2 border border-dashed border-white/10 rounded-lg">
+                      <ChefHat className="w-6 h-6 opacity-20" />
+                      <p className="text-[12px] font-medium">Dishes appear here after extraction</p>
+                    </div>
+                  ) : recipes.map((recipe, i) => (
+                    <div key={i} className="flex items-center justify-between px-3 py-1.5 bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-white/10 rounded-md transition-all">
+                      <span className="text-[12px] text-[#EEEEEE] font-semibold truncate mr-2">{recipe.name}</span>
+                      <span className="text-[10px] text-[#8A8F98] uppercase tracking-widest shrink-0">{recipe.ingredients?.length ?? 0} ing</span>
+                    </div>
+                  ))}
+                </div>
+                {recipes.length > 8 && (
+                  <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-black/80 to-transparent rounded-b-md z-10" />
+                )}
               </div>
             </Card>
 
@@ -942,9 +1093,11 @@ export default function ProcurementPage() {
 	                    <input
                       type="number"
                       min={1}
+                      step={1}
                       value={guestCount}
 	                      onChange={e => {
-	                        const next = Math.max(1, Number(e.target.value) || 1);
+	                        const next = Math.max(1, parseInt(e.target.value, 10) || 1);
+	                        if (next === guestCount) return;
 	                        setGuestCount(next);
 	                        setIngredients([]);
 	                        setPricingData([]); setMlForecasts({}); setQuotes([]); setSentRFPs([]); setRecommendation(null); setDistributors([]);
@@ -973,26 +1126,61 @@ export default function ProcurementPage() {
 	                    {pipelineStatus || 'Apply and send RFPs'}
 	                  </Btn>
 	                </div>
+                {recipes.length > 0 && (() => {
+                  const mix = menuMixFactor(recipes.length);
+                  const effCovers = Math.max(1, Math.round(guestCount * mix));
+                  const label = recipes.length <= 4 ? 'limited menu — most guests order most dishes'
+                    : recipes.length <= 7 ? 'standard menu — typical spread across dishes'
+                    : recipes.length <= 11 ? 'medium menu — guests choose among options'
+                    : 'large menu — guests select a few dishes';
+                  return (
+                    <div className="mt-4 flex items-center gap-2.5 px-3 py-2 bg-blue-500/[0.05] border border-blue-500/15 rounded-lg">
+                      <span className="text-[11px] font-bold text-blue-300 uppercase tracking-widest shrink-0">Menu mix</span>
+                      <span className="text-[11px] text-[#8A8F98]">
+                        <span className="text-[#EEEEEE] font-bold">{Math.round(mix * 100)}%</span> per dish
+                        {' · '}<span className="text-[#EEEEEE] font-bold">~{effCovers}</span> effective covers/dish
+                        {' · '}{label}
+                      </span>
+                    </div>
+                  );
+                })()}
               </Card>
             )}
 
             {ingredients.length > 0 && (
               <Card className="lg:col-span-5 p-6 border border-white/10">
-                <div className="flex items-center justify-between mb-5">
-                  <span className="text-[11px] font-bold text-[#8A8F98] uppercase tracking-widest">Procurement List</span>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <Tag color="blue">{ingredients.length} ingredients</Tag>
-                    <Tag color="indigo">{guestCount} guests + {bufferPct}% buffer</Tag>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-                  {ingredients.map((ing, i) => (
-                    <div key={i} className="px-4 py-3 bg-[#080808] border border-white/10 rounded-[8px] hover:border-white/20 transition-colors shadow-inner">
-                      <p className="text-[13px] font-bold text-[#EEEEEE] truncate">{ing.name}</p>
-                      <p className="text-[11px] text-[#8A8F98] font-medium mt-1 truncate">{ing.quantity} {ing.unit}</p>
-                      <p className="text-[10px] text-[#8A8F98]/60 mt-1 truncate">from {ing.perGuestQuantity} {ing.perGuestUnit}/guest</p>
+                {(() => {
+                  const mix = menuMixFactor(recipes.length);
+                  const effCovers = Math.max(1, Math.round(guestCount * mix));
+                  return (
+                    <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+                      <span className="text-[11px] font-bold text-[#8A8F98] uppercase tracking-widest">Procurement List</span>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Tag color="blue">{ingredients.length} ingredients</Tag>
+                        <Tag color="indigo">{guestCount} guests · {Math.round(mix * 100)}% mix · ~{effCovers} covers/dish</Tag>
+                        {bufferPct > 0 && <Tag color="gray">+{bufferPct}% buffer</Tag>}
+                      </div>
                     </div>
-                  ))}
+                  );
+                })()}
+                <div className="relative">
+                  <div
+                    className="overflow-y-auto max-h-[300px] scroll-smooth pr-1"
+                    style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,255,255,0.12) transparent' }}
+                  >
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                      {ingredients.map((ing, i) => (
+                        <div key={i} className="px-3 py-2.5 bg-[#080808] border border-white/10 rounded-[8px] hover:border-white/20 transition-colors shadow-inner">
+                          <p className="text-[12px] font-bold text-[#EEEEEE] truncate">{ing.name}</p>
+                          <p className="text-[11px] text-[#8A8F98] font-medium mt-0.5 truncate">{ing.quantity} {ing.unit}</p>
+                          <p className="text-[10px] text-[#8A8F98]/60 mt-0.5 truncate">{ing.perGuestQuantity} {ing.perGuestUnit}/guest</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  {ingredients.length > 12 && (
+                    <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-[#0a0a0a] to-transparent rounded-b-lg" />
+                  )}
                 </div>
               </Card>
             )}
@@ -1035,8 +1223,15 @@ export default function ProcurementPage() {
           }
         >
           {loadingPricing ? (
-            <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-5">
-              {[0, 1, 2].map(i => <Skeleton key={i} className="h-56" />)}
+            <div className="space-y-4">
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                {[0, 1, 2, 3].map(i => <Skeleton key={i} className="h-36" />)}
+              </div>
+              <CountdownTimer
+                active={loadingPricing}
+                estimatedSecs={Math.max(5, Math.min(14, 4 + Math.ceil(ingredients.length / 5)))}
+                label={`Fetching prices for ${ingredients.length} ingredients`}
+              />
             </div>
           ) : pricingData.length === 0 ? (
             <Card className="py-20 flex flex-col items-center border border-dashed border-white/10 text-[#8A8F98] gap-3 bg-white/[0.01] shadow-none">
@@ -1044,7 +1239,7 @@ export default function ProcurementPage() {
               <p className="text-[13px] font-medium">Run market analysis after extracting ingredients</p>
             </Card>
           ) : (
-            <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-5">
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
               {pricingData.map((item, idx) => {
                 const current  = item.history[item.history.length - 1]?.price ?? item.currentPrice;
                 const prev     = item.history[item.history.length - 2]?.price ?? current;
@@ -1056,72 +1251,76 @@ export default function ProcurementPage() {
                 ];
                 const trendColor = forecast?.trend === 'RISING' ? 'text-red-400' : forecast?.trend === 'FALLING' ? 'text-emerald-400' : 'text-[#8A8F98]';
                 return (
-                  <Card key={idx} className="p-5 flex flex-col gap-4 border border-white/10 hover:border-white/20 transition-all">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <h3 className="font-bold text-[#EEEEEE] truncate text-[15px]">{item.name}</h3>
-                        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                  <Card key={idx} className="p-3 flex flex-col gap-2 border border-white/10 hover:border-white/20 transition-all">
+                    {/* Name + price row */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <h3 className="font-bold text-[#EEEEEE] truncate text-[13px] leading-tight">{item.name}</h3>
+                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                           {item.isLive
-                            ? <Tag color="green" className="text-[10px]"><span className="w-1 h-1 rounded-full bg-emerald-400 animate-pulse" />Live</Tag>
-                            : <Tag color="gray" className="text-[10px]">Estimated</Tag>
+                            ? <Tag color="green" className="text-[9px] px-1.5 py-0"><span className="w-1 h-1 rounded-full bg-emerald-400 animate-pulse" />Live</Tag>
+                            : <Tag color="gray" className="text-[9px] px-1.5 py-0">Est.</Tag>
                           }
                           {forecast?.trend && forecast.trend !== 'STABLE' && (
-                            <span className={cn('text-[10px] font-bold uppercase tracking-widest flex items-center gap-0.5', trendColor)}>
-                              {forecast.trend === 'RISING' ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-                              {forecast.trend} {forecast.trendPct > 0 && `${forecast.trendPct}%`}
+                            <span className={cn('text-[9px] font-bold uppercase tracking-widest flex items-center gap-0.5', trendColor)}>
+                              {forecast.trend === 'RISING' ? <ArrowUpRight className="w-2.5 h-2.5" /> : <ArrowDownRight className="w-2.5 h-2.5" />}
+                              {forecast.trendPct > 0 && `${forecast.trendPct}%`}
                             </span>
                           )}
                         </div>
                       </div>
                       <div className="text-right shrink-0">
-                        <p className="text-[22px] font-black text-[#EEEEEE] tracking-tighter">${item.currentPrice.toFixed(2)}</p>
-                        <p className={cn('text-[11px] font-bold tracking-widest mt-1', pct > 0 ? 'text-red-400' : pct < 0 ? 'text-emerald-400' : 'text-[#8A8F98]')}>
-                          {pct > 0 ? '↑' : pct < 0 ? '↓' : ''}{Math.abs(pct).toFixed(1)}% MoM
+                        <p className="text-[16px] font-black text-[#EEEEEE] tracking-tighter leading-none">${item.currentPrice.toFixed(2)}</p>
+                        <p className={cn('text-[9px] font-bold tracking-widest mt-0.5', pct > 0 ? 'text-red-400' : pct < 0 ? 'text-emerald-400' : 'text-[#8A8F98]')}>
+                          {pct > 0 ? '↑' : pct < 0 ? '↓' : ''}{Math.abs(pct).toFixed(1)}%
                         </p>
                       </div>
                     </div>
-                    {typeof item.lineTotal === 'number' && (
-                      <div className="flex items-center justify-between px-3 py-2 rounded-md bg-white/[0.03] border border-white/10 text-[11px] font-bold">
-                        <span className="text-[#8A8F98] uppercase tracking-widest">{item.orderQuantity} {item.orderUnit} order</span>
-                        <span className="text-[#EEEEEE]">${item.lineTotal.toFixed(2)} est.</span>
-                      </div>
-                    )}
-                    {forecast?.anomaly && (
-                      <div className={cn('text-[11px] font-bold uppercase tracking-wide px-3 py-2 rounded-[6px] flex items-center gap-1.5 border',
-                        forecast.anomaly.type === 'SPIKE' ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                      )}>
-                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                        {forecast.anomaly.type === 'SPIKE' ? `Price spike: ${forecast.anomaly.deviationPct}% above avg` : `Below average: ${forecast.anomaly.deviationPct}% — buy now`}
-                      </div>
-                    )}
-                    <div className="h-24 min-w-0 min-h-24 pointer-events-none mt-2">
+
+                    {/* Chart */}
+                    <div className="h-14 min-w-0 pointer-events-none">
                       <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                        <ComposedChart data={chartData} margin={{ top: 2, right: 2, left: 2, bottom: 2 }}>
+                        <ComposedChart data={chartData} margin={{ top: 1, right: 1, left: 1, bottom: 1 }}>
                           <defs>
                             <linearGradient id={`grad-${idx}`} x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%"  stopColor="#FFFFFF" stopOpacity={0.4} />
+                              <stop offset="5%"  stopColor="#FFFFFF" stopOpacity={0.3} />
                               <stop offset="95%" stopColor="#FFFFFF" stopOpacity={0} />
                             </linearGradient>
                           </defs>
                           <XAxis dataKey="date" hide />
                           <YAxis domain={['dataMin - 0.5', 'dataMax + 0.5']} hide />
-                          <Tooltip contentStyle={{ background: '#080808', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', fontSize: '11px', color: '#EEEEEE', fontWeight: 'bold' }} itemStyle={{ color: '#8A8F98' }} labelStyle={{ color: '#EEEEEE', marginBottom: '4px' }} labelFormatter={l => new Date(l).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })} formatter={(v: any, n) => [v !== null ? `$${Number(v).toFixed(2)}` : '—', n === 'forecast' ? 'ML Forecast' : 'Market Price'] as [string, string]} />
-                          <Area type="monotone" dataKey="price" stroke="#FFFFFF" strokeWidth={2} fill={`url(#grad-${idx})`} dot={false} connectNulls={false} />
-                          <Line type="monotone" dataKey="forecast" stroke="#8A8F98" strokeWidth={2} strokeDasharray="4 4" dot={false} connectNulls />
+                          <Tooltip contentStyle={{ background: '#080808', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', fontSize: '10px', color: '#EEEEEE', fontWeight: 'bold' }} itemStyle={{ color: '#8A8F98' }} labelStyle={{ color: '#EEEEEE', marginBottom: '2px' }} labelFormatter={l => new Date(l).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })} formatter={(v: any, n) => [v !== null ? `$${Number(v).toFixed(2)}` : '—', n === 'forecast' ? 'Forecast' : 'Price'] as [string, string]} />
+                          <Area type="monotone" dataKey="price" stroke="#FFFFFF" strokeWidth={1.5} fill={`url(#grad-${idx})`} dot={false} connectNulls={false} />
+                          <Line type="monotone" dataKey="forecast" stroke="#8A8F98" strokeWidth={1.5} strokeDasharray="3 3" dot={false} connectNulls />
                         </ComposedChart>
                       </ResponsiveContainer>
                     </div>
-                    {forecast?.buySignal && (
-                      <div className="flex items-center justify-between pt-3 border-t border-white/10 text-[11px] font-bold uppercase tracking-widest mt-auto">
-                        <span className={cn('flex items-center gap-1.5',
-                          forecast.buySignal.signal === 'BUY_NOW' ? 'text-emerald-400' :
-                          forecast.buySignal.signal === 'WAIT'    ? 'text-amber-400'   : 'text-[#8A8F98]'
-                        )}>
-                          {forecast.buySignal.signal === 'BUY_NOW' ? <><ShoppingCart className="w-3.5 h-3.5" />Buy now</> : forecast.buySignal.signal === 'WAIT' ? <><Clock className="w-3.5 h-3.5" />Wait</> : <><Minus className="w-3.5 h-3.5" />Neutral</>}
+
+                    {/* Footer row: order cost + signal + anomaly */}
+                    <div className="flex items-center justify-between gap-1 pt-1.5 border-t border-white/[0.06]">
+                      {typeof item.lineTotal === 'number' ? (
+                        <span className="text-[10px] font-bold text-[#8A8F98]">
+                          {item.orderQuantity}{item.orderUnit} · <span className="text-[#EEEEEE]">${item.lineTotal.toFixed(0)}</span>
                         </span>
-                        <span className="text-[#8A8F98]">R² {forecast.r2} · {forecast.confidence}</span>
+                      ) : <span />}
+                      <div className="flex items-center gap-1 shrink-0">
+                        {forecast?.anomaly && (
+                          <span className={cn('text-[9px] font-bold px-1.5 py-0.5 rounded border',
+                            forecast.anomaly.type === 'SPIKE' ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                          )}>
+                            {forecast.anomaly.type === 'SPIKE' ? '⚠ spike' : '↓ buy'}
+                          </span>
+                        )}
+                        {forecast?.buySignal && (
+                          <span className={cn('text-[9px] font-bold uppercase tracking-wide',
+                            forecast.buySignal.signal === 'BUY_NOW' ? 'text-emerald-400' :
+                            forecast.buySignal.signal === 'WAIT'    ? 'text-amber-400'   : 'text-[#8A8F98]'
+                          )}>
+                            {forecast.buySignal.signal === 'BUY_NOW' ? '🟢 buy' : forecast.buySignal.signal === 'WAIT' ? '🟡 wait' : '—'}
+                          </span>
+                        )}
                       </div>
-                    )}
+                    </div>
                   </Card>
                 );
               })}
@@ -1215,29 +1414,30 @@ export default function ProcurementPage() {
             }
           >
             {Object.keys(conversationLogs).length > 0 && (
-              <Card className="p-6 space-y-5">
-                <h3 className="text-[11px] font-bold text-[#8A8F98] uppercase tracking-widest">Negotiation Conversations</h3>
+              <div className="space-y-4">
                 {sentRFPs.map((rfp: any) => {
                   const logs = conversationLogs[rfp.id];
                   if (!logs) return null;
+                  const statusColor: Record<string, string> = { REPLIED: 'green', ACCEPTED: 'green', DECLINED: 'red', SENT: 'blue' };
+                  const statusStr = String(rfp.status || 'SENT');
                   return (
-                    <div key={rfp.id} className="space-y-2 border-t border-white/5 pt-5 first:border-0 first:pt-0">
-                      <p className="text-[13px] font-bold text-[#EEEEEE]">{rfp.distributorName}</p>
-                      {logs.map((entry: any, i: number) => (
-                        <div key={i} className={cn(
-                          'text-[13px] rounded-lg px-4 py-3 leading-relaxed',
-                          entry.role === 'AutoRFP Agent' ? 'bg-white/5 text-white border border-white/10'
-                          : entry.role === 'system' ? 'text-[#8A8F98]/60 italic font-mono text-[11px]'
-                          : 'bg-white/[0.03] text-[#EEEEEE] border border-white/5'
-                        )}>
-                          {entry.role !== 'system' && <span className="font-bold uppercase text-[10px] tracking-widest block mb-1 opacity-60">{entry.role}</span>}
-                          {entry.message}
+                    <Card key={rfp.id} className="p-5 space-y-4">
+                      {/* Thread header */}
+                      <div className="flex items-center justify-between gap-3 pb-3 border-b border-white/[0.06]">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-full bg-white/[0.05] border border-white/10 flex items-center justify-center text-lg">🏢</div>
+                          <div>
+                            <p className="text-[13px] font-bold text-[#EEEEEE]">{rfp.distributorName}</p>
+                            <p className="text-[10px] text-[#8A8F98]">Re: Bulk ingredient RFP · {logs.filter((e: any) => e.role !== 'system').length} messages</p>
+                          </div>
                         </div>
-                      ))}
-                    </div>
+                        <Tag color={(statusColor[statusStr] as any) ?? 'gray'}>{statusStr.replace(/_/g, ' ')}</Tag>
+                      </div>
+                      <VendorConvoThread logs={logs} vendorName={rfp.distributorName} />
+                    </Card>
                   );
                 })}
-              </Card>
+              </div>
             )}
 
             {showEmailSimulator && (
@@ -1269,6 +1469,11 @@ export default function ProcurementPage() {
               {simulatingConversation || loadingQuotes ? (
                 <div className="p-6 space-y-3">
                   {[0, 1, 2, 3].map(i => <Skeleton key={i} className="h-14" />)}
+                  <CountdownTimer
+                    active={simulatingConversation || loadingQuotes}
+                    estimatedSecs={simulatingConversation ? Math.max(8, sentRFPs.length * 7) : 3}
+                    label={simulatingConversation ? `Simulating ${sentRFPs.length} vendor response${sentRFPs.length !== 1 ? 's' : ''}` : 'Refreshing quotes'}
+                  />
                 </div>
               ) : quotes.length === 0 ? (
                 <div className="py-16 flex flex-col items-center text-[#8A8F98] gap-3">
@@ -1281,6 +1486,7 @@ export default function ProcurementPage() {
                     <thead>
                       <tr className="border-b border-white/10 bg-white/[0.02] text-left">
                         <th className="px-6 py-4 text-[11px] font-bold text-[#8A8F98] uppercase tracking-widest w-1/3">Supplier</th>
+                        <th className="px-6 py-4 text-[11px] font-bold text-[#8A8F98] uppercase tracking-widest hidden lg:table-cell">Status</th>
                         <th className="px-6 py-4 text-[11px] font-bold text-[#8A8F98] uppercase tracking-widest hidden md:table-cell">Notes</th>
                         <th className="px-6 py-4 text-[11px] font-bold text-[#8A8F98] uppercase tracking-widest text-right w-32">Total Quote</th>
                       </tr>
@@ -1296,6 +1502,16 @@ export default function ProcurementPage() {
                                 <p className="text-[11px] font-medium text-[#8A8F98] mt-1">{q.distributorLocation}</p>
                               </div>
                             </div>
+                          </td>
+                          <td className="px-6 py-5 hidden lg:table-cell">
+                            <Tag color={
+                              q.lifecycleStatus === 'ACCEPTED' ? 'green'
+                              : q.lifecycleStatus === 'NEGOTIATING' ? 'amber'
+                              : q.lifecycleStatus === 'DECLINED' ? 'red'
+                              : 'blue'
+                            }>
+                              {String(q.lifecycleStatus || 'REPLIED').replace(/_/g, ' ')}
+                            </Tag>
                           </td>
                           <td className="px-6 py-5 text-[12px] text-[#8A8F98] hidden md:table-cell"><span className="line-clamp-2 leading-relaxed">{q.details || '—'}</span></td>
                           <td className={cn('px-6 py-5 text-right font-mono text-[14px] font-bold', i === 0 ? 'text-emerald-400' : 'text-[#EEEEEE]')}>${Number(q.price).toFixed(2)}</td>
@@ -1610,7 +1826,10 @@ export default function ProcurementPage() {
         <div className="max-w-5xl mx-auto px-6 py-5 flex flex-col md:flex-row md:items-center justify-between text-[11px] font-bold text-[#8A8F98] uppercase tracking-widest gap-3">
           <span className="flex items-center gap-2"><ChefHat className="w-3.5 h-3.5 text-white/30" /> AutoRFP Engine</span>
           <div className="flex items-center flex-wrap gap-3">
-            <span>Local AI optional · Groq fallback</span>
+            <span className="flex items-center gap-1.5 text-violet-400/80">
+              <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
+              Ollama + Groq
+            </span>
             <span className="opacity-30">/</span>
             <span>CME · CBOT · BLS Pricing</span>
             <span className="opacity-30">/</span>

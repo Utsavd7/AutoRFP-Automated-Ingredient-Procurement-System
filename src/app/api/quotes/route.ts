@@ -1,7 +1,5 @@
 import { NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/prisma';
 
 // GET endpoint to fetch all quotes for a specific menuId
 export async function GET(req: Request) {
@@ -19,13 +17,13 @@ export async function GET(req: Request) {
             where: {
                 menuId: menuId,
                 ...(tenantId ? { tenantId } : {}),
-                status: 'REPLIED'
+                status: { in: ['REPLIED', 'NEGOTIATING', 'ACCEPTED', 'DECLINED'] }
             },
             include: {
                 distributor: true,
                 quotes: {
                     orderBy: {
-                        price: 'asc' // Order quotes from lowest price to highest
+                        price: 'asc'
                     }
                 }
             }
@@ -38,7 +36,8 @@ export async function GET(req: Request) {
                 ...bestQuote,
                 distributorName: rfp.distributor.name,
                 distributorLocation: rfp.distributor.location,
-                rfpId: rfp.id
+                rfpId: rfp.id,
+                lifecycleStatus: rfp.status,
             };
         }).filter((q: any) => q.price !== undefined); // only include valid quotes
 

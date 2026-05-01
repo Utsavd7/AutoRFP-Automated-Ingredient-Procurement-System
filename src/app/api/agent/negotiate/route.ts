@@ -1,14 +1,8 @@
-import OpenAI from 'openai';
-import { PrismaClient } from '@prisma/client';
 import { Resend } from 'resend';
 import { getEmbedding } from '@/lib/embeddings';
 import { ingestQuote } from '@/lib/chroma';
-
-const groq = process.env.GROQ_API_KEY
-    ? new OpenAI({ apiKey: process.env.GROQ_API_KEY, baseURL: 'https://api.groq.com/openai/v1' })
-    : null;
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/prisma';
+import { callGroqThenOllama, parseJSON as parseLLMJSON } from '@/lib/llm';
 
 // ─── Agent Definitions ────────────────────────────────────────────────────────
 const AGENTS = {
@@ -45,20 +39,25 @@ const AGENTS = {
 } as const;
 
 async function callAgent(agentKey: keyof typeof AGENTS, prompt: string): Promise<any> {
-    if (!groq) throw new Error('GROQ_API_KEY not configured');
     const agent = AGENTS[agentKey];
-    const res = await groq.chat.completions.create({
-        model: 'llama-3.3-70b-versatile',
-        messages: [
-            { role: 'system', content: agent.system },
-            { role: 'user', content: prompt }
-        ],
-        response_format: { type: 'json_object' },
-        temperature: 0.72,
-        max_tokens: 1024
-    });
-    const content = res.choices[0].message.content || '{}';
-    return JSON.parse(content);
+    const messages: { role: 'system' | 'user'; content: string }[] = [
+        { role: 'system', content: agent.system },
+        { role: 'user', content: prompt }
+    ];
+
+    // Try Groq (high-quality 70b) first, then Ollama — callGroqThenOllama handles the chain
+    let text: string | null = null;
+    try {
+        text = await callGroqThenOllama(messages, true);
+    } catch (err: any) {
+        throw new Error(`Agent ${agentKey} — both LLM providers failed: ${err.message}`);
+    }
+
+    const parsed = parseLLMJSON<Record<string, unknown>>(text);
+    if (parsed && Object.keys(parsed).length > 0) return parsed;
+
+    // Last resort: try raw JSON.parse in case the model dropped the markdown wrapper
+    return JSON.parse(text || '{}');
 }
 
 // ─── Buyer Report Email ───────────────────────────────────────────────────────
@@ -201,7 +200,6 @@ export async function GET(req: Request) {
             try {
                 // ── Validate ──────────────────────────────────────────────
                 if (!menuId) { send('error', { message: 'menuId is required' }); controller.close(); return; }
-                if (!groq) { send('error', { message: 'GROQ_API_KEY not configured' }); controller.close(); return; }
 
                 // ── Load vendor quotes ─────────────────────────────────────
                 const rfps = await (prisma as any).rFP.findMany({
@@ -210,6 +208,22 @@ export async function GET(req: Request) {
                         distributor: true,
                         quotes: { orderBy: { price: 'asc' }, take: 1 }
                     }
+                });
+
+                await prisma.menu.update({
+                    where: { id: menuId },
+                    data: {
+                        workflowStatus: 'NEGOTIATING',
+                        lastActivityAt: new Date(),
+                    },
+                });
+
+                await prisma.rFP.updateMany({
+                    where: { menuId, status: 'REPLIED' },
+                    data: {
+                        status: 'NEGOTIATING',
+                        negotiatedAt: new Date(),
+                    },
                 });
 
                 if (rfps.length === 0) {
@@ -341,15 +355,22 @@ Return JSON:
   "marketInsight": "one-sentence key market observation"
 }`);
                 } catch {
+                    // Deterministic markup estimate: derive from price position relative to the median
+                    const sorted = [...quotes].sort((a: any, b: any) => a.originalPrice - b.originalPrice);
+                    const median = sorted[Math.floor(sorted.length / 2)]?.originalPrice ?? lowestQuote;
                     marketAnalysis = {
-                        vendorAnalysis: quotes.map((q: any) => ({
-                            vendorName: q.vendorName,
-                            originalPrice: q.originalPrice,
-                            estimatedMarkupPct: `${10 + Math.floor(Math.random() * 8)}%`,
-                            fairCounterPrice: +(q.originalPrice * 0.91).toFixed(2),
-                            priority: q.originalPrice > lowestQuote * 1.03 ? 'HIGH' : 'SKIP',
-                            leverage: 'Current USDA wholesale data supports a 9% reduction from quoted price.'
-                        })),
+                        vendorAnalysis: quotes.map((q: any) => {
+                            const aboveMedianRatio = q.originalPrice / (median || q.originalPrice);
+                            const markupPct = Math.round(8 + Math.min(aboveMedianRatio - 1, 0.10) * 100);
+                            return {
+                                vendorName: q.vendorName,
+                                originalPrice: q.originalPrice,
+                                estimatedMarkupPct: `${markupPct}%`,
+                                fairCounterPrice: +(q.originalPrice * (1 - markupPct / 100 * 0.6)).toFixed(2),
+                                priority: q.originalPrice > lowestQuote * 1.03 ? 'HIGH' : 'SKIP',
+                                leverage: 'Current USDA wholesale data supports a price reduction from quoted level.'
+                            };
+                        }),
                         marketInsight: 'Market analysis indicates 9–15% negotiation room across all vendors based on current wholesale index.'
                     };
                 }
@@ -594,6 +615,34 @@ Return JSON:
                     negotiationResults
                 };
                 send('complete', completePayload);
+
+                const winnerName = String(completePayload.winner ?? '').trim().toLowerCase();
+                for (const result of negotiationResults) {
+                    const vendor = quotes.find((q: any) => q.vendorName === result.vendorName);
+                    if (!vendor?.rfpId) continue;
+                    const normalizedVendor = String(result.vendorName ?? '').trim().toLowerCase();
+                    const finalStatus =
+                        normalizedVendor === winnerName ? 'ACCEPTED'
+                        : result.decision === 'REJECT' ? 'DECLINED'
+                        : 'DECLINED';
+
+                    await prisma.rFP.update({
+                        where: { id: vendor.rfpId },
+                        data: {
+                            status: finalStatus,
+                            acceptedAt: finalStatus === 'ACCEPTED' ? new Date() : undefined,
+                            negotiatedAt: new Date(),
+                        },
+                    });
+                }
+
+                await prisma.menu.update({
+                    where: { id: menuId },
+                    data: {
+                        workflowStatus: 'NEGOTIATION_COMPLETE',
+                        lastActivityAt: new Date(),
+                    },
+                });
 
                 // ── Ingest negotiation outcomes into ChromaDB for RAG ─────
                 for (const result of negotiationResults) {

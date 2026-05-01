@@ -1,14 +1,8 @@
 import { NextResponse } from 'next/server';
-import OpenAI from 'openai';
-import { PrismaClient } from '@prisma/client';
+import { callGroqThenOllama, parseJSON as parseLLMJSON } from '@/lib/llm';
 import { getEmbedding } from '@/lib/embeddings';
 import { ingestQuote } from '@/lib/chroma';
-
-const openai = process.env.GROQ_API_KEY
-    ? new OpenAI({ apiKey: process.env.GROQ_API_KEY, baseURL: 'https://api.groq.com/openai/v1' })
-    : null;
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/prisma';
 
 const MAX_TURNS = 3;
 
@@ -53,10 +47,6 @@ export async function POST(req: Request) {
     try {
         const { rfpId, ingredients = [], pricingData = [], tenantId = 'tenant_demo', mealName, guestCount, bufferPct } = await req.json();
 
-        if (!openai) {
-            return NextResponse.json({ error: 'GROQ_API_KEY is missing.' }, { status: 500 });
-        }
-
         if (!rfpId) {
             return NextResponse.json({ error: 'rfpId is required.' }, { status: 400 });
         }
@@ -69,7 +59,7 @@ export async function POST(req: Request) {
         if (!rfp) {
             return NextResponse.json({ error: 'RFP not found.' }, { status: 404 });
         }
-        if (rfp.status === 'REPLIED') {
+        if (rfp.status === 'REPLIED' || rfp.status === 'ACCEPTED' || rfp.status === 'DECLINED') {
             return NextResponse.json({ error: 'This RFP already has a quote submitted.' }, { status: 400 });
         }
 
@@ -117,15 +107,10 @@ Write a professional vendor reply that CLEARLY states a specific total dollar pr
 A restaurant procurement system called AutoRFP sent you an RFP for bulk ingredient sourcing.
 ${pricingContext}
 
-Write a realistic vendor reply email (${turn === 1 && Math.random() > 0.5 ? 'keep pricing slightly vague — give a range but not a firm total yet' : 'include a clear total quoted price and delivery terms'}).
+Write a realistic vendor reply email (${turn === 1 && rfpId.charCodeAt(0) % 2 === 0 ? 'keep pricing slightly vague — give a range but not a firm total yet' : 'include a clear total quoted price and delivery terms'}).
 Be professional but conversational. Do NOT use placeholder text.`;
 
-                const vendorResponse = await openai.chat.completions.create({
-                    model: 'llama-3.3-70b-versatile',
-                    messages: [{ role: 'user', content: vendorPrompt }]
-                });
-
-                const vendorEmail = vendorResponse.choices[0].message.content || 'Thank you for reaching out. We will get back to you shortly.';
+                const vendorEmail = await callGroqThenOllama([{ role: 'user', content: vendorPrompt }]) || 'Thank you for reaching out. We will get back to you shortly.';
                 conversationLog.push({ role: rfp.distributor.name, message: vendorEmail });
 
                 // Agent parses the vendor reply
@@ -142,16 +127,12 @@ Vendor email:
 """${vendorEmail}"""
 `;
 
-                const agentResponse = await openai.chat.completions.create({
-                    model: 'llama-3.3-70b-versatile',
-                    messages: [
-                        { role: 'system', content: 'You are a JSON-only API. Output only valid JSON.' },
-                        { role: 'user', content: agentParsePrompt }
-                    ],
-                    response_format: { type: 'json_object' }
-                });
+                const agentParseText = await callGroqThenOllama([
+                    { role: 'system', content: 'You are a JSON-only API. Output only valid JSON.' },
+                    { role: 'user', content: agentParsePrompt }
+                ], true);
 
-                const parsed = JSON.parse(agentResponse.choices[0].message.content || '{}');
+                const parsed = parseLLMJSON<any>(agentParseText) ?? JSON.parse(agentParseText || '{}');
 
                 if (parsed.price && !isNaN(Number(parsed.price)) && parsed.confidence !== 'LOW') {
                     const details = [
@@ -162,10 +143,16 @@ Vendor email:
                     ].filter(Boolean).join(' | ');
 
                     const newQuote = await prisma.quote.create({
-                        data: { rfpId, price: Number(parsed.price), details }
+                        data: { rfpId, price: Number(parsed.price), details, status: 'SUBMITTED' }
                     });
 
-                    await prisma.rFP.update({ where: { id: rfpId }, data: { status: 'REPLIED' } });
+                    await prisma.rFP.update({
+                        where: { id: rfpId },
+                        data: {
+                            status: 'REPLIED',
+                            repliedAt: new Date(),
+                        }
+                    });
 
                     quoteResult = newQuote;
 
@@ -187,30 +174,38 @@ Their email: """${vendorEmail}"""
 
 Write a short, polite follow-up asking for clarification (2-3 sentences only).`;
 
-                    const followUpResponse = await openai.chat.completions.create({
-                        model: 'llama-3.3-70b-versatile',
-                        messages: [{ role: 'user', content: followUpPrompt }]
-                    });
-
-                    const followUpEmail = followUpResponse.choices[0].message.content || 'Could you please clarify your total pricing for this order?';
+                    const followUpEmail = await callGroqThenOllama([{ role: 'user', content: followUpPrompt }]) || 'Could you please clarify your total pricing for this order?';
                     conversationLog.push({ role: 'AutoRFP Agent', message: followUpEmail });
                     lastMessage = followUpEmail;
                     isFollowUp = true;
                 }
             }
         } catch (aiError: any) {
-            console.warn('Groq API failed during conversation simulation, using calculated mock fallback:', aiError.message);
+            console.warn('LLM providers failed during conversation simulation, attempting simplified fallback call:', aiError.message);
 
-            // Use real pricing if available, otherwise use a sensible default
+            // Deterministic vendor margin: hash the distributor name to a stable 8–15% markup
+            let nameHash = 0;
+            for (let i = 0; i < rfp.distributor.name.length; i++) nameHash = rfp.distributor.name.charCodeAt(i) + ((nameHash << 5) - nameHash);
+            const marginPct = 0.08 + (Math.abs(nameHash) % 8) / 100; // 8–15%, deterministic
+            const deliveryFee = 25 + (Math.abs(nameHash) % 20); // $25–$44, deterministic
+
             const mockBasePrice = hasRealPricing
-                ? estimatedTotal * (1.08 + Math.random() * 0.07) // 8-15% vendor margin on real cost
-                : Math.floor(Math.random() * (1200 - 800) + 800);
-            const deliveryFee = 25;
+                ? estimatedTotal * (1 + marginPct)
+                : 850 + (Math.abs(nameHash) % 400); // $850–$1249, deterministic
             const totalMockPrice = mockBasePrice + deliveryFee;
+
+            // Try a quick simplified Ollama call for a more natural vendor message
+            let vendorMessage: string | null = null;
+            try {
+                vendorMessage = await callGroqThenOllama([{
+                    role: 'user',
+                    content: `You are ${rfp.distributor.name}, a wholesale food vendor. Write a 2-sentence reply to a bulk ingredient RFP quoting a total of $${totalMockPrice.toFixed(2)} with delivery Tuesday and Friday. Be professional and specific.`
+                }]);
+            } catch { /* truly last resort below */ }
 
             conversationLog.push({
                 role: rfp.distributor.name,
-                message: `Hi, this is Mike from ${rfp.distributor.name}. I've reviewed your RFP for the bulk ingredient order.${hasRealPricing ? ` Based on current market rates for the ${ingredients.length} ingredients requested, our total comes to $${mockBasePrice.toFixed(2)}, which includes our standard 10% handling margin over wholesale cost.` : ` Our pricing for this batch is $${mockBasePrice.toFixed(2)}.`} Plus a flat $${deliveryFee} delivery fee — total $${totalMockPrice.toFixed(2)}. We deliver Tuesday and Friday mornings. Let us know by 4 PM the day before.`
+                message: vendorMessage?.trim() || `Thank you for reaching out to ${rfp.distributor.name}. After reviewing your RFP for ${ingredients.length} ingredients, we can fulfill this order at $${mockBasePrice.toFixed(2)} plus a $${deliveryFee.toFixed(0)} delivery fee — total $${totalMockPrice.toFixed(2)}. We deliver Tuesday and Friday mornings; please confirm by 4 PM the prior day.`
             });
 
             conversationLog.push({
@@ -222,11 +217,18 @@ Write a short, polite follow-up asking for clarification (2-3 sentences only).`;
                 data: {
                     rfpId,
                     price: totalMockPrice,
-                    details: `Delivery: Tuesday/Friday Morning ($${deliveryFee} fee). | ${hasRealPricing ? `Calculated from real market pricing for ${ingredients.length} ingredients (est. $${estimatedTotal.toFixed(2)} baseline).` : 'Full bulk order fulfillment confirmed.'} | [Calculated Fallback, Confidence: HIGH]`
+                    details: `Delivery: Tuesday/Friday Morning ($${deliveryFee} fee). | ${hasRealPricing ? `Calculated from real market pricing for ${ingredients.length} ingredients (est. $${estimatedTotal.toFixed(2)} baseline).` : 'Full bulk order fulfillment confirmed.'} | [Calculated Fallback, Confidence: HIGH]`,
+                    status: 'SUBMITTED',
                 }
             });
 
-            await prisma.rFP.update({ where: { id: rfpId }, data: { status: 'REPLIED' } });
+            await prisma.rFP.update({
+                where: { id: rfpId },
+                data: {
+                    status: 'REPLIED',
+                    repliedAt: new Date(),
+                }
+            });
             quoteResult = newQuote;
 
             // Async RAG ingest — fire and forget

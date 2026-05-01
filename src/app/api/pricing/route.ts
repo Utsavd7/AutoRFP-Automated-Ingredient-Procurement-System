@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
+import { callGroqThenOllama, parseJSON as parseLLMJSON } from '@/lib/llm';
 
 const prisma = new PrismaClient();
 
@@ -105,52 +106,82 @@ const BLS_MAP: Array<{ keywords: string[]; series: string; label: string; unitCo
     },
 ];
 
-// ─── Realistic per-category mock prices (fallback when no live data) ──────────
-function getMockBasePrice(name: string): number {
-    const lower = name.toLowerCase();
-    if (/ribeye|filet|tenderloin|lobster/.test(lower)) return 22 + Math.random() * 8;
-    if (/steak|sirloin|short rib|brisket|scallop/.test(lower)) return 14 + Math.random() * 6;
-    if (/salmon|halibut|sea bass|duck|lamb/.test(lower)) return 12 + Math.random() * 5;
-    if (/chicken|pork|shrimp|tuna|cod|fish/.test(lower)) return 5 + Math.random() * 3;
-    if (/beef|burger|patty|sausage/.test(lower)) return 6 + Math.random() * 3;
-    if (/cheese|cream cheese|mascarpone|ricotta/.test(lower)) return 4 + Math.random() * 2;
-    if (/butter|ghee/.test(lower)) return 5 + Math.random() * 2;
-    if (/olive oil/.test(lower)) return 8 + Math.random() * 4;
-    if (/cream|milk/.test(lower)) return 2 + Math.random() * 1;
-    if (/pasta|spaghetti|fettuccine|linguine|noodle/.test(lower)) return 1.5 + Math.random() * 1;
-    if (/rice|risotto|arborio|quinoa|grain/.test(lower)) return 1.2 + Math.random() * 0.8;
-    if (/flour|bread|dough|breadcrumb/.test(lower)) return 0.8 + Math.random() * 0.5;
-    if (/potato|fries/.test(lower)) return 0.7 + Math.random() * 0.4;
-    if (/tomato|mushroom|asparagus|zucchini/.test(lower)) return 2 + Math.random() * 1.5;
-    if (/broccoli|carrot|pepper|onion|vegetable/.test(lower)) return 1.2 + Math.random() * 0.8;
-    if (/garlic|shallot|ginger/.test(lower)) return 3 + Math.random() * 2;
-    if (/herb|basil|parsley|cilantro|thyme|rosemary|dill|mint/.test(lower)) return 6 + Math.random() * 4;
-    if (/lemon|lime|citrus/.test(lower)) return 1.5 + Math.random() * 0.5;
-    if (/chocolate|cocoa/.test(lower)) return 5 + Math.random() * 3;
-    if (/nuts|almond|walnut|pecan/.test(lower)) return 7 + Math.random() * 4;
-    if (/wine|stock|broth/.test(lower)) return 1.5 + Math.random() * 1;
-    if (/sauce|dressing|vinaigrette|aioli|pesto/.test(lower)) return 3 + Math.random() * 2;
-    if (/sugar|honey|syrup/.test(lower)) return 1.5 + Math.random() * 1;
-    if (/coffee|espresso/.test(lower)) return 12 + Math.random() * 6;
-    // generic fallback — stable hash so same ingredient = same base
-    let hash = 0;
-    for (let i = 0; i < lower.length; i++) hash = lower.charCodeAt(i) + ((hash << 5) - hash);
-    return 2 + (Math.abs(hash) % 800) / 100;
+// ─── Deterministic helpers (no Math.random — same ingredient = same price) ──────
+
+function strHash(s: string): number {
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = s.charCodeAt(i) + ((h << 5) - h);
+    return Math.abs(h);
 }
 
-function generateMockPriceTrends(ingredientName: string): { date: string; price: number; source: string }[] {
-    const basePrice = getMockBasePrice(ingredientName);
+// Deterministic ±5% noise based on ingredient name + period index
+function seededNoise(name: string, index: number): number {
+    const h = strHash(name + String(index));
+    return ((h % 1000) / 1000 - 0.5) * 0.10;
+}
+
+function getBasePrice(name: string): number {
+    const lower = name.toLowerCase();
+    if (/ribeye|filet|tenderloin|lobster/.test(lower)) return 26;
+    if (/steak|sirloin|short rib|brisket|scallop/.test(lower)) return 17;
+    if (/salmon|halibut|sea bass|duck|lamb/.test(lower)) return 14;
+    if (/chicken|pork|shrimp|tuna|cod|fish/.test(lower)) return 7;
+    if (/beef|burger|patty|sausage/.test(lower)) return 8;
+    if (/cheese|cream cheese|mascarpone|ricotta/.test(lower)) return 5;
+    if (/butter|ghee/.test(lower)) return 6;
+    if (/olive oil/.test(lower)) return 10;
+    if (/cream|milk/.test(lower)) return 2.5;
+    if (/pasta|spaghetti|fettuccine|linguine|noodle/.test(lower)) return 2;
+    if (/rice|risotto|arborio|quinoa|grain/.test(lower)) return 1.6;
+    if (/flour|bread|dough|breadcrumb/.test(lower)) return 1;
+    if (/potato|fries/.test(lower)) return 0.9;
+    if (/tomato|mushroom|asparagus|zucchini/.test(lower)) return 2.8;
+    if (/broccoli|carrot|pepper|onion|vegetable/.test(lower)) return 1.6;
+    if (/garlic|shallot|ginger/.test(lower)) return 4;
+    if (/herb|basil|parsley|cilantro|thyme|rosemary|dill|mint/.test(lower)) return 8;
+    if (/lemon|lime|citrus/.test(lower)) return 1.8;
+    if (/chocolate|cocoa/.test(lower)) return 7;
+    if (/nuts|almond|walnut|pecan/.test(lower)) return 9;
+    if (/wine|stock|broth/.test(lower)) return 2;
+    if (/sauce|dressing|vinaigrette|aioli|pesto/.test(lower)) return 4;
+    if (/sugar|honey|syrup/.test(lower)) return 2;
+    if (/coffee|espresso/.test(lower)) return 15;
+    // Generic: stable hash-derived price in $2–$10 range
+    return 2 + (strHash(lower) % 800) / 100;
+}
+
+function generateEstimatedTrends(ingredientName: string, basePrice: number): { date: string; price: number; source: string }[] {
     const now = new Date();
     return Array.from({ length: 6 }, (_, i) => {
         const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
         const drift = basePrice * ((i - 2.5) * 0.012);
-        const noise = basePrice * (Math.random() * 0.10 - 0.05);
+        const noise = basePrice * seededNoise(ingredientName, i);
         return {
             date: d.toISOString(),
             price: Number(Math.max(0.10, basePrice + drift + noise).toFixed(2)),
             source: 'Estimated',
         };
     });
+}
+
+// Ask Groq/Ollama for a price estimate when live market APIs return nothing
+async function fetchAIPrice(name: string): Promise<{ price: number; source: string; label: string } | null> {
+    try {
+        const text = await Promise.race([
+            callGroqThenOllama([
+                { role: 'system', content: 'You are a US wholesale food pricing expert. Return only valid JSON with no extra text.' },
+                { role: 'user', content: `What is the approximate current US wholesale cost per pound for: "${name}"? Use realistic 2024-2025 market prices. Return JSON: {"price": number, "unit": "per lb"}` }
+            ], true),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error('AI pricing timeout')), 4000)),
+        ]);
+        const parsed = parseLLMJSON<{ price: number; unit: string }>(text);
+        if (parsed?.price && parsed.price > 0 && parsed.price < 120) {
+            return { price: +Number(parsed.price).toFixed(2), source: 'AI Estimated', label: 'AI Price Estimate (Groq/Ollama)' };
+        }
+        return null;
+    } catch {
+        return null;
+    }
 }
 
 async function fetchBLSPrice(name: string): Promise<{ price: number; source: string; label: string } | null> {
@@ -163,7 +194,7 @@ async function fetchBLSPrice(name: string): Promise<{ price: number; source: str
         const url = `https://api.bls.gov/publicAPI/v2/timeseries/data/${match.series}?startyear=${currentYear - 1}&endyear=${currentYear}&calculations=false`;
         const res = await fetch(url, {
             headers: { 'Content-Type': 'application/json' },
-            signal: AbortSignal.timeout(6000),
+            signal: AbortSignal.timeout(3000),
         });
         if (!res.ok) return null;
 
@@ -207,7 +238,7 @@ async function fetchLiveCommodityPrice(name: string): Promise<{ price: number; s
                     'Accept': 'application/json',
                     'Accept-Language': 'en-US,en;q=0.9',
                 },
-                signal: AbortSignal.timeout(5000),
+                signal: AbortSignal.timeout(2500),
             });
             if (!res.ok) continue;
 
@@ -248,93 +279,131 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Missing ingredients array' }, { status: 400 });
         }
 
-        const pricingResults = [];
         const currentMonth = new Date().getMonth();
+        const now = new Date();
+        const validIngredients = (ingredients as any[]).filter(ing => ing.name);
 
-        for (const ing of ingredients) {
-            if (!ing.name) continue;
+        // ── Single batch DB read for all cached trends ────────────────────────
+        const allIds = validIngredients.map(i => i.id).filter(Boolean);
+        const allCached = allIds.length > 0
+            ? await prisma.pricingTrend.findMany({
+                where: { ingredientId: { in: allIds } },
+                orderBy: { date: 'asc' },
+              })
+            : [];
 
-            let trends: { date: string; price: number; source: string }[] = [];
-
-            // 1. Check DB cache
-            if (ing.id) {
-                const existingTrends = await prisma.pricingTrend.findMany({
-                    where: { ingredientId: ing.id },
-                    orderBy: { date: 'asc' },
-                });
-
-                const isFresh = existingTrends.length >= 4 &&
-                    new Date(existingTrends[existingTrends.length - 1].date).getMonth() === currentMonth;
-
-                if (isFresh) {
-                    trends = existingTrends.map((t: any) => ({
-                        date: t.date.toISOString(),
-                        price: t.price,
-                        source: t.source,
-                    }));
-                } else if (existingTrends.length > 0) {
-                    await prisma.pricingTrend.deleteMany({ where: { ingredientId: ing.id } });
-                }
-            }
-
-            if (trends.length === 0) {
-                // 2. Try Yahoo Finance, then BLS, then realistic mock
-                let liveData: { price: number; source: string; label: string } | null = null;
-
-                try { liveData = await fetchLiveCommodityPrice(ing.name); } catch { /* continue */ }
-                if (!liveData) {
-                    try { liveData = await fetchBLSPrice(ing.name); } catch { /* continue */ }
-                }
-
-                if (liveData) {
-                    const basePrice = liveData.price;
-                    const now = new Date();
-                    trends = Array.from({ length: 6 }, (_, i) => {
-                        const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
-                        const drift = basePrice * ((i - 2.5) * 0.020);
-                        const noise = basePrice * (Math.random() * 0.06 - 0.03);
-                        return {
-                            date: d.toISOString(),
-                            price: Math.max(0.10, +(basePrice + drift + noise).toFixed(2)),
-                            source: `LIVE — ${liveData!.label}`,
-                        };
-                    });
-                    trends[trends.length - 1].price = basePrice;
-                } else {
-                    trends = generateMockPriceTrends(ing.name);
-                }
-
-                // 3. Persist to DB
-                if (ing.id) {
-                    await prisma.pricingTrend.createMany({
-                        data: trends.map(t => ({
-                            ingredientId: ing.id,
-                            price: t.price,
-                            date: new Date(t.date),
-                            source: t.source,
-                        })),
-                    });
-                }
-            }
-
-            const latestTrend = trends[trends.length - 1];
-            const isLive = latestTrend.source.startsWith('LIVE');
-
-            pricingResults.push({
-                name: ing.name,
-                id: ing.id,
-                currentPrice: latestTrend.price,
-                unit: 'per lb',
-                orderQuantity: typeof ing.quantity === 'number' ? ing.quantity : null,
-                orderUnit: ing.unit ?? null,
-                lineTotal: typeof ing.quantity === 'number'
-                    ? +(latestTrend.price * ing.quantity).toFixed(2)
-                    : latestTrend.price,
-                source: isLive ? latestTrend.source : 'Estimated',
-                isLive,
-                history: trends,
-            });
+        const cachedByIngredient = new Map<string, typeof allCached>();
+        for (const t of allCached) {
+            const arr = cachedByIngredient.get(t.ingredientId) ?? [];
+            arr.push(t);
+            cachedByIngredient.set(t.ingredientId, arr);
         }
+
+        // Collect stale IDs and new trends — written in one batch after parallel work
+        const staleIds: string[] = [];
+        const trendsToWrite: { ingredientId: string; price: number; date: Date; source: string }[] = [];
+
+        // ── All ingredients in parallel ───────────────────────────────────────
+        const pricingResults = await Promise.all(
+            validIngredients.map(async (ing) => {
+                let trends: { date: string; price: number; source: string }[] = [];
+
+                // 1. Check cache from batch read
+                if (ing.id) {
+                    const existing = cachedByIngredient.get(ing.id) ?? [];
+                    const isFresh = existing.length >= 4 &&
+                        new Date(existing[existing.length - 1].date).getMonth() === currentMonth;
+
+                    if (isFresh) {
+                        trends = existing.map((t: any) => ({
+                            date: t.date.toISOString(),
+                            price: t.price,
+                            source: t.source,
+                        }));
+                    } else if (existing.length > 0) {
+                        staleIds.push(ing.id);
+                    }
+                }
+
+                if (trends.length === 0) {
+                    // 2. Yahoo Finance and BLS in parallel — both have short timeouts
+                    let liveData: { price: number; source: string; label: string } | null = null;
+
+                    const [yahooResult, blsResult] = await Promise.allSettled([
+                        fetchLiveCommodityPrice(ing.name),
+                        fetchBLSPrice(ing.name),
+                    ]);
+
+                    liveData =
+                        (yahooResult.status === 'fulfilled' ? yahooResult.value : null) ??
+                        (blsResult.status === 'fulfilled' ? blsResult.value : null);
+
+                    // 3. AI estimate only when both live sources returned nothing
+                    if (!liveData) {
+                        try { liveData = await fetchAIPrice(ing.name); } catch { /* continue */ }
+                    }
+
+                    if (liveData) {
+                        const basePrice = liveData.price;
+                        const isLiveMarket = liveData.source === 'LIVE';
+                        trends = Array.from({ length: 6 }, (_, i) => {
+                            const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
+                            const drift = basePrice * ((i - 2.5) * 0.020);
+                            const noise = basePrice * seededNoise(ing.name, i) * (isLiveMarket ? 0.6 : 1.0);
+                            return {
+                                date: d.toISOString(),
+                                price: Math.max(0.10, +(basePrice + drift + noise).toFixed(2)),
+                                source: `${isLiveMarket ? 'LIVE' : liveData!.source} — ${liveData!.label}`,
+                            };
+                        });
+                        trends[trends.length - 1].price = basePrice;
+                    } else {
+                        // 4. True last resort: fully deterministic estimate
+                        trends = generateEstimatedTrends(ing.name, getBasePrice(ing.name));
+                    }
+
+                    // Queue for batch DB write
+                    if (ing.id) {
+                        for (const t of trends) {
+                            trendsToWrite.push({
+                                ingredientId: ing.id,
+                                price: t.price,
+                                date: new Date(t.date),
+                                source: t.source,
+                            });
+                        }
+                    }
+                }
+
+                const latestTrend = trends[trends.length - 1];
+                const isLive = latestTrend.source.startsWith('LIVE');
+
+                return {
+                    name: ing.name,
+                    id: ing.id,
+                    currentPrice: latestTrend.price,
+                    unit: 'per lb',
+                    orderQuantity: typeof ing.quantity === 'number' ? ing.quantity : null,
+                    orderUnit: ing.unit ?? null,
+                    lineTotal: typeof ing.quantity === 'number'
+                        ? +(latestTrend.price * ((ing.unit ?? '').toLowerCase() === 'oz' ? ing.quantity / 16 : ing.quantity)).toFixed(2)
+                        : latestTrend.price,
+                    source: isLive ? latestTrend.source : 'Estimated',
+                    isLive,
+                    history: trends,
+                };
+            })
+        );
+
+        // ── Batch DB writes (single round-trip each) ──────────────────────────
+        await Promise.all([
+            staleIds.length > 0
+                ? prisma.pricingTrend.deleteMany({ where: { ingredientId: { in: staleIds } } })
+                : Promise.resolve(),
+            trendsToWrite.length > 0
+                ? prisma.pricingTrend.createMany({ data: trendsToWrite, skipDuplicates: true })
+                : Promise.resolve(),
+        ]);
 
         return NextResponse.json({ pricing: pricingResults });
 

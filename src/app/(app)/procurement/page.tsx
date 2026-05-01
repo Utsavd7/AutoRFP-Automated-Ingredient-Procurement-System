@@ -340,7 +340,7 @@ export default function ProcurementPage() {
   const [ingredients, setIngredients] = useState<any[]>([]);
   const [parseModelSource, setParseModelSource] = useState<string | null>(null);
   const [menuInsight, setMenuInsight] = useState<string | null>(null);
-  const [guestCount, setGuestCount] = useState(50);
+  const [guestCount, setGuestCount] = useState(20);
   const [bufferPct, setBufferPct] = useState(10);
 
   const [pricingData, setPricingData] = useState<any[]>([]);
@@ -395,7 +395,7 @@ export default function ProcurementPage() {
 
   const handleReset = () => {
     setMenuText(''); setRecipes([]); setIngredients([]); setParseModelSource(null); setMenuInsight(null);
-    setGuestCount(50); setBufferPct(10);
+    setGuestCount(20); setBufferPct(10);
     setPricingData([]); setMlForecasts({}); setDistributors([]); setDistributorSource(null);
     setSentRFPs([]); setQuotes([]); setConversationLogs({}); setRecommendation(null); setRiskScores([]);
     setAgentEvents([]); setEmailThread([]); setNegotiationComplete(null); setError('');

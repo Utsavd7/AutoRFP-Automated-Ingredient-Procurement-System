@@ -40,17 +40,43 @@ function portionDefaultForIngredient(name: string): ParsedIngredient {
 
     if (/\b(bun|roll|bagel|english muffin|tortilla|pita|flatbread)\b/.test(lower)) return count(1);
     if (/\b(egg|eggs)\b/.test(lower)) return count(2);
-    if (/\b(ribeye|steak|filet|sirloin|short rib|brisket)\b/.test(lower)) return oz(8);
-    if (/\b(beef|burger|patty|lamb|pork|chicken|turkey|duck|salmon|tuna|cod|fish|shrimp|scallop|lobster|crab)\b/.test(lower)) return oz(6);
-    if (/\b(pasta|spaghetti|rigatoni|linguine|fettuccine|noodle|rice|risotto|grain|quinoa|couscous)\b/.test(lower)) return oz(4);
-    if (/\b(flour|dough|pizza dough|breadcrumb|panko|bread crumb)\b/.test(lower)) return oz(4);
+    // Premium cuts — a proper restaurant ribeye or filet is 10–12 oz raw
+    if (/\b(ribeye|filet|sirloin|short rib|brisket)\b/.test(lower)) return oz(12);
+    if (/\b(steak|strip|chop)\b/.test(lower)) return oz(10);
+    // Standard proteins — 6–8 oz raw per cover is industry standard
+    if (/\b(salmon|lobster|scallop)\b/.test(lower)) return oz(8);
+    if (/\b(beef|burger|patty|lamb|pork|duck|tuna|cod|halibut)\b/.test(lower)) return oz(7);
+    if (/\b(chicken|turkey|shrimp|crab|fish)\b/.test(lower)) return oz(6);
+    // Dry starches — 3–4 oz dry yields a full restaurant portion
+    if (/\b(pasta|spaghetti|rigatoni|linguine|fettuccine|noodle)\b/.test(lower)) return oz(4);
+    if (/\b(rice|risotto|grain|quinoa|couscous)\b/.test(lower)) return oz(3);
+    if (/\b(pizza dough|dough)\b/.test(lower)) return oz(8);
+    if (/\b(flour|breadcrumb|panko|bread crumb)\b/.test(lower)) return oz(3);
+    // Produce
+    if (/\b(potato|fries)\b/.test(lower)) return oz(8);
     if (/\b(lettuce|romaine|greens|spinach|arugula|kale|salad)\b/.test(lower)) return oz(3);
-    if (/\b(potato|fries|vegetable|broccoli|carrot|tomato|onion|pepper|mushroom|asparagus|zucchini|squash|corn|peas|beans)\b/.test(lower)) return oz(4);
-    if (/\b(cheese|cheddar|mozzarella|parmesan|pecorino|ricotta|cream cheese|mascarpone|feta|goat cheese)\b/.test(lower)) return oz(1.5);
-    if (/\b(butter|oil|olive oil|canola oil|aioli|mayo|mayonnaise|dressing|vinaigrette|sauce|pesto|marinara|gravy|jus|glaze)\b/.test(lower)) return oz(1);
-    if (/\b(cream|milk|yogurt|broth|stock|wine)\b/.test(lower)) return oz(2);
-    if (/\b(herb|basil|parsley|cilantro|thyme|rosemary|oregano|chive|dill|mint|garlic|ginger|shallot|lemon|lime)\b/.test(lower)) return oz(0.25);
-    if (/\b(sugar|honey|syrup|chocolate|cocoa|nuts|almond|walnut|pecan|fruit|berry|apple|banana|citrus)\b/.test(lower)) return oz(2);
+    if (/\b(tomato|mushroom|asparagus|zucchini|squash)\b/.test(lower)) return oz(4);
+    if (/\b(vegetable|broccoli|carrot|pepper|corn|peas|beans|onion)\b/.test(lower)) return oz(4);
+    // Dairy
+    if (/\b(cream cheese|mascarpone|ricotta)\b/.test(lower)) return oz(3);
+    if (/\b(mozzarella|cheddar|parmesan|pecorino|feta|goat cheese|cheese)\b/.test(lower)) return oz(2);
+    if (/\b(heavy cream|cream|milk)\b/.test(lower)) return oz(3);
+    if (/\b(butter)\b/.test(lower)) return oz(1);
+    if (/\b(yogurt)\b/.test(lower)) return oz(2);
+    // Liquids and sauces
+    if (/\b(broth|stock|wine)\b/.test(lower)) return oz(4);
+    if (/\b(marinara|tomato sauce|gravy|jus)\b/.test(lower)) return oz(3);
+    if (/\b(dressing|vinaigrette|aioli|mayo|mayonnaise|pesto|sauce|glaze)\b/.test(lower)) return oz(1.5);
+    if (/\b(olive oil|canola oil|oil)\b/.test(lower)) return oz(0.5);
+    // Aromatics and herbs — small but present
+    if (/\b(garlic|ginger|shallot)\b/.test(lower)) return oz(0.5);
+    if (/\b(lemon|lime|citrus)\b/.test(lower)) return oz(1);
+    if (/\b(herb|basil|parsley|cilantro|thyme|rosemary|oregano|chive|dill|mint)\b/.test(lower)) return oz(0.25);
+    // Sweet/baking
+    if (/\b(chocolate|cocoa)\b/.test(lower)) return oz(2);
+    if (/\b(nuts|almond|walnut|pecan)\b/.test(lower)) return oz(1.5);
+    if (/\b(fruit|berry|apple|banana)\b/.test(lower)) return oz(3);
+    if (/\b(sugar|honey|syrup)\b/.test(lower)) return oz(1);
 
     return oz(2);
 }
@@ -247,20 +273,22 @@ export async function POST(req: Request) {
         const sysMsg = { role: 'system' as const, content: 'You are a JSON-only API. Output strictly valid JSON and nothing else.' };
 
         const buildPrompt = (content: string) => `
-You are an expert culinary assistant and a JSON-only API.
-Parse the following restaurant menu and extract every dish into a structured recipe format.
+You are an expert executive chef and procurement specialist. Your job is to extract every dish from a menu and list ALL ingredients a kitchen must actually purchase to make it — including obvious ones AND hidden ones.
 
-For each dish, provide:
-1. The dish name.
-2. A complete list of ingredients required to make it.
-3. For each ingredient, provide ONLY the ingredient name. Quantity/unit may be omitted because the app assigns deterministic portion defaults.
-   - First use ingredients explicitly named in the menu item title or description.
-   - If the menu only gives a dish name or incomplete description, infer only the missing CORE ingredients with culinary knowledge.
-   - Include proteins, starches, buns/breads/pasta, main produce, dairy, signature sauces, and important fats/oils.
-   - Exclude salt, pepper, water, generic seasoning blends, tiny garnish, and optional micro-ingredients unless explicitly named as a signature component.
-   - Aim for 4-8 procurement-relevant ingredients per entree, 3-6 per appetizer or dessert, unless the menu description clearly requires more.
+For each dish:
+1. Start with ingredients explicitly named in the menu description.
+2. Then add ALL implicit/hidden procurement ingredients a chef knows are required:
+   - Cooking fats: butter, oil, or lard used to cook the protein or sauté vegetables
+   - Bases: stock, broth, or wine used in sauces or braises
+   - Starches: pasta, rice, bread, or potato if the dish is served with them
+   - Dairy: cream, milk, or cheese used in sauces or finishes
+   - Aromatics: garlic, onion, or shallots used in the base
+   - Acid: lemon juice or vinegar used to finish the dish
+   - Binding/coating: flour, eggs, or breadcrumbs if the protein is pan-fried or breaded
+3. Exclude only: salt, black pepper, water, and generic "seasoning" unless they are a named signature component.
+4. Aim for 6-10 ingredients per entree, 4-7 per appetizer, 4-6 per dessert.
 
-Output ONLY valid JSON matching this exact schema. No markdown, no explanation, just the JSON:
+Output ONLY valid JSON. No markdown, no explanation:
 {
   "dishes": [
     {
@@ -277,19 +305,18 @@ ${content}
 `;
 
         const buildEnrichmentPrompt = (content: string, currentDishes: ParsedDish[]) => `
-You are an expert chef and procurement analyst. Return ONLY valid JSON.
+You are an expert executive chef and procurement specialist. Return ONLY valid JSON.
 
-The first extraction may be incomplete. Enrich every dish so each has the full ingredient list needed for one plated guest portion.
+The first extraction is incomplete. Add ALL missing procurement ingredients a kitchen must buy to make each dish, including hidden ones chefs know are needed.
 
 Rules:
 - Preserve every dish name from the current extraction.
-- Use the menu title and description as the source of truth when they mention ingredients.
-- If an ingredient is not listed but required to make the dish, infer only core procurement-relevant ingredients with Groq culinary knowledge.
-- Include proteins, starches, breads/pasta, main produce, dairy, signature sauces, and important fats/oils.
-- Exclude salt, pepper, water, generic seasoning blends, tiny garnish, and optional micro-ingredients unless explicitly named as a signature component.
+- Add missing hidden ingredients: cooking fats (butter/oil), aromatics (garlic/onion/shallot), bases (stock/broth/wine), starches served alongside (rice/pasta/bread/potato), dairy finishes (cream/cheese), acid finishes (lemon/vinegar), coatings (flour/egg/breadcrumb if fried or breaded).
+- Keep ingredients already correctly listed.
+- Exclude only: salt, black pepper, water, generic "seasoning".
 - Do not include packaging, labor, beverages, or equipment.
-- Do not invent quantities. Return ingredient names only.
-- Aim for 4-8 procurement-relevant ingredients per entree, 3-6 per appetizer or dessert, unless the description clearly requires more.
+- Return ingredient names only — no quantities.
+- Aim for 6-10 ingredients per entree, 4-7 per appetizer, 4-6 per dessert.
 
 Current extraction:
 ${JSON.stringify({ dishes: currentDishes }, null, 2)}

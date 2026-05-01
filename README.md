@@ -4,7 +4,7 @@
 
 ---
 
-## What This Does (Plain English)
+## What This Does
 
 Every restaurant has to buy food. Every single week.
 

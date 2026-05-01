@@ -39,14 +39,22 @@ This is a real operational problem for the ~1 million restaurants in the US alon
 
 I wanted to build something that sits at the intersection of AI agents, live market data, and a real operational workflow — not a toy demo. Procurement is a good domain for that because the problem is concrete (you need X lbs of salmon at the best price), the data exists (commodity futures are public), and the workflow is well-defined enough that AI can meaningfully replace human steps.
 
-The technical challenges are also genuinely interesting:
-- How do you extract **hidden** procurement ingredients (the cooking fat, the stock base, the butter finish) from a menu description, not just the hero ingredient?
-- How do you assign **realistic per-guest quantities** for a wholesale order without hallucinating?
-- How do you connect dish costs to **live commodity markets** (CME futures, BLS retail series) rather than static price tables?
-- How do you run a real **multi-agent negotiation** — with an orchestrator, a market analyst, a negotiator, a vendor simulator, and an auditor — and stream the transcript live?
-- How do you build **RAG procurement memory** so the system remembers what worked and what didn't across past runs?
+The technical challenges are also genuinely interesting, and here's how I solved each one:
 
-That's what this project answers.
+**How do you extract hidden procurement ingredients from a menu description?**
+A menu says "pan-seared salmon with lemon butter sauce." The obvious ingredient is salmon. But to actually cook that dish you also need butter, garlic, shallots, white wine or stock, lemon, olive oil to sear with, and salt. None of that is written down anywhere. I built a two-pass extraction: the first pass pulls what's explicitly on the menu, and a second enrichment pass uses culinary reasoning to infer the hidden ingredients — the cooking fats, bases, acid finishes, and coatings that every professional kitchen uses but no menu ever lists. The result is an ingredient list that reflects what you actually need to order, not just what sounds good on the menu.
+
+**How do you assign realistic quantities without hallucinating?**
+LLMs are terrible at quantities — they'll confidently say you need 500g of garlic for 20 guests, which is absurd. So I took the AI out of that decision entirely. I built a lookup table of 40+ ingredient categories mapped to industry-standard restaurant kitchen portions: salmon gets 8oz per guest, pasta gets 4oz, butter gets 1oz, fresh herbs get 0.25oz, and so on. These are real numbers used in professional kitchens. The LLM identifies *what* the ingredient is; the app decides *how much* of it you need. That separation is what makes the quantities actually usable.
+
+**How do you connect ingredient costs to live market prices?**
+I mapped ingredients to real commodity futures tickers — beef goes to LE=F (live cattle on CME), wheat-based pasta goes to ZW=F (CBOT wheat), coffee goes to KC=F (ICE arabica), and so on. The app pulls live prices from Yahoo Finance and then applies a conversion factor to get from futures contract units to a realistic per-pound wholesale price. For anything not covered by a futures market, I pull from the BLS retail price series, which is updated regularly by the US government. Nothing is hardcoded — the prices reflect what markets are actually doing today.
+
+**How do you run a real multi-agent negotiation?**
+A single LLM prompt asking "negotiate this price" just produces a polite email. Real negotiation requires multiple perspectives in sequence. I built a 5-agent pipeline: an Orchestrator that coordinates the run, a Market Analyst that grounds the conversation in live commodity data, a Negotiation Agent that crafts the counter-offer strategy, a Vendor Simulator that plays the distributor responding under pressure, and a Deal Auditor that validates the final terms and flags anything suspicious. Each agent runs in sequence, sees the previous agents' output, and builds on it. The entire transcript streams live to the UI via Server-Sent Events so you can watch the negotiation unfold in real time.
+
+**How do you build procurement memory that actually helps?**
+After each completed negotiation, the outcome — what was bought, from who, at what price, and what tactics worked — is embedded as a vector and stored in ChromaDB. Before the next recommendation, the system retrieves the most similar past runs and injects them as context. So if you negotiated salmon three months ago and got 12% off by anchoring to CME futures, that gets surfaced automatically the next time salmon is on the list. The system gets smarter with every procurement cycle instead of starting from scratch every time.
 
 ---
 

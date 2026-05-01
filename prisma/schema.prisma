@@ -23,6 +23,8 @@ model Tenant {
   id                 String              @id
   restaurantName     String
   email              String
+  passwordHash       String?
+  passwordSalt       String?
   location           String
   cuisineType        String?
   preferredSuppliers String[]

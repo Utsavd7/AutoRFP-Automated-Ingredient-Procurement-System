@@ -11,8 +11,9 @@ import {
   ResponsiveContainer, Tooltip, XAxis, YAxis
 } from 'recharts';
 import {
+  ACCOUNT_KEY,
   readAccount,
-  readTenantHistory,
+  saveAccount,
   type ProcurementRecord,
   type RestaurantAccount,
 } from '@/lib/tenant';
@@ -50,11 +51,39 @@ export default function IntelligencePage() {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    const saved = readAccount();
-    if (!saved) return;
-    setAccount(saved);
-    setHistory(readTenantHistory(saved.tenantId));
-    setReady(true);
+    let alive = true;
+
+    Promise.all([
+      fetch('/api/account').then(async response => {
+        if (!response.ok) {
+          if (response.status === 401) localStorage.removeItem(ACCOUNT_KEY);
+          return { account: null, allowLocalFallback: false };
+        }
+        return { account: (await response.json()).account as RestaurantAccount, allowLocalFallback: true };
+      }),
+      fetch('/api/dashboard').then(async response => response.ok ? await response.json() as { history?: ProcurementRecord[] } : null),
+    ]).then(([accountResult, dashboard]) => {
+      if (!alive) return;
+      const remoteAccount = accountResult.account;
+      const fallbackAccount = remoteAccount ?? (accountResult.allowLocalFallback ? readAccount() : null);
+      if (!fallbackAccount) {
+        setReady(true);
+        return;
+      }
+      if (remoteAccount) saveAccount(remoteAccount);
+      setAccount(fallbackAccount);
+      setHistory(dashboard?.history ?? []);
+      setReady(true);
+    }).catch(() => {
+      if (!alive) return;
+      const saved = readAccount();
+      if (saved) setAccount(saved);
+      setReady(true);
+    });
+
+    return () => {
+      alive = false;
+    };
   }, []);
 
   const chronological = useMemo(() => [...history].reverse(), [history]);

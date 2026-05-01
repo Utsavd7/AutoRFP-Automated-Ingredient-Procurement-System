@@ -7,7 +7,7 @@ import {
   ChefHat, LayoutDashboard, PlusCircle, Clock, Settings,
   Menu, X, LogOut, ChevronRight, BrainCircuit
 } from 'lucide-react';
-import { readAccount, ACCOUNT_KEY, type RestaurantAccount } from '@/lib/tenant';
+import { readAccount, saveAccount, ACCOUNT_KEY, type RestaurantAccount } from '@/lib/tenant';
 import { PageSkeleton } from '@/components/Skeleton';
 
 const NAV = [
@@ -96,13 +96,33 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    const saved = readAccount();
-    if (!saved) {
-      router.replace('/');
-      return;
-    }
-    setAccount(saved);
-    setReady(true);
+    fetch('/api/account')
+      .then(async res => {
+        if (!res.ok) {
+          if (res.status === 401) localStorage.removeItem(ACCOUNT_KEY);
+          return { account: null, allowLocalFallback: false };
+        }
+        const data = await res.json();
+        return { account: data.account as RestaurantAccount, allowLocalFallback: true };
+      })
+      .then(({ account, allowLocalFallback }) => {
+        const fallback = account ?? (allowLocalFallback ? readAccount() : null);
+        if (!fallback) {
+          router.replace('/');
+          return;
+        }
+        if (account) saveAccount(account);
+        setAccount(fallback);
+        setReady(true);
+      })
+      .catch(() => {
+        const fallback = readAccount();
+        if (!fallback) router.replace('/');
+        else {
+          setAccount(fallback);
+          setReady(true);
+        }
+      });
   }, [router]);
 
   // Close mobile sidebar on route change

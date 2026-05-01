@@ -7,10 +7,10 @@ import {
   Zap, PlusCircle, Trash2, RotateCcw
 } from 'lucide-react';
 import {
+  ACCOUNT_KEY,
   readAccount,
-  readTenantHistory,
+  saveAccount,
   tenantKey,
-  writeTenantHistory,
   type ProcurementRecord,
   type RestaurantAccount,
 } from '@/lib/tenant';
@@ -24,17 +24,35 @@ export default function HistoryPage() {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    const saved = readAccount();
-    if (!saved) return;
-    setAccount(saved);
-    setHistory(readTenantHistory(saved.tenantId));
-    setReady(true);
+    Promise.all([
+      fetch('/api/account').then(async res => {
+        if (!res.ok) {
+          if (res.status === 401) localStorage.removeItem(ACCOUNT_KEY);
+          return { account: null, allowLocalFallback: false };
+        }
+        return { account: (await res.json()).account as RestaurantAccount, allowLocalFallback: true };
+      }),
+      fetch('/api/dashboard').then(async res => res.ok ? await res.json() : null),
+    ]).then(([accountResult, dashboard]) => {
+      const account = accountResult.account;
+      const fallback = account ?? (accountResult.allowLocalFallback ? readAccount() : null);
+      if (!fallback) return;
+      if (account) saveAccount(account);
+      setAccount(fallback);
+      setHistory(dashboard?.history ?? []);
+      setReady(true);
+    }).catch(() => {
+      const saved = readAccount();
+      if (!saved) return;
+      setAccount(saved);
+      setReady(true);
+    });
   }, []);
 
-  const clearHistory = () => {
+  const clearHistory = async () => {
     if (!account) return;
     if (!confirm('Clear all procurement history?')) return;
-    writeTenantHistory(account.tenantId, []);
+    await fetch('/api/history', { method: 'DELETE' });
     setHistory([]);
   };
 

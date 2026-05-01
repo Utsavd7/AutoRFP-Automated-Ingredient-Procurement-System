@@ -7,13 +7,10 @@ import {
   Zap, Building2, Brain, Shield
 } from 'lucide-react';
 import {
-  accountFromForm,
-  createPasswordRecord,
-  findSavedAccountByEmail,
+  ACCOUNT_KEY,
   readAccount,
   saveAccount,
-  parseSuppliers,
-  verifyPassword,
+  type RestaurantAccount,
 } from '@/lib/tenant';
 import { toastApiError } from '@/lib/toast';
 
@@ -34,11 +31,26 @@ export default function LandingPage() {
   const [authError, setAuthError] = useState('');
 
   useEffect(() => {
-    if (readAccount()) {
-      router.replace('/dashboard');
-    } else {
-      setChecking(false);
-    }
+    fetch('/api/account')
+      .then(async res => {
+        if (!res.ok) {
+          if (res.status === 401) localStorage.removeItem(ACCOUNT_KEY);
+          return { account: null, allowLocalFallback: false };
+        }
+        const data = await res.json();
+        return { account: data.account as RestaurantAccount, allowLocalFallback: true };
+      })
+      .then(({ account, allowLocalFallback }) => {
+        if (account) {
+          saveAccount(account);
+          router.replace('/dashboard');
+        } else if (allowLocalFallback && readAccount()) {
+          router.replace('/dashboard');
+        } else {
+          setChecking(false);
+        }
+      })
+      .catch(() => setChecking(false));
   }, [router]);
 
   const valid = mode === 'signin'
@@ -51,37 +63,42 @@ export default function LandingPage() {
     setLoading(true);
     setAuthError('');
     try {
-      await new Promise(r => setTimeout(r, 500));
-      const existingAccount = findSavedAccountByEmail(email);
-      if (mode === 'signup' && existingAccount?.passwordHash) {
-        throw new Error('A workspace already exists for that email. Sign in instead.');
+      const checkRes = await fetch('/api/auth/workspace-check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode,
+          name,
+          email,
+          password,
+          location,
+          cuisineType,
+        }),
+      });
+      if (!checkRes.ok) {
+        const data = await checkRes.json().catch(() => ({}));
+        throw new Error(data.error || 'Unable to validate restaurant workspace.');
       }
-      const account = mode === 'signin'
-        ? existingAccount
-        : accountFromForm({
-            name,
-            email,
-            ...(await createPasswordRecord(password)),
-            location,
-            cuisineType,
-            preferredSuppliers: parseSuppliers(preferredSuppliers),
-            monthlyBudgetTarget: monthlyBudgetTarget ? Number(monthlyBudgetTarget) : null,
-            savingsTargetPct: savingsTargetPct ? Number(savingsTargetPct) : null,
-          });
-      if (!account) throw new Error('No workspace found for that email. Create one first.');
-      if (mode === 'signin' && !(await verifyPassword(password, account))) throw new Error('Email or password is incorrect.');
       const result = await signIn('credentials', {
         redirect: false,
-        name: account.name,
-        email: account.email,
+        mode,
+        name,
+        email,
         password,
-        location: account.location,
-        cuisineType: account.cuisineType,
-        preferredSuppliers: account.preferredSuppliers.join(', '),
-        monthlyBudgetTarget: account.monthlyBudgetTarget?.toString() ?? '',
-        savingsTargetPct: account.savingsTargetPct?.toString() ?? '',
+        location,
+        cuisineType,
+        preferredSuppliers,
+        monthlyBudgetTarget,
+        savingsTargetPct,
       });
-      if (result?.error) throw new Error('Unable to start restaurant session.');
+      if (result?.error) throw new Error(
+        result.error === 'CredentialsSignin'
+          ? (mode === 'signin' ? 'Email or password is incorrect.' : 'Unable to create workspace. Check the database connection and try again.')
+          : result.error
+      );
+      const accountRes = await fetch('/api/account');
+      if (!accountRes.ok) throw new Error('Unable to load restaurant workspace.');
+      const { account } = await accountRes.json();
       saveAccount(account);
       router.push('/dashboard');
     } catch (err: any) {

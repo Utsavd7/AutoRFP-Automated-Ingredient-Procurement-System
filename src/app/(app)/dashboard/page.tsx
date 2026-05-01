@@ -7,9 +7,9 @@ import {
   Zap, Target, BarChart3
 } from 'lucide-react';
 import {
+  ACCOUNT_KEY,
   readAccount,
-  readActiveRfp,
-  readTenantHistory,
+  saveAccount,
   type ActiveRFP,
   type ProcurementRecord,
   type RestaurantAccount,
@@ -62,12 +62,30 @@ export default function DashboardPage() {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    const saved = readAccount();
-    if (!saved) return;
-    setAccount(saved);
-    setHistory(readTenantHistory(saved.tenantId));
-    setActiveRfp(readActiveRfp(saved.tenantId));
-    setReady(true);
+    Promise.all([
+      fetch('/api/account').then(async res => {
+        if (!res.ok) {
+          if (res.status === 401) localStorage.removeItem(ACCOUNT_KEY);
+          return { account: null, allowLocalFallback: false };
+        }
+        return { account: (await res.json()).account as RestaurantAccount, allowLocalFallback: true };
+      }),
+      fetch('/api/dashboard').then(async res => res.ok ? await res.json() : null),
+    ]).then(([accountResult, dashboard]) => {
+      const account = accountResult.account;
+      const fallback = account ?? (accountResult.allowLocalFallback ? readAccount() : null);
+      if (!fallback) return;
+      if (account) saveAccount(account);
+      setAccount(fallback);
+      setHistory(dashboard?.history ?? []);
+      setActiveRfp(dashboard?.activeRfp ?? null);
+      setReady(true);
+    }).catch(() => {
+      const saved = readAccount();
+      if (!saved) return;
+      setAccount(saved);
+      setReady(true);
+    });
   }, []);
 
   const totalSavings = history.reduce((sum, r) => sum + (r.totalSavings ?? 0), 0);

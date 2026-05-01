@@ -8,7 +8,6 @@ import {
 } from 'lucide-react';
 import {
   ACCOUNT_KEY,
-  accountFromForm,
   parseSuppliers,
   readAccount,
   saveAccount,
@@ -29,35 +28,51 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    const acc = readAccount();
-    if (!acc) return;
-    setAccount(acc);
-    setName(acc.name);
-    setEmail(acc.email);
-    setLocation(acc.location);
-    setCuisineType(acc.cuisineType);
-    setPreferredSuppliers(supplierListToText(acc.preferredSuppliers));
-    setMonthlyBudgetTarget(acc.monthlyBudgetTarget?.toString() ?? '');
-    setSavingsTargetPct(acc.savingsTargetPct?.toString() ?? '');
+    fetch('/api/account')
+      .then(async res => {
+        if (!res.ok) {
+          if (res.status === 401) localStorage.removeItem(ACCOUNT_KEY);
+          return { account: null, allowLocalFallback: false };
+        }
+        return { account: (await res.json()).account as RestaurantAccount, allowLocalFallback: true };
+      })
+      .then(({ account, allowLocalFallback }) => {
+        const acc = account ?? (allowLocalFallback ? readAccount() : null);
+        if (!acc) return;
+        if (account) saveAccount(account);
+        setAccount(acc);
+        setName(acc.name);
+        setEmail(acc.email);
+        setLocation(acc.location);
+        setCuisineType(acc.cuisineType);
+        setPreferredSuppliers(supplierListToText(acc.preferredSuppliers));
+        setMonthlyBudgetTarget(acc.monthlyBudgetTarget?.toString() ?? '');
+        setSavingsTargetPct(acc.savingsTargetPct?.toString() ?? '');
+      });
   }, []);
 
   const valid = name.trim() && email.includes('@') && location.trim() && cuisineType.trim();
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!valid) return;
-    const next = accountFromForm({
-      name,
-      email,
-      location,
-      cuisineType,
-      preferredSuppliers: parseSuppliers(preferredSuppliers),
-      monthlyBudgetTarget: monthlyBudgetTarget ? Number(monthlyBudgetTarget) : null,
-      savingsTargetPct: savingsTargetPct ? Number(savingsTargetPct) : null,
+    const res = await fetch('/api/account', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name,
+        email,
+        location,
+        cuisineType,
+        preferredSuppliers: parseSuppliers(preferredSuppliers),
+        monthlyBudgetTarget: monthlyBudgetTarget ? Number(monthlyBudgetTarget) : null,
+        savingsTargetPct: savingsTargetPct ? Number(savingsTargetPct) : null,
+      }),
     });
-    const preserved = account ? { ...next, tenantId: account.tenantId, createdAt: account.createdAt } : next;
-    saveAccount(preserved);
-    setAccount(preserved);
+    if (!res.ok) return;
+    const { account: updated } = await res.json();
+    saveAccount(updated);
+    setAccount(updated);
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
   };

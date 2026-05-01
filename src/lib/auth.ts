@@ -1,6 +1,9 @@
 import type { NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
+import { Prisma } from '@prisma/client';
 import { makeTenantId, parseSuppliers } from '@/lib/tenant';
+import { prisma } from '@/lib/prisma';
+import { createPasswordRecord, verifyPassword } from '@/lib/password';
 
 export const authOptions: NextAuthOptions = {
   session: { strategy: 'jwt' },
@@ -16,25 +19,71 @@ export const authOptions: NextAuthOptions = {
         preferredSuppliers: { label: 'Preferred suppliers', type: 'text' },
         monthlyBudgetTarget: { label: 'Monthly budget target', type: 'text' },
         savingsTargetPct: { label: 'Savings target percent', type: 'text' },
+        mode: { label: 'Mode', type: 'text' },
       },
       async authorize(credentials) {
+        const mode = credentials?.mode === 'signup' ? 'signup' : 'signin';
         const name = credentials?.name?.trim();
         const email = credentials?.email?.trim().toLowerCase();
         const password = credentials?.password ?? '';
         const location = credentials?.location?.trim();
-        if (!name || !email || !email.includes('@') || password.length < 8 || !location) return null;
+        if (!email || !email.includes('@')) throw new Error('Enter a valid work email.');
+        if (password.length < 8) throw new Error('Password must be at least 8 characters.');
+
+        if (mode === 'signin') {
+          const tenant = await prisma.tenant.findFirst({ where: { email } });
+          if (!tenant || !verifyPassword(password, tenant.passwordHash, tenant.passwordSalt)) throw new Error('Email or password is incorrect.');
+          return {
+            id: tenant.id,
+            tenantId: tenant.id,
+            name: tenant.restaurantName,
+            email: tenant.email,
+            location: tenant.location,
+            cuisineType: tenant.cuisineType || 'General restaurant',
+            preferredSuppliers: tenant.preferredSuppliers,
+            monthlyBudgetTarget: tenant.monthlyBudgetTarget,
+            savingsTargetPct: tenant.savingsTargetPct,
+          } as any;
+        }
+
+        if (!name) throw new Error('Restaurant name is required.');
+        if (!location) throw new Error('Location is required.');
+        const existing = await prisma.tenant.findFirst({ where: { email } });
+        if (existing) throw new Error('A workspace already exists for that email. Use Sign in instead.');
 
         const tenantId = makeTenantId(email, name);
+        const passwordRecord = createPasswordRecord(password);
+        let tenant;
+        try {
+          tenant = await prisma.tenant.create({
+            data: {
+              id: tenantId,
+              restaurantName: name,
+              email,
+              ...passwordRecord,
+              location,
+              cuisineType: credentials?.cuisineType?.trim() || 'General restaurant',
+              preferredSuppliers: parseSuppliers(credentials?.preferredSuppliers ?? ''),
+              monthlyBudgetTarget: credentials?.monthlyBudgetTarget ? Number(credentials.monthlyBudgetTarget) : null,
+              savingsTargetPct: credentials?.savingsTargetPct ? Number(credentials.savingsTargetPct) : null,
+            },
+          });
+        } catch (error) {
+          if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+            throw new Error('A workspace already exists for that email. Use Sign in instead.');
+          }
+          throw new Error('Unable to create workspace. Check the database connection and try again.');
+        }
         return {
-          id: tenantId,
-          tenantId,
-          name,
-          email,
-          location,
-          cuisineType: credentials?.cuisineType?.trim() || 'General restaurant',
-          preferredSuppliers: parseSuppliers(credentials?.preferredSuppliers ?? ''),
-          monthlyBudgetTarget: credentials?.monthlyBudgetTarget ? Number(credentials.monthlyBudgetTarget) : null,
-          savingsTargetPct: credentials?.savingsTargetPct ? Number(credentials.savingsTargetPct) : null,
+          id: tenant.id,
+          tenantId: tenant.id,
+          name: tenant.restaurantName,
+          email: tenant.email,
+          location: tenant.location,
+          cuisineType: tenant.cuisineType || 'General restaurant',
+          preferredSuppliers: tenant.preferredSuppliers,
+          monthlyBudgetTarget: tenant.monthlyBudgetTarget,
+          savingsTargetPct: tenant.savingsTargetPct,
         } as any;
       },
     }),

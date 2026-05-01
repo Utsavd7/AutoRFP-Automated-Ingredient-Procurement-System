@@ -765,6 +765,11 @@ export default function ProcurementPage() {
       };
       const existing = readTenantHistory(tenantId);
       writeTenantHistory(tenantId, [historyItem, ...existing].slice(0, 20));
+      fetch('/api/history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(historyItem),
+      }).catch(() => {});
       clearActiveRfp(tenantId);
     });
     es.addEventListener('error', e => { const raw = (e as MessageEvent).data; if (raw) add('error', JSON.parse(raw)); setNegotiating(false); es.close(); });

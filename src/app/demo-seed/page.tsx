@@ -2,13 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { signIn } from 'next-auth/react';
 import { CheckCircle } from 'lucide-react';
 import {
-  createPasswordRecord,
-  makeTenantId,
   saveAccount,
   writeTenantHistory,
-  type RestaurantAccount,
   type ProcurementRecord,
 } from '@/lib/tenant';
 
@@ -21,19 +19,15 @@ export default function DemoSeedPage() {
 
   useEffect(() => {
     async function seed() {
-      const credentials = await createPasswordRecord(DEMO_PASSWORD);
-      const account: RestaurantAccount = {
-        tenantId: makeTenantId(DEMO_EMAIL, 'Demo Bistro Group'),
-        name: 'Demo Bistro Group',
+      const seedRes = await fetch('/api/demo/seed-account', { method: 'POST' });
+      if (!seedRes.ok) throw new Error('Could not seed demo tenant');
+      const { account } = await seedRes.json();
+      await signIn('credentials', {
+        redirect: false,
+        mode: 'signin',
         email: DEMO_EMAIL,
-        location: 'New York, NY',
-        cuisineType: 'Modern American',
-        preferredSuppliers: ['Baldor', 'US Foods', 'Century Wholesale'],
-        monthlyBudgetTarget: 52000,
-        savingsTargetPct: 12,
-        ...credentials,
-        createdAt: new Date().toISOString(),
-      };
+        password: DEMO_PASSWORD,
+      });
       saveAccount(account);
 
       const now = Date.now();
@@ -97,6 +91,11 @@ export default function DemoSeedPage() {
       ];
 
       writeTenantHistory(account.tenantId, history);
+      await Promise.all(history.map(record => fetch('/api/history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(record),
+      }).catch(() => null)));
       setStatus(`Demo ready. Sign in later with ${DEMO_EMAIL} / ${DEMO_PASSWORD}`);
       window.setTimeout(() => router.replace('/dashboard'), 900);
     }

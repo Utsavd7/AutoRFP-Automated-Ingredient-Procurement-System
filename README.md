@@ -35,7 +35,7 @@ The script:
 1. Starts ChromaDB on `:8000` if the `chroma` command is available.
 2. Starts Next.js on `:3000` if it is not already running.
 3. Calls `/api/demo/seed-rag` to seed sample Chroma/RAG memories.
-4. Opens `/demo-seed`, which creates a local demo restaurant workspace and redirects to the dashboard.
+4. Opens `/demo-seed`, which creates a Postgres-backed demo restaurant workspace and redirects to the dashboard.
 
 Demo credentials after sign out:
 
@@ -66,7 +66,7 @@ Edit `.env` with your values.
 
 | Variable | Required | Purpose |
 |---|---:|---|
-| `DATABASE_URL` | Yes | PostgreSQL connection string for Prisma. |
+| `DATABASE_URL` | Yes | PostgreSQL connection string for Prisma. Use local Postgres or Supabase. |
 | `NEXTAUTH_URL` | Yes | Local app URL, usually `http://localhost:3000`. |
 | `NEXTAUTH_SECRET` | Yes | Session signing secret. Generate with `openssl rand -base64 32`. |
 | `GROQ_API_KEY` | Yes for full AI demo | Cloud LLM fallback and negotiation pipeline. Get one at `https://console.groq.com/keys`. |
@@ -107,8 +107,6 @@ npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
-
----
 
 ## AI Behavior
 
@@ -161,10 +159,14 @@ src/
       history/page.tsx               Tenant-scoped procurement history
       intelligence/page.tsx          Alerts, analytics, scorecards
       settings/page.tsx              Restaurant profile and integrations
-    demo-seed/page.tsx               Browser localStorage demo workspace seed
+    demo-seed/page.tsx               Postgres-backed demo workspace seed
     quote/[rfpId]/page.tsx           Vendor quote portal
     api/
       auth/[...nextauth]/route.ts    NextAuth credentials session
+      account/route.ts               Current tenant profile API
+      dashboard/route.ts             Tenant dashboard/history API
+      history/route.ts               Tenant procurement history API
+      demo/seed-account/route.ts     Demo account seed endpoint
       demo/seed-rag/route.ts         Demo Chroma/RAG seed endpoint
       parse-menu/route.ts            Menu extraction
       pricing/route.ts               Market pricing
@@ -178,7 +180,7 @@ src/
     ToastViewport.tsx                Toast notification viewport
   lib/
     auth.ts                          NextAuth options
-    tenant.ts                        Tenant account/history helpers
+    tenant.ts                        Tenant types and browser fallback helpers
     llm.ts                           Ollama/Groq chat helpers
     embeddings.ts                    Ollama/fallback embeddings
     chroma.ts                        ChromaDB RAG memory client
@@ -192,10 +194,41 @@ demo.sh                              One-command local demo setup
 
 ## SaaS Notes
 
-- Auth is credentials-based via NextAuth, with demo-friendly local tenant account persistence.
-- Tenant IDs are deterministic from restaurant email/name and used to scope dashboard, history, active RFP state, and RAG metadata.
+- Auth is credentials-based via NextAuth, backed by the `Tenant` table in Postgres.
+- Each sign-up creates a restaurant workspace with email/password auth and a tenant-scoped profile.
+- Tenant IDs are used to scope dashboard data, procurement history, active RFP state, and RAG metadata.
 - Each restaurant profile stores location, cuisine type, preferred suppliers, monthly budget target, and savings target.
-- Procurement history is tenant-scoped and powers analytics, supplier scorecards, market alerts, and the "run again" flow.
+- Procurement history is persisted in Postgres and powers dashboard value metrics, intelligence charts, supplier scorecards, market alerts, and the "run again" flow.
+- Browser localStorage is kept only as a demo/offline fallback for in-progress procurement state.
+
+---
+
+## Startup Roadmap
+
+### Step 1 - SaaS Foundation: Done
+
+- Supabase/Postgres is the system of record through Prisma.
+- NextAuth credentials auth creates and signs in tenant-scoped restaurant workspaces.
+- Restaurant profiles are persisted in the `Tenant` table.
+- Dashboard, history, intelligence, and settings read/write through tenant-aware API routes.
+- Completed procurement runs are saved to Postgres and reused for analytics.
+- LocalStorage remains only as a browser fallback for demo/offline continuity and in-progress procurement state.
+
+### Step 2 - Operational MVP: Next
+
+- Move active RFP state fully into Postgres so refreshes and multi-device sessions never depend on browser storage.
+- Add vendor-facing quote lifecycle polish: quote status, reminders, buyer review states, and quote audit trail.
+- Add role-aware account structure for one restaurant workspace with multiple team members.
+- Add admin/demo controls for seeding, clearing, and replaying procurement runs without touching production data.
+- Add regression tests around auth isolation, tenant-scoped APIs, and procurement history persistence.
+
+### Step 3 - Hosted Product Readiness: Later
+
+- Add a clean deployment target when hosting is back on the table.
+- Add observability for failed AI calls, email delivery, RFP runs, and slow API routes.
+- Add production-grade email/domain setup for real supplier outreach.
+- Add stronger data model constraints, migrations, and backup/restore workflow.
+- Add onboarding, usage limits, and account lifecycle flows before payments.
 
 ---
 

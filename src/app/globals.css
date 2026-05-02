@@ -153,3 +153,131 @@ body {
   background-size: 60px 60px;
   mask-image: radial-gradient(ellipse 80% 80% at 50% 0%, black 30%, transparent 100%);
 }
+
+/* ─── Gradient border card ───────────────────────────────────────────────────── */
+.gradient-border {
+  position: relative;
+  background: rgba(8, 8, 8, 0.9);
+  border-radius: 12px;
+}
+.gradient-border::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: 13px;
+  background: linear-gradient(135deg, rgba(139,92,246,0.4) 0%, rgba(59,130,246,0.2) 50%, rgba(139,92,246,0.1) 100%);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  padding: 1px;
+  pointer-events: none;
+}
+
+/* ─── Stat card glow on hover ────────────────────────────────────────────────── */
+.stat-card {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.stat-card:hover {
+  background: rgba(255,255,255,0.035);
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 4px 20px rgba(0,0,0,0.4);
+  transform: translateY(-1px);
+}
+
+/* ─── Number counter animation ────────────────────────────────────────────────── */
+@keyframes count-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.count-animate {
+  animation: count-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ─── Section fade-in-up ─────────────────────────────────────────────────────── */
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-in-up {
+  animation: fade-in-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ─── Sidebar collapsed width ────────────────────────────────────────────────── */
+.sidebar-collapsed { width: 56px; }
+.sidebar-expanded  { width: 224px; }
+
+/* ─── Command palette overlay ────────────────────────────────────────────────── */
+.cmdk-overlay {
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* ─── Table row hover reveal ─────────────────────────────────────────────────── */
+.table-row-actions {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+tr:hover .table-row-actions { opacity: 1; }
+
+/* ─── Sonner toast override ──────────────────────────────────────────────────── */
+[data-sonner-toaster] [data-sonner-toast] {
+  background: #111 !important;
+  border: 1px solid rgba(255,255,255,0.1) !important;
+  color: #eee !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+}
+[data-sonner-toaster] [data-sonner-toast][data-type="success"] {
+  border-color: rgba(16,185,129,0.3) !important;
+}
+[data-sonner-toaster] [data-sonner-toast][data-type="error"] {
+  border-color: rgba(239,68,68,0.3) !important;
+}
+
+/* ─── Recharts custom tooltip ────────────────────────────────────────────────── */
+.recharts-tooltip-wrapper .custom-tooltip {
+  background: rgba(10,10,10,0.95);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  padding: 10px 14px;
+  backdrop-filter: blur(20px);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+}
+
+/* ─── Footer tech-stack pill ─────────────────────────────────────────────────── */
+.footer-pill {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.07);
+  color: rgba(138, 143, 152, 0.7);
+}
+
+/* ─── App footer glass ───────────────────────────────────────────────────────── */
+.footer-app-glass {
+  background: rgba(6,6,6,0.97);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* ─── Page header sticky ─────────────────────────────────────────────────────── */
+.page-header-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: rgba(0,0,0,0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+/* ─── Status dot variants ────────────────────────────────────────────────────── */
+.status-dot-green  { width: 6px; height: 6px; border-radius: 50%; background: #34d399; box-shadow: 0 0 6px rgba(52,211,153,0.6); }
+.status-dot-violet { width: 6px; height: 6px; border-radius: 50%; background: #a78bfa; box-shadow: 0 0 6px rgba(167,139,250,0.6); }
+.status-dot-amber  { width: 6px; height: 6px; border-radius: 50%; background: #fbbf24; box-shadow: 0 0 6px rgba(251,191,36,0.6); }
+.status-dot-blue   { width: 6px; height: 6px; border-radius: 50%; background: #60a5fa; box-shadow: 0 0 6px rgba(96,165,250,0.6); }

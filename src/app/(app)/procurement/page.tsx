@@ -1,5 +1,7 @@
 'use client';
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { toast } from 'sonner';
 import {
   ChefHat, Search, MapPin, Mail, Bot, Zap, Brain,
   MessageSquare, FileText, Package, DollarSign, Building2,
@@ -28,6 +30,28 @@ function cn(...inputs: (string | undefined | null | false)[]) {
   return twMerge(clsx(inputs));
 }
 
+function useCountUp(target: number, duration = 800) {
+  const [val, setVal] = useState(0);
+  const prev = useRef(0);
+  useEffect(() => {
+    if (target === 0) { setVal(0); prev.current = 0; return; }
+    const start = prev.current;
+    const diff = target - start;
+    const startTime = performance.now();
+    let raf: number;
+    const step = (now: number) => {
+      const p = Math.min((now - startTime) / duration, 1);
+      const eased = 1 - Math.pow(1 - p, 3);
+      setVal(Math.round(start + diff * eased));
+      if (p < 1) raf = requestAnimationFrame(step);
+      else prev.current = target;
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [target, duration]);
+  return val;
+}
+
 // ─── Shared UI primitives ──────────────────────────────────────────────────────
 
 function Tag({ children, color = 'gray', className }: { children: React.ReactNode; color?: 'gray'|'green'|'blue'|'amber'|'red'|'indigo'; className?: string }) {
@@ -48,24 +72,34 @@ function Section({ title, subtitle, done, children, action }: {
   children: React.ReactNode; action?: React.ReactNode;
 }) {
   return (
-    <section className="space-y-6">
+    <motion.section
+      className="space-y-6"
+      initial={{ opacity: 0, y: 20 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: '-60px' }}
+      transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+    >
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="flex items-start gap-4">
-          <div className={cn(
-            'mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border',
-            done ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/25' : 'bg-white/[0.04] text-[#8A8F98] border-white/[0.08]'
-          )}>
+          <motion.div
+            className={cn(
+              'mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border',
+              done ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/25' : 'bg-white/[0.04] text-[#8A8F98] border-white/[0.08]'
+            )}
+            animate={done ? { scale: [1, 1.2, 1] } : {}}
+            transition={{ duration: 0.4 }}
+          >
             {done ? <CheckCircle className="w-3.5 h-3.5" /> : <Activity className="w-3.5 h-3.5" />}
-          </div>
+          </motion.div>
           <div>
-            <h2 className="text-lg font-medium text-[#EEEEEE] tracking-tight">{title}</h2>
-            {subtitle && <p className="text-sm text-[#8A8F98] mt-1">{subtitle}</p>}
+            <h2 className="text-[18px] font-bold text-[#EEEEEE] tracking-tight">{title}</h2>
+            {subtitle && <p className="text-[13px] text-[#8A8F98] mt-1 leading-relaxed">{subtitle}</p>}
           </div>
         </div>
         {action}
       </div>
       {children}
-    </section>
+    </motion.section>
   );
 }
 
@@ -457,6 +491,24 @@ function CountdownTimer({ active, estimatedSecs, label }: { active: boolean; est
 }
 
 // ─── Main page ─────────────────────────────────────────────────────────────────
+
+const SAMPLE_MENU = `The Oak Room — Dinner Menu
+
+Appetizers
+Fried Calamari  $14
+Stuffed Mushrooms  $12
+Caesar Salad  $13
+
+Mains
+Grilled Ribeye Steak  $42
+Pan-Seared Salmon  $32
+Pasta Carbonara  $24
+Roast Half Chicken  $28
+Beef Burger  $18
+
+Desserts
+Classic Tiramisu  $10
+Crème Brûlée  $11`;
 
 export default function ProcurementPage() {
   const [account, setAccount] = useState<RestaurantAccount | null>(null);
@@ -964,19 +1016,40 @@ export default function ProcurementPage() {
           <div className="max-w-5xl mx-auto px-6">
             <div className="flex divide-x divide-white/5 overflow-x-auto">
               {[
-                { label: 'Order Items',  value: ingredients.length || '—',  icon: Package,   hi: ingredients.length > 0 },
-                { label: 'Order Baseline', value: marketValue > 0 ? `$${marketValue.toFixed(0)}` : '—', icon: DollarSign, hi: marketValue > 0 },
-                { label: 'Suppliers',    value: distributors.length || '—', icon: Building2,  hi: distributors.length > 0 },
-                { label: 'Quotes',       value: sentRFPs.length ? `${quotes.length} / ${sentRFPs.length}` : '—', icon: FileCheck, hi: quotes.length > 0 },
-                { label: 'AI Savings',   value: negotiationComplete ? `$${Number(negotiationComplete.totalSavings).toFixed(0)}` : '—', icon: Target, hi: !!negotiationComplete, green: true },
+                { label: 'Order Items',    raw: ingredients.length,  display: ingredients.length || '—',  icon: Package,   color: 'text-blue-400',    hi: ingredients.length > 0 },
+                { label: 'Market Value',   raw: Math.round(marketValue), display: marketValue > 0 ? `$${marketValue.toFixed(0)}` : '—', icon: DollarSign, color: 'text-violet-400', hi: marketValue > 0, prefix: '$' },
+                { label: 'Suppliers',      raw: distributors.length, display: distributors.length || '—', icon: Building2,  color: 'text-indigo-400',  hi: distributors.length > 0 },
+                { label: 'Quotes',         raw: quotes.length,       display: sentRFPs.length ? `${quotes.length} / ${sentRFPs.length}` : '—', icon: FileCheck, color: 'text-amber-400', hi: quotes.length > 0 },
+                { label: 'AI Savings',     raw: negotiationComplete ? Number(negotiationComplete.totalSavings) : 0, display: negotiationComplete ? `$${Number(negotiationComplete.totalSavings).toFixed(0)}` : '—', icon: Target, color: 'text-emerald-400', hi: !!negotiationComplete, green: true },
               ].map((s, i) => (
-                <div key={i} className="flex items-center gap-3 px-5 py-2.5 shrink-0 hover:bg-white/[0.02] transition-colors">
-                  <s.icon className={cn('w-3.5 h-3.5 shrink-0', s.green && s.hi ? 'text-emerald-400' : s.hi ? 'text-[#EEEEEE]' : 'text-[#8A8F98]')} />
-                  <div>
-                    <span className={cn('text-[13px] font-bold', s.green && s.hi ? 'text-emerald-400' : s.hi ? 'text-[#EEEEEE]' : 'text-[#8A8F98]')}>{s.value}</span>
-                    <span className="text-[10px] text-[#8A8F98] font-medium tracking-wide ml-2 uppercase">{s.label}</span>
+                <motion.div
+                  key={i}
+                  className="flex items-center gap-3 px-5 py-2.5 shrink-0 stat-card cursor-default"
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.06, duration: 0.3 }}
+                >
+                  <div className={cn('w-6 h-6 rounded-md flex items-center justify-center border shrink-0',
+                    s.hi ? 'bg-white/[0.05] border-white/10' : 'bg-white/[0.02] border-white/[0.05]'
+                  )}>
+                    <s.icon className={cn('w-3 h-3', s.hi ? s.color : 'text-[#8A8F98]')} />
                   </div>
-                </div>
+                  <div>
+                    <AnimatePresence mode="wait">
+                      <motion.span
+                        key={String(s.display)}
+                        className={cn('text-[13px] font-bold tabular-nums', s.green && s.hi ? 'text-emerald-400' : s.hi ? 'text-[#EEEEEE]' : 'text-[#8A8F98]')}
+                        initial={{ opacity: 0, y: -6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 6 }}
+                        transition={{ duration: 0.2 }}
+                      >
+                        {s.display}
+                      </motion.span>
+                    </AnimatePresence>
+                    <span className="text-[10px] text-[#8A8F98]/70 font-medium tracking-wide ml-2 uppercase">{s.label}</span>
+                  </div>
+                </motion.div>
               ))}
             </div>
           </div>
@@ -988,16 +1061,30 @@ export default function ProcurementPage() {
 
         {/* Hero — shown before first run */}
         {recipes.length === 0 && !loading && (
-          <div className="relative py-8 text-center space-y-5 border-b border-white/5 pb-14 overflow-hidden">
+          <div className="relative text-center border-b border-white/5 pb-14 overflow-hidden">
             <div className="pointer-events-none absolute inset-0 -z-10">
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[250px] rounded-full bg-violet-600/10 blur-[80px]" />
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[280px] rounded-full bg-violet-600/10 blur-[100px]" />
             </div>
-            <h1 className="text-[38px] font-black tracking-tight gradient-text leading-none">Procurement, automated.</h1>
-            <p className="text-[14px] text-[#8A8F98] max-w-xl mx-auto leading-relaxed">
-              Paste your menu below — AI extracts ingredients, fetches live prices, finds local distributors, and negotiates the best deal.
+            <p className="text-[11px] font-bold text-violet-400 uppercase tracking-[0.2em] mb-4">AI Procurement Workbench</p>
+            <h1 className="text-[42px] md:text-[52px] font-black tracking-tight gradient-text leading-none mb-5">
+              From menu to best deal<br />
+              <span className="text-white">in under 4 minutes.</span>
+            </h1>
+            <p className="text-[15px] text-[#8A8F98] max-w-lg mx-auto leading-relaxed mb-8">
+              Paste your menu — AutoRFP extracts every ingredient, pulls live commodity prices, finds nearby distributors, and negotiates quotes autonomously.
             </p>
+            <div className="flex items-center justify-center gap-3 mb-8">
+              <button
+                onClick={() => { setMenuText(SAMPLE_MENU); setTimeout(() => document.querySelector('textarea')?.focus(), 50); }}
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-violet-600 hover:bg-violet-500 text-white font-bold text-[13px] rounded-xl transition-all shadow-[0_0_25px_rgba(139,92,246,0.35)] hover:shadow-[0_0_35px_rgba(139,92,246,0.5)]"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                Try with sample menu
+              </button>
+              <span className="text-[12px] text-[#8A8F98]">or paste yours below</span>
+            </div>
             <div className="flex items-center justify-center flex-wrap gap-x-5 gap-y-2 text-[11px] font-bold uppercase tracking-widest">
-              <span className="flex items-center gap-1.5 text-violet-400"><span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />Local AI optional · Groq fallback</span>
+              <span className="flex items-center gap-1.5 text-violet-400"><span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />Groq · Ollama</span>
               <span className="text-white/20">/</span>
               <span className="text-blue-400">CME · CBOT · BLS live prices</span>
               <span className="text-white/20">/</span>
@@ -1020,8 +1107,21 @@ export default function ProcurementPage() {
         ════════════════════ */}
         <Section done={recipes.length > 0} title="Menu Intelligence" subtitle="Paste your menu or a URL — AI uses menu descriptions first, then Groq inference to complete missing ingredients">
           <div className="grid lg:grid-cols-5 gap-6">
-            <Card className="lg:col-span-2 p-6 flex flex-col gap-5 border border-white/10">
-              <label className="text-[11px] font-bold text-[#8A8F98] uppercase tracking-widest">Menu Input</label>
+            <Card className="lg:col-span-2 p-6 flex flex-col gap-4 border border-white/10">
+              <div className="flex items-center justify-between">
+                <div>
+                  <label className="text-[13px] font-bold text-[#EEEEEE]">Menu Input</label>
+                  <p className="text-[11px] text-[#8A8F98] mt-0.5">Paste text or drop a URL</p>
+                </div>
+                {!menuText && (
+                  <button
+                    onClick={() => setMenuText(SAMPLE_MENU)}
+                    className="text-[11px] font-bold text-violet-400 hover:text-violet-300 border border-violet-500/25 hover:border-violet-500/50 px-2.5 py-1 rounded-md transition-all bg-violet-500/5 hover:bg-violet-500/10"
+                  >
+                    Try sample →
+                  </button>
+                )}
+              </div>
               <textarea
                 rows={10}
                 className="flex-1 w-full bg-black border border-white/10 rounded-lg p-4 text-[13px] text-[#EEEEEE] placeholder:text-[#8A8F98]/50 focus:outline-none focus:ring-1 focus:ring-white/20 focus:border-white/20 resize-none font-mono leading-relaxed shadow-inner"
@@ -1029,11 +1129,16 @@ export default function ProcurementPage() {
                 value={menuText}
                 onChange={e => setMenuText(e.target.value)}
               />
-              <div className="flex items-center justify-end gap-3">
-                <Btn onClick={handleParseMenu} disabled={!menuText.trim()} loading={loading}>
-                  <Sparkles className="w-4 h-4" />
-                  {loading ? (pipelineStatus || 'Extracting dishes…') : 'Run Pipeline'}
-                </Btn>
+              <div className="flex items-center justify-between gap-3">
+                {menuText && (
+                  <button onClick={() => setMenuText('')} className="text-[11px] text-[#8A8F98] hover:text-[#EEEEEE] transition-colors">Clear</button>
+                )}
+                <div className="ml-auto">
+                  <Btn onClick={handleParseMenu} disabled={!menuText.trim()} loading={loading}>
+                    <Sparkles className="w-4 h-4" />
+                    {loading ? (pipelineStatus || 'Extracting dishes…') : 'Run Pipeline'}
+                  </Btn>
+                </div>
               </div>
             </Card>
 
@@ -1061,9 +1166,10 @@ export default function ProcurementPage() {
                       <CountdownTimer active={loading} estimatedSecs={9} label="AI extracting dishes" />
                     </div>
                   ) : recipes.length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center text-[#8A8F98] gap-2 border border-dashed border-white/10 rounded-lg">
-                      <ChefHat className="w-6 h-6 opacity-20" />
-                      <p className="text-[12px] font-medium">Dishes appear here after extraction</p>
+                    <div className="h-full flex flex-col items-center justify-center text-[#8A8F98] gap-2.5 border border-dashed border-white/10 rounded-lg px-4 text-center">
+                      <ChefHat className="w-7 h-7 opacity-15" />
+                      <p className="text-[13px] font-semibold text-[#EEEEEE]/50">No dishes yet</p>
+                      <p className="text-[11px] text-[#8A8F98]/70 leading-relaxed max-w-[180px]">Paste a menu on the left and click Run Pipeline</p>
                     </div>
                   ) : recipes.map((recipe, i) => (
                     <div key={i} className="flex items-center justify-between px-3 py-1.5 bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-white/10 rounded-md transition-all">
@@ -1278,20 +1384,26 @@ export default function ProcurementPage() {
                     </div>
 
                     {/* Chart */}
-                    <div className="h-14 min-w-0 pointer-events-none">
+                    <div className="h-16 min-w-0 pointer-events-none">
                       <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                        <ComposedChart data={chartData} margin={{ top: 1, right: 1, left: 1, bottom: 1 }}>
+                        <ComposedChart data={chartData} margin={{ top: 2, right: 1, left: 1, bottom: 2 }}>
                           <defs>
                             <linearGradient id={`grad-${idx}`} x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%"  stopColor="#FFFFFF" stopOpacity={0.3} />
-                              <stop offset="95%" stopColor="#FFFFFF" stopOpacity={0} />
+                              <stop offset="0%"   stopColor={forecast?.trend === 'RISING' ? '#f87171' : forecast?.trend === 'FALLING' ? '#34d399' : '#a78bfa'} stopOpacity={0.35} />
+                              <stop offset="100%" stopColor={forecast?.trend === 'RISING' ? '#f87171' : forecast?.trend === 'FALLING' ? '#34d399' : '#a78bfa'} stopOpacity={0} />
                             </linearGradient>
                           </defs>
                           <XAxis dataKey="date" hide />
                           <YAxis domain={['dataMin - 0.5', 'dataMax + 0.5']} hide />
-                          <Tooltip contentStyle={{ background: '#080808', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', fontSize: '10px', color: '#EEEEEE', fontWeight: 'bold' }} itemStyle={{ color: '#8A8F98' }} labelStyle={{ color: '#EEEEEE', marginBottom: '2px' }} labelFormatter={l => new Date(l).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })} formatter={(v: any, n) => [v !== null ? `$${Number(v).toFixed(2)}` : '—', n === 'forecast' ? 'Forecast' : 'Price'] as [string, string]} />
-                          <Area type="monotone" dataKey="price" stroke="#FFFFFF" strokeWidth={1.5} fill={`url(#grad-${idx})`} dot={false} connectNulls={false} />
-                          <Line type="monotone" dataKey="forecast" stroke="#8A8F98" strokeWidth={1.5} strokeDasharray="3 3" dot={false} connectNulls />
+                          <Tooltip
+                            contentStyle={{ background: 'rgba(8,8,8,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', fontSize: '11px', color: '#EEEEEE', fontWeight: 600, backdropFilter: 'blur(12px)', boxShadow: '0 8px 30px rgba(0,0,0,0.5)', padding: '8px 12px' }}
+                            itemStyle={{ color: '#8A8F98', fontSize: '10px' }}
+                            labelStyle={{ color: '#EEEEEE', marginBottom: '4px', fontWeight: 700 }}
+                            labelFormatter={l => new Date(l).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
+                            formatter={(v: any, n) => [v !== null ? `$${Number(v).toFixed(2)}` : '—', n === 'forecast' ? '📈 Forecast' : '💰 Price'] as [string, string]}
+                          />
+                          <Area type="monotone" dataKey="price" stroke={forecast?.trend === 'RISING' ? '#f87171' : forecast?.trend === 'FALLING' ? '#34d399' : '#a78bfa'} strokeWidth={1.5} fill={`url(#grad-${idx})`} dot={false} connectNulls={false} />
+                          <Line type="monotone" dataKey="forecast" stroke="rgba(255,255,255,0.3)" strokeWidth={1.5} strokeDasharray="4 3" dot={false} connectNulls />
                         </ComposedChart>
                       </ResponsiveContainer>
                     </div>
@@ -1467,12 +1579,37 @@ export default function ProcurementPage() {
 
             <Card className="overflow-hidden">
               {simulatingConversation || loadingQuotes ? (
-                <div className="p-6 space-y-3">
-                  {[0, 1, 2, 3].map(i => <Skeleton key={i} className="h-14" />)}
+                <div className="p-5 space-y-3">
+                  {simulatingConversation && Object.keys(vendorProgress).length > 0 ? (
+                    <div className="space-y-2">
+                      {sentRFPs.filter(r => vendorProgress[r.id]).map((rfp: any) => {
+                        const status = vendorProgress[rfp.id];
+                        const cfg = {
+                          pending:    { dot: 'bg-white/20',                     label: 'Waiting…',    text: 'text-[#8A8F98]' },
+                          contacting: { dot: 'bg-blue-400 animate-pulse',        label: 'Contacting…', text: 'text-blue-400' },
+                          replied:    { dot: 'bg-emerald-400',                   label: 'Replied',     text: 'text-emerald-400' },
+                          error:      { dot: 'bg-red-400',                       label: 'Failed',      text: 'text-red-400' },
+                        }[status ?? 'pending'];
+                        return (
+                          <div key={rfp.id} className="flex items-center justify-between px-4 py-2.5 bg-white/[0.02] border border-white/5 rounded-lg">
+                            <div className="flex items-center gap-2.5">
+                              <span className={`w-2 h-2 rounded-full shrink-0 ${cfg.dot}`} />
+                              <span className="text-[12px] font-semibold text-[#EEEEEE] truncate">{rfp.distributorName}</span>
+                            </div>
+                            <span className={`text-[10px] font-bold uppercase tracking-widest shrink-0 ${cfg.text}`}>{cfg.label}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {[0, 1, 2].map(i => <Skeleton key={i} className="h-10" />)}
+                    </div>
+                  )}
                   <CountdownTimer
                     active={simulatingConversation || loadingQuotes}
                     estimatedSecs={simulatingConversation ? Math.max(8, sentRFPs.length * 7) : 3}
-                    label={simulatingConversation ? `Simulating ${sentRFPs.length} vendor response${sentRFPs.length !== 1 ? 's' : ''}` : 'Refreshing quotes'}
+                    label={simulatingConversation ? `Contacting ${sentRFPs.length} supplier${sentRFPs.length !== 1 ? 's' : ''}` : 'Refreshing quotes'}
                   />
                 </div>
               ) : quotes.length === 0 ? (
@@ -1491,19 +1628,28 @@ export default function ProcurementPage() {
                         <th className="px-6 py-4 text-[11px] font-bold text-[#8A8F98] uppercase tracking-widest text-right w-32">Total Quote</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-white/5">
+                    <tbody className="divide-y divide-white/[0.04]">
                       {quotes.map((q, i) => (
-                        <tr key={i} className={cn('hover:bg-white/[0.03] transition-colors', i === 0 && 'bg-white/[0.02]')}>
-                          <td className="px-6 py-5">
+                        <motion.tr
+                          key={i}
+                          className={cn('group transition-colors cursor-default', i === 0 ? 'bg-emerald-500/[0.03] hover:bg-emerald-500/[0.05]' : 'hover:bg-white/[0.03]')}
+                          initial={{ opacity: 0, x: -8 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: i * 0.05, duration: 0.3 }}
+                        >
+                          <td className="px-6 py-4">
                             <div className="flex items-center gap-3">
-                              {i === 0 && <Star className="w-4 h-4 text-emerald-400 fill-emerald-400 shrink-0 drop-shadow-[0_0_8px_rgba(16,185,129,0.5)]" />}
+                              {i === 0
+                                ? <div className="w-5 h-5 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center shrink-0"><Star className="w-2.5 h-2.5 text-emerald-400 fill-emerald-400" /></div>
+                                : <div className="w-5 h-5 rounded-full bg-white/[0.04] border border-white/10 flex items-center justify-center shrink-0 text-[9px] font-black text-[#8A8F98]">{i + 1}</div>
+                              }
                               <div>
-                                <p className="font-bold text-[#EEEEEE]">{q.distributorName}</p>
-                                <p className="text-[11px] font-medium text-[#8A8F98] mt-1">{q.distributorLocation}</p>
+                                <p className="text-[13px] font-bold text-[#EEEEEE]">{q.distributorName}</p>
+                                <p className="text-[11px] font-medium text-[#8A8F98] mt-0.5">{q.distributorLocation}</p>
                               </div>
                             </div>
                           </td>
-                          <td className="px-6 py-5 hidden lg:table-cell">
+                          <td className="px-6 py-4 hidden lg:table-cell">
                             <Tag color={
                               q.lifecycleStatus === 'ACCEPTED' ? 'green'
                               : q.lifecycleStatus === 'NEGOTIATING' ? 'amber'
@@ -1513,9 +1659,16 @@ export default function ProcurementPage() {
                               {String(q.lifecycleStatus || 'REPLIED').replace(/_/g, ' ')}
                             </Tag>
                           </td>
-                          <td className="px-6 py-5 text-[12px] text-[#8A8F98] hidden md:table-cell"><span className="line-clamp-2 leading-relaxed">{q.details || '—'}</span></td>
-                          <td className={cn('px-6 py-5 text-right font-mono text-[14px] font-bold', i === 0 ? 'text-emerald-400' : 'text-[#EEEEEE]')}>${Number(q.price).toFixed(2)}</td>
-                        </tr>
+                          <td className="px-6 py-4 text-[12px] text-[#8A8F98] hidden md:table-cell max-w-[220px]"><span className="line-clamp-2 leading-relaxed">{q.details || '—'}</span></td>
+                          <td className="px-6 py-4 text-right">
+                            <span className={cn('font-mono text-[15px] font-black tabular-nums', i === 0 ? 'text-emerald-400' : 'text-[#EEEEEE]')}>${Number(q.price).toFixed(2)}</span>
+                            {i === 0 && quotes.length > 1 && (
+                              <p className="text-[9px] font-bold text-emerald-400/70 mt-0.5">
+                                {((1 - Number(q.price) / Number(quotes[quotes.length - 1]?.price)) * 100).toFixed(0)}% below highest
+                              </p>
+                            )}
+                          </td>
+                        </motion.tr>
                       ))}
                     </tbody>
                   </table>

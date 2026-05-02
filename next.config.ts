@@ -1,10 +1,16 @@
-import type { NextConfig } from "next";
+import type { NextConfig } from 'next';
+import { withSentryConfig } from '@sentry/nextjs';
 
 const nextConfig: NextConfig = {
-  devIndicators: false,
-  turbopack: {
-    root: "/Users/utsavdoshi/Desktop/Projects Coding/AutoRFP-Automated-Ingredient-Procurement-System",
-  },
+    devIndicators: false,
 };
 
-export default nextConfig;
+export default withSentryConfig(nextConfig, {
+    org: process.env.SENTRY_ORG ?? 'autorfp',
+    project: process.env.SENTRY_PROJECT ?? 'autorfp',
+    silent: true,
+    // Skip source map upload when no DSN is configured (local dev without Sentry account)
+    sourcemaps: {
+        disable: !process.env.NEXT_PUBLIC_SENTRY_DSN,
+    },
+});

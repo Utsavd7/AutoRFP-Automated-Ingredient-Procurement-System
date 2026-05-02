@@ -4,7 +4,8 @@ import { useRouter } from 'next/navigation';
 import { signOut } from 'next-auth/react';
 import {
   Settings, Building2, Mail, MapPin, LogOut, CheckCircle,
-  Cpu, Database, Zap, Globe, Target, Utensils, Users
+  Cpu, Database, Zap, Globe, Target, Utensils, Users,
+  GitBranch, Activity, Shield
 } from 'lucide-react';
 import {
   ACCOUNT_KEY,
@@ -221,7 +222,7 @@ export default function SettingsPage() {
             {
               icon: Zap,
               name: 'Groq',
-              desc: 'Cloud LLM · llama-3.3-70b-versatile · requires GROQ_API_KEY',
+              desc: 'Cloud LLM · llama-3.3-70b-versatile · model fallback chain on rate-limit',
               status: 'cloud',
             },
             {
@@ -236,6 +237,24 @@ export default function SettingsPage() {
               desc: 'Local vector store · tenant-scoped RAG procurement memory',
               status: 'local',
             },
+            {
+              icon: GitBranch,
+              name: 'LangGraph',
+              desc: '5-node typed negotiation pipeline · orchestrate → analyze → negotiate → finalize',
+              status: 'active',
+            },
+            {
+              icon: Activity,
+              name: 'Inngest',
+              desc: 'Background job queue · daily pricing refresh · RFP sending with 3-retry',
+              status: 'active',
+            },
+            {
+              icon: Shield,
+              name: 'Sentry',
+              desc: 'Error tracking · React error boundaries · configure NEXT_PUBLIC_SENTRY_DSN to enable',
+              status: 'optional',
+            },
           ].map((item) => (
             <div key={item.name} className="flex items-center gap-4 px-6 py-4">
               <div className="w-8 h-8 rounded-lg bg-white/[0.03] border border-white/[0.06] flex items-center justify-center shrink-0">
@@ -246,8 +265,10 @@ export default function SettingsPage() {
                 <p className="text-[11px] text-[#8A8F98] mt-0.5">{item.desc}</p>
               </div>
               <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md border ${
-                item.status === 'live'  ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' :
-                item.status === 'cloud' ? 'text-blue-400 bg-blue-500/10 border-blue-500/20' :
+                item.status === 'live'     ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' :
+                item.status === 'cloud'   ? 'text-blue-400 bg-blue-500/10 border-blue-500/20' :
+                item.status === 'active'  ? 'text-violet-400 bg-violet-500/10 border-violet-500/20' :
+                item.status === 'optional'? 'text-amber-400 bg-amber-500/10 border-amber-500/20' :
                 'text-[#8A8F98] bg-white/[0.04] border-white/[0.08]'
               }`}>
                 {item.status}

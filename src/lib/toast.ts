@@ -1,25 +1,11 @@
 'use client';
-
-export type ToastTone = 'info' | 'success' | 'error' | 'warning';
-
-export type AppToast = {
-  id: string;
-  title: string;
-  message?: string;
-  tone: ToastTone;
-};
-
-export function showToast(input: Omit<AppToast, 'id'>) {
-  if (typeof window === 'undefined') return;
-  window.dispatchEvent(new CustomEvent('autorfp:toast', {
-    detail: {
-      ...input,
-      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-    },
-  }));
-}
+import { toast } from 'sonner';
 
 export function toastApiError(error: unknown, fallback: string) {
   const message = error instanceof Error ? error.message : fallback;
-  showToast({ tone: 'error', title: fallback, message });
+  toast.error(fallback, { description: message !== fallback ? message : undefined });
+}
+
+export function toastSuccess(title: string, description?: string) {
+  toast.success(title, { description });
 }

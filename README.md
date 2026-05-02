@@ -47,6 +47,8 @@ I wanted to build something at the intersection of AI agents, live market data, 
 
 **Production-grade negotiation pipeline** — One prompt asking an LLM to "negotiate" just gets you a polite email. So I built 5 typed LangGraph nodes that run in sequence: `loadData → orchestrate → analyze → negotiate → finalize`. Each node has a typed state slice, deterministic fallbacks when LLM fails, and real-time SSE streaming to the browser throughout the entire run.
 
+**Parallel quote simulation** — Vendor response simulation previously ran one supplier at a time (sequential `for` loop), making 5 suppliers take 5× as long. It now fires all vendor requests in parallel via `Promise.all`, cutting wall-clock time from ~35s to ~12s. Each vendor exchange is capped at 1 LLM round-trip — the high-quality deterministic fallback handles pricing without needing follow-up turns.
+
 **Background reliability** — Heavy operations (pricing refreshes, RFP delivery) run in Inngest background jobs with automatic retry. The UI never blocks on them.
 
 **Tenant isolation** — Every Prisma query for `Menu`, `RFP`, and `ProcurementRun` is automatically filtered by `tenantId` through a `$extends` query interceptor backed by `AsyncLocalStorage`. No query escapes its tenant scope without an explicit bypass.
@@ -63,7 +65,8 @@ I wanted to build something at the intersection of AI agents, live market data, 
 | **Portion accuracy** | 40+ keyword-mapped industry-standard kitchen portions per ingredient category | Generic quantities or LLM guesses |
 | **Market pricing** | CME/CBOT/ICE futures + BLS retail series + dynamic year range | Static price tables or none |
 | **Supplier discovery** | Google Places API near restaurant location · curated fallback pool | Hardcoded distributors |
-| **Negotiation** | 5-node LangGraph pipeline · typed state · SSE-streamed · deterministic fallbacks | Single LLM prompt |
+| **Quote collection** | All vendors contacted in parallel (`Promise.all`) · ~12s for 5 suppliers · realistic progress timers | Sequential blocking calls |
+| **Negotiation** | 5-node LangGraph pipeline · typed state · SSE-streamed · deterministic fallbacks · tenant-scoped query | Single LLM prompt |
 | **Background jobs** | Inngest: daily pricing refresh, RFP sending with 3-retry, weekly archival | Fire-and-forget or blocking requests |
 | **Tenant isolation** | `$extends` Prisma middleware + AsyncLocalStorage row-level security | None or manual `WHERE` clauses |
 | **Procurement memory** | ChromaDB RAG: past negotiation outcomes inform future recommendations | Stateless — forgets everything |
@@ -107,8 +110,8 @@ Every Prisma read and create on `Menu`, `RFP`, and `ProcurementRun` models is au
 **RAG Procurement Memory**
 Past negotiation outcomes are embedded (Ollama `nomic-embed-text` or deterministic fallback) and stored in ChromaDB. Before each recommendation, similar past runs are retrieved and injected as context so the system compounds learning across procurement cycles.
 
-**Automatic RFP Dispatch**
-Compiled ingredient lists are emailed to discovered suppliers via Resend. Vendors can respond through a quote portal at `/quote/[rfpId]`.
+**Automatic RFP Dispatch & Parallel Quote Collection**
+Compiled ingredient lists are emailed to discovered suppliers via Resend. Vendors can respond through a quote portal at `/quote/[rfpId]`. When simulating vendor responses, all suppliers are contacted in parallel — wall-clock time is bounded by the slowest single vendor (~12s for 5 suppliers), not the sum. Each exchange is capped at one LLM round-trip; the deterministic fallback computes accurate market-based pricing without needing follow-up turns. Switching to a new supplier set (re-running Supplier Discovery) automatically clears quotes, conversation logs, and negotiation state so the pipeline always runs against the current supplier set.
 
 **Error Monitoring**
 `@sentry/nextjs` captures exceptions with stack traces and component context. Every authenticated page is wrapped in a React `ErrorBoundary` class component that shows a recovery UI and reports to Sentry on `componentDidCatch`. Set `NEXT_PUBLIC_SENTRY_DSN` to activate; the app runs normally without it.
@@ -326,6 +329,12 @@ loadData → orchestrate → analyze → negotiate → finalize → END
 ```
 
 Each node returns a partial state update. The `negotiate` node loops over vendor rounds internally, emitting SSE events in real-time via a request-scoped `Map<requestId, sendFn>` that lives outside graph state (stream controllers aren't serialisable). This gives true real-time streaming without batching events per-node.
+
+`loadDataNode` filters by both `menuId` and `tenantId` — defense in depth on top of the Prisma `$extends` RLS interceptor. This ensures the negotiation pipeline only sees quotes belonging to the current tenant's current procurement run, even if AsyncLocalStorage isn't populated in the request context.
+
+### Parallel Quote Simulation
+
+`handleAutoConversation` fires all vendor RFP simulations via `Promise.all` rather than a sequential `for` loop. With 5 suppliers, this reduces wall-clock time from ~35s (sequential, 3 turns each) to ~12s (parallel, 1 turn each). Each `/api/simulate-conversation` call does one LLM round-trip to generate a vendor reply, one to parse it, then falls back to a deterministic hash-based markup if either fails — so the pipeline is fast and never blocks on an unresponsive model.
 
 ### Row-Level Security
 

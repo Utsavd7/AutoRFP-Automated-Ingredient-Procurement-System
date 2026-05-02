@@ -154,11 +154,11 @@ export default function LandingPage() {
           <br />
           <span className="text-[#5A5F6A]">autonomous</span>
           <br />
-          <span className="gradient-text">AI negotiation.</span>
+          <span className="gradient-text">price negotiation.</span>
         </h1>
 
         <p className="text-[17px] text-[#8A8F98] leading-relaxed max-w-2xl mx-auto mb-12">
-          AutoRFP parses your menu, fetches live CME commodity prices, discovers local distributors, and autonomously negotiates the best deal — all without a single phone call.
+          Paste your menu. AutoRFP figures out what you need, checks what it costs right now, finds local suppliers, and negotiates the best price — all without a single phone call.
         </p>
 
         {!showForm ? (
@@ -303,7 +303,7 @@ export default function LandingPage() {
         <div className="grid grid-cols-3 gap-8 mt-24 max-w-lg mx-auto border-t border-white/[0.06] pt-16">
           {[
             { value: 'Live', label: 'market-aware sourcing', color: 'text-emerald-400' },
-            { value: 'AI',   label: 'agents in parallel', color: 'text-violet-400' },
+            { value: 'Auto', label: 'negotiated, no calls', color: 'text-violet-400' },
             { value: 'Fast', label: 'menu to first quote', color: 'text-blue-400' },
           ].map((s, i) => (
             <div key={i} className="text-center">

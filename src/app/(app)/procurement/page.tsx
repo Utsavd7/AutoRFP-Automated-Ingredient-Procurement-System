@@ -1157,9 +1157,9 @@ export default function ProcurementPage() {
               <div className="flex items-center justify-between mb-4 relative z-10 shrink-0">
                 <span className="text-[11px] font-bold text-[#8A8F98] uppercase tracking-widest">Extracted Dishes</span>
                 <div className="flex items-center gap-2">
-                  {parseModelSource && parseModelSource !== 'Mock' && (
+                  {parseModelSource && parseModelSource !== 'Mock' && parseModelSource !== 'Static fallback (all AI providers unavailable)' && (
                     <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-violet-500/10 border border-violet-500/20 text-[10px] font-bold text-violet-400">
-                      <span className="w-1 h-1 rounded-full bg-violet-400 animate-pulse" />{parseModelSource}
+                      <span className="w-1 h-1 rounded-full bg-violet-400 animate-pulse" />Extracted
                     </span>
                   )}
                   {recipes.length > 0 && <Tag color="blue">{recipes.length} dishes</Tag>}

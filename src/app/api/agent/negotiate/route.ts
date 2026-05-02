@@ -104,10 +104,9 @@ type NegotiationStateType = typeof NegotiationState.State;
 // ─── Node: Load Data ──────────────────────────────────────────────────────────
 
 async function loadDataNode(state: NegotiationStateType): Promise<Partial<NegotiationStateType>> {
-    const { menuId } = state;
-
+    const { menuId, tenantId } = state;
     const rfps = await (prisma as any).rFP.findMany({
-        where: { menuId, status: 'REPLIED' },
+        where: { menuId, tenantId, status: 'REPLIED' },
         include: {
             distributor: true,
             quotes: { orderBy: { price: 'asc' }, take: 1 },

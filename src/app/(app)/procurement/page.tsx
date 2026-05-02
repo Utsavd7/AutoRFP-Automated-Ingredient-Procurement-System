@@ -732,6 +732,15 @@ export default function ProcurementPage() {
       setDistributors(data.distributors);
       setDistributorSource(data.source || null);
       setDistributorLocation(loc);
+      // New suppliers found — clear all downstream state so RFPs can be sent to the new set
+      setSentRFPs([]);
+      setQuotes([]);
+      setConversationLogs({});
+      setRecommendation(null);
+      setRiskScores([]);
+      setAgentEvents([]);
+      setEmailThread([]);
+      setNegotiationComplete(null);
       return data.distributors ?? [];
     } catch (err: any) { setError(err.message); toastApiError(err, 'Supplier search failed'); }
     finally { setLoadingDistributors(false); }
@@ -835,7 +844,8 @@ export default function ProcurementPage() {
     setVendorProgress(Object.fromEntries(unresolved.map(r => [r.id, 'pending'])));
     const newLogs: Record<string, any[]> = {};
     try {
-      for (const rfp of unresolved) {
+      // Contact all vendors in parallel — avoids waiting for each sequential LLM call
+      await Promise.all(unresolved.map(async (rfp) => {
         setVendorProgress(p => ({ ...p, [rfp.id]: 'contacting' }));
         try {
           const res = await fetch('/api/simulate-conversation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rfpId: rfp.id, ingredients, pricingData, tenantId: account?.tenantId, mealName: 'Full menu', guestCount, bufferPct }) });
@@ -849,7 +859,7 @@ export default function ProcurementPage() {
         } catch {
           setVendorProgress(p => ({ ...p, [rfp.id]: 'error' }));
         }
-      }
+      }));
       setConversationLogs(newLogs);
       const fetchedQuotes = await handleFetchQuotes();
       await Promise.all([handleGetRecommendation(), handleFetchRiskScores(fetchedQuotes)]);
@@ -1608,8 +1618,8 @@ export default function ProcurementPage() {
                   )}
                   <CountdownTimer
                     active={simulatingConversation || loadingQuotes}
-                    estimatedSecs={simulatingConversation ? Math.max(8, sentRFPs.length * 7) : 3}
-                    label={simulatingConversation ? `Contacting ${sentRFPs.length} supplier${sentRFPs.length !== 1 ? 's' : ''}` : 'Refreshing quotes'}
+                    estimatedSecs={simulatingConversation ? 12 : 3}
+                    label={simulatingConversation ? `Contacting ${sentRFPs.length} supplier${sentRFPs.length !== 1 ? 's' : ''} in parallel` : 'Refreshing quotes'}
                   />
                 </div>
               ) : quotes.length === 0 ? (
@@ -1742,6 +1752,7 @@ export default function ProcurementPage() {
                       <Skeleton className="h-7 w-48" />
                       <Skeleton className="h-24" />
                       <Skeleton className="h-12" />
+                      <CountdownTimer active={loadingRecommendation} estimatedSecs={8} label="AI cross-checking quotes" />
                     </div>
                   ) : recommendation ? (
                     <div className="bg-white/[0.02] border border-white/10 rounded-xl p-5 space-y-3 relative overflow-hidden">

@@ -4,7 +4,7 @@ import { getEmbedding } from '@/lib/embeddings';
 import { ingestQuote } from '@/lib/chroma';
 import { prisma } from '@/lib/prisma';
 
-const MAX_TURNS = 3;
+const MAX_TURNS = 1;
 
 /**
  * Given the aggregated ingredient list and current market prices,

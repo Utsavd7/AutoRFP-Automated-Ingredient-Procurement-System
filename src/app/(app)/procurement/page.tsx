@@ -1706,7 +1706,7 @@ export default function ProcurementPage() {
                             <PolarGrid stroke="rgba(255,255,255,0.08)" />
                             <PolarAngleAxis dataKey="axis" tick={{ fill: '#8A8F98', fontSize: 11, fontWeight: 600 }} />
                             {riskScores.map((s, i) => (
-                              <Radar key={s.distributorName} name={s.distributorName} dataKey={s.distributorName} stroke={COLORS[i % COLORS.length]} fill={COLORS[i % COLORS.length]} fillOpacity={0.12} strokeWidth={2} />
+                              <Radar key={`${s.distributorName}-${i}`} name={s.distributorName} dataKey={s.distributorName} stroke={COLORS[i % COLORS.length]} fill={COLORS[i % COLORS.length]} fillOpacity={0.12} strokeWidth={2} />
                             ))}
                             <Legend wrapperStyle={{ fontSize: 11, color: '#8A8F98' }} />
                             <Tooltip contentStyle={{ background: '#0a0a0a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 12 }} labelStyle={{ color: '#EEEEEE', fontWeight: 700 }} itemStyle={{ color: '#8A8F98' }} />
@@ -1715,7 +1715,7 @@ export default function ProcurementPage() {
                       </div>
                       <div className="space-y-3">
                         {riskScores.map((s, i) => (
-                          <div key={s.distributorName} className="flex items-center gap-3 p-3 bg-white/[0.02] border border-white/8 rounded-lg">
+                          <div key={i} className="flex items-center gap-3 p-3 bg-white/[0.02] border border-white/8 rounded-lg">
                             <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
                             <div className="flex-1 min-w-0">
                               <p className="text-[13px] font-bold text-[#EEEEEE] truncate">{s.distributorName}</p>

@@ -127,9 +127,12 @@ export async function POST(req: Request) {
             candidates = picks.map(p => ({ name: p.name, location, specialty: p.specialty }));
         }
 
+        // Deduplicate candidates by name before saving (Google Places can return same business twice)
+        const uniqueCandidates = candidates.filter((d, idx, arr) => arr.findIndex(x => x.name === d.name) === idx);
+
         // 3. Save to DB — always update email so stale records get fixed
         const savedDistributors = [];
-        for (const d of candidates.slice(0, 5)) {
+        for (const d of uniqueCandidates.slice(0, 5)) {
             const email = generateEmail(d.name);
             const existing = await prisma.distributor.findFirst({ where: { name: d.name, location: d.location } });
             const dist = existing

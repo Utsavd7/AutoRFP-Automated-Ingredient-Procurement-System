@@ -144,7 +144,7 @@ export default function LandingPage() {
       <main className="relative z-10 max-w-5xl mx-auto px-6 pt-24 pb-20 text-center">
         <div className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-violet-500/10 border border-violet-500/20 rounded-full text-[11px] font-bold text-violet-300 tracking-widest uppercase mb-10">
           <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
-          LangGraph pipeline · CME live pricing · Inngest jobs · Sentry monitoring
+          For independent restaurants · No phone calls · No spreadsheets
         </div>
 
         <h1 className="text-[52px] md:text-[72px] font-black tracking-tight leading-[0.92] mb-7">
@@ -285,12 +285,12 @@ export default function LandingPage() {
         {/* Trust badges */}
         <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-3 mt-14">
           {[
-            'Menu parsing in 30 seconds',
-            'CME / CBOT live futures',
-            'LangGraph 5-node pipeline',
-            'RAG procurement memory',
-            'Inngest background jobs',
-            'Row-level tenant isolation',
+            'Paste a menu, get quotes in minutes',
+            'Live commodity market pricing',
+            'Finds suppliers near your location',
+            'Negotiates prices on your behalf',
+            'Tracks savings across every run',
+            'No integrations or setup required',
           ].map((feat, i) => (
             <span key={i} className="flex items-center gap-2 text-[12px] text-[#8A8F98]">
               <CheckCircle className="w-3.5 h-3.5 text-emerald-500/60 shrink-0" />
@@ -323,22 +323,22 @@ export default function LandingPage() {
               icon: Brain,
               accent: 'violet',
               step: '01',
-              title: 'AI Menu Parsing',
-              desc: 'Paste any menu text or URL. Groq llama-3.3-70b extracts every dish, ingredient, and quantity with automatic model-fallback chain on rate-limit.',
+              title: 'Menu to order list',
+              desc: 'Paste your menu or a URL. AutoRFP figures out every ingredient you need — including the ones nobody writes down, like the butter, stock, and oil used to actually cook the dish.',
             },
             {
               icon: TrendingUp,
               accent: 'blue',
               step: '02',
-              title: 'Live Market Intelligence',
-              desc: 'Real-time futures from CME, CBOT & ICE. ML regression forecasts 3-month price projections with anomaly spike alerts. Inngest refreshes pricing daily in the background.',
+              title: 'Live market prices',
+              desc: 'Ingredients are matched to real commodity markets. Beef tracks cattle futures. Pasta tracks wheat. You see what things actually cost right now, not last quarter.',
             },
             {
               icon: Zap,
               accent: 'emerald',
               step: '03',
-              title: 'Autonomous Negotiation',
-              desc: '5-node LangGraph pipeline — Orchestrator → Analyst → Negotiator → Vendor Sim → Auditor — runs fully autonomously. Tenant-isolated via row-level security.',
+              title: 'Automated negotiation',
+              desc: 'AutoRFP emails local suppliers, collects quotes, and negotiates a better price — all without a phone call. You get a report showing who to buy from and what you saved.',
             },
           ].map((feat) => (
             <div key={feat.step} className={`linear-panel rounded-xl p-6 border transition-all duration-300 hover:bg-white/[0.03] ${
@@ -375,8 +375,8 @@ export default function LandingPage() {
               ))}
             </div>
             <div className="text-center">
-              <p className="text-[15px] font-bold text-[#EEEEEE]">5 AI agents. Zero manual work.</p>
-              <p className="text-[13px] text-[#8A8F98] mt-1">From paste-menu to negotiated contract in under 4 minutes.</p>
+              <p className="text-[15px] font-bold text-[#EEEEEE]">Fully automated. Zero manual work.</p>
+              <p className="text-[13px] text-[#8A8F98] mt-1">From menu to negotiated deal in under 4 minutes.</p>
             </div>
             <button
               onClick={() => { window.scrollTo({ top: 0, behavior: 'smooth' }); setShowForm(true); }}
@@ -404,7 +404,7 @@ export default function LandingPage() {
                 </div>
               </div>
               <p className="text-[12px] text-[#8A8F98] leading-relaxed max-w-sm">
-                AI-powered restaurant ingredient procurement. Menu parsing, live CME pricing, and autonomous 5-agent negotiation.
+                Automated ingredient procurement for restaurants. Paste your menu, get the best price.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2 shrink-0">

@@ -1075,7 +1075,7 @@ export default function ProcurementPage() {
             <div className="pointer-events-none absolute inset-0 -z-10">
               <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[280px] rounded-full bg-violet-600/10 blur-[100px]" />
             </div>
-            <p className="text-[11px] font-bold text-violet-400 uppercase tracking-[0.2em] mb-4">AI Procurement Workbench</p>
+            <p className="text-[11px] font-bold text-violet-400 uppercase tracking-[0.2em] mb-4">Procurement Workbench</p>
             <h1 className="text-[42px] md:text-[52px] font-black tracking-tight gradient-text leading-none mb-5">
               From menu to best deal<br />
               <span className="text-white">in under 4 minutes.</span>
@@ -1094,11 +1094,11 @@ export default function ProcurementPage() {
               <span className="text-[12px] text-[#8A8F98]">or paste yours below</span>
             </div>
             <div className="flex items-center justify-center flex-wrap gap-x-5 gap-y-2 text-[11px] font-bold uppercase tracking-widest">
-              <span className="flex items-center gap-1.5 text-violet-400"><span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />Groq · Ollama</span>
+              <span className="flex items-center gap-1.5 text-violet-400"><span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />Extracts hidden ingredients</span>
               <span className="text-white/20">/</span>
-              <span className="text-blue-400">CME · CBOT · BLS live prices</span>
+              <span className="text-blue-400">Live commodity prices</span>
               <span className="text-white/20">/</span>
-              <span className="text-[#8A8F98]">5-agent negotiation</span>
+              <span className="text-[#8A8F98]">Auto-negotiates quotes</span>
             </div>
           </div>
         )}
@@ -1309,7 +1309,7 @@ export default function ProcurementPage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-2">
-                      <span className="text-[10px] font-black uppercase tracking-[0.18em] text-violet-400">AI insight · local first, Groq fallback</span>
+                      <span className="text-[10px] font-black uppercase tracking-[0.18em] text-violet-400">Menu insight</span>
                       <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
                     </div>
                     <p className="text-[13px] text-[#CCCCCC] leading-relaxed">{menuInsight}</p>
@@ -1743,7 +1743,7 @@ export default function ProcurementPage() {
                 <div className="border-t border-white/10 p-6 space-y-5 bg-white/[0.01]">
                   <div className="flex items-center justify-between">
                     <h3 className="text-[13px] font-bold text-[#EEEEEE] flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-violet-400" />AI Recommendation
+                      <Sparkles className="w-4 h-4 text-violet-400" />Recommendation
                       {loadingRecommendation && <span className="text-[11px] text-violet-300">Analyzing…</span>}
                     </h3>
                   </div>
@@ -1809,8 +1809,8 @@ export default function ProcurementPage() {
         {quotes.length > 0 && (
           <Section
             done={!!negotiationComplete}
-            title="AI Negotiation Engine"
-            subtitle="5 specialized agents negotiate pricing autonomously via email — no human needed"
+            title="Negotiation Engine"
+            subtitle="Contacts every supplier, pushes for a better price, and picks the winner — no calls, no emails, no manual work"
             action={
               <Btn onClick={handleAgentNegotiation} disabled={negotiating || !!negotiationComplete} loading={negotiating} className="linear-glow">
                 <Zap className="w-3.5 h-3.5" />
@@ -1827,9 +1827,9 @@ export default function ProcurementPage() {
                   ))}
                 </div>
                 <div className="text-center">
-                  <p className="text-[15px] font-bold text-[#EEEEEE]">5 AI agents ready to negotiate on your behalf</p>
+                  <p className="text-[15px] font-bold text-[#EEEEEE]">Ready to negotiate on your behalf</p>
                   <p className="text-[12px] font-medium text-[#8A8F98] mt-2 max-w-md">
-                    Orchestrator → Market Analyst → Negotiation Agent → Vendor Simulator → Deal Auditor
+                    Plans strategy · Checks market rates · Sends counter-offers · Picks the best deal
                   </p>
                 </div>
               </Card>

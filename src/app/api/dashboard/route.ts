@@ -1,9 +1,12 @@
 import { NextResponse } from 'next/server';
+import type { Prisma } from '@prisma/client';
 import { requireTenant } from '@/lib/server-account';
 import { prisma } from '@/lib/prisma';
 import { buildActiveRfpSummary, isActiveRfpStatus } from '@/lib/rfp';
 
-function runToRecord(run: any) {
+type ProcurementRunWithTenant = Prisma.ProcurementRunGetPayload<{ include: { tenant: true } }>;
+
+function runToRecord(run: ProcurementRunWithTenant) {
   return {
     id: run.id,
     date: run.createdAt.toISOString(),

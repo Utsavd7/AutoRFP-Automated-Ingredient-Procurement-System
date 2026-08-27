@@ -6,6 +6,24 @@ import { callGroqThenOllama, parseJSON as parseLLMJSON } from '@/lib/llm';
 
 const prisma = new PrismaClient();
 
+type PricingIngredient = {
+    id?: string;
+    name: string;
+    quantity?: number;
+    unit?: string;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isPricingIngredient(value: unknown): value is PricingIngredient {
+    if (!isRecord(value) || typeof value.name !== 'string' || value.name.length === 0) return false;
+    if (value.id !== undefined && typeof value.id !== 'string') return false;
+    if (value.quantity !== undefined && typeof value.quantity !== 'number') return false;
+    return value.unit === undefined || typeof value.unit === 'string';
+}
+
 // ─── CME / ICE futures → wholesale $/lb ──────────────────────────────────────
 const COMMODITY_MAP: Array<{ keywords: string[]; symbol: string; factor: number; label: string }> = [
     { keywords: ['beef', 'ground beef', 'ribeye', 'steak', 'brisket', 'chuck', 'veal', 'sirloin', 'tenderloin', 'short rib', 'flank', 'skirt', 'burger', 'patty', 'strip', 'chop'], symbol: 'LE=F', factor: 0.022, label: 'CME Live Cattle' },
@@ -206,7 +224,10 @@ async function fetchBLSPrice(name: string): Promise<{ price: number; source: str
         const series = data.Results?.series?.[0];
         if (!series?.data?.length) return null;
 
-        const latestEntry = series.data.find((d: any) => d.value && !isNaN(parseFloat(d.value)));
+        const seriesData: unknown[] = Array.isArray(series.data) ? series.data : [];
+        const latestEntry = seriesData.find((entry): entry is { value: string } =>
+            isRecord(entry) && typeof entry.value === 'string' && Number.isFinite(Number.parseFloat(entry.value))
+        );
         if (!latestEntry) return null;
 
         let price = parseFloat(latestEntry.value);
@@ -289,7 +310,7 @@ export async function POST(req: Request) {
 
         const currentMonth = new Date().getMonth();
         const now = new Date();
-        const validIngredients = (ingredients as any[]).filter(ing => ing.name);
+        const validIngredients = (ingredients as unknown[]).filter(isPricingIngredient);
 
         // ── Single batch DB read for all cached trends ────────────────────────
         const requestedIds = [
@@ -344,7 +365,7 @@ export async function POST(req: Request) {
                         new Date(existing[existing.length - 1].date).getMonth() === currentMonth;
 
                     if (isFresh) {
-                        trends = existing.map((t: any) => ({
+                        trends = existing.map((t) => ({
                             date: t.date.toISOString(),
                             price: t.price,
                             source: t.source,
@@ -436,7 +457,7 @@ export async function POST(req: Request) {
 
         return NextResponse.json({ pricing: pricingResults });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Error fetching pricing:', error);
         return NextResponse.json({ error: 'Failed to fetch pricing' }, { status: 500 });
     }

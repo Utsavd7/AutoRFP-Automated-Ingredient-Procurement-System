@@ -151,10 +151,10 @@ Return ONLY the email body text — no subject line, no greeting needed.
             parsed
         });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Error in AI Email Parsing Webhook:', error);
         return NextResponse.json(
-            { error: error.message || 'Failed to parse email and save quote.' },
+            { error: error instanceof Error ? error.message : 'Failed to parse email and save quote.' },
             { status: 500 }
         );
     }

@@ -50,7 +50,7 @@ type SummaryInput = {
     mealName?: string | null;
     guestCount?: number | null;
     bufferPct?: number | null;
-    requestedIngredients?: any;
+    requestedIngredients?: unknown;
     workflowStatus?: string | null;
     recipes?: Array<{ ingredients?: Array<unknown> }>;
   };

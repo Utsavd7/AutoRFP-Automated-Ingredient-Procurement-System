@@ -64,7 +64,9 @@ export async function POST(req: Request) {
         }
 
         // Format the ingredient list for the email body
-        const ingredientListText = ingredients.map((ing: any) => `- ${ing.quantity} ${ing.unit} of ${ing.name}`).join('\n');
+        const ingredientListText = (ingredients as Array<{ quantity: unknown; unit: unknown; name: unknown }>)
+            .map((ingredient) => `- ${ingredient.quantity} ${ingredient.unit} of ${ingredient.name}`)
+            .join('\n');
         const orderContext = [
             mealName ? `Meal: ${mealName}` : '',
             guestCount ? `Guest count: ${guestCount}` : '',
@@ -143,10 +145,10 @@ AutoRFP Procurement Team
             rfps: sentRFPs
         });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Error sending RFPs:', error);
         return NextResponse.json(
-            { error: error.message || 'Failed to send RFP emails' },
+            { error: error instanceof Error ? error.message : 'Failed to send RFP emails' },
             { status: 500 }
         );
     }

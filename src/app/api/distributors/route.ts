@@ -151,8 +151,8 @@ export async function POST(req: Request) {
 
         return NextResponse.json({ distributors: savedDistributors, source: dataSource });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Error finding distributors:', error);
-        return NextResponse.json({ error: error.message || 'Failed to find distributors' }, { status: 500 });
+        return NextResponse.json({ error: error instanceof Error ? error.message : 'Failed to find distributors' }, { status: 500 });
     }
 }

@@ -58,7 +58,7 @@ export async function GET(
         }
 
         return NextResponse.json({ rfp });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Error fetching RFP:', error);
         return NextResponse.json(
             { error: 'Failed to fetch RFP details' },
@@ -125,10 +125,10 @@ export async function POST(
 
         return NextResponse.json({ success: true, quote: result.newQuote });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Error submitting quote:', error);
         return NextResponse.json(
-            { error: error.message || 'Failed to submit quote' },
+            { error: error instanceof Error ? error.message : 'Failed to submit quote' },
             { status: 500 }
         );
     }

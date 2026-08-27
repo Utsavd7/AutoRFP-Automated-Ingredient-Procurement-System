@@ -33,23 +33,24 @@ export async function GET(req: Request) {
         });
 
         // Flatten and format for the frontend
-        const formattedQuotes = rfps.map((rfp: any) => {
+        const formattedQuotes = rfps.flatMap((rfp) => {
             const bestQuote = rfp.quotes[0]; // Assuming the first one is the best due to order
-            return {
+            if (!bestQuote) return [];
+            return [{
                 ...bestQuote,
                 distributorName: rfp.distributor.name,
                 distributorLocation: rfp.distributor.location,
                 rfpId: rfp.id,
                 lifecycleStatus: rfp.status,
-            };
-        }).filter((q: any) => q.price !== undefined); // only include valid quotes
+            }];
+        });
 
         // Sort the final array by lowest total price
-        formattedQuotes.sort((a: any, b: any) => a.price - b.price);
+        formattedQuotes.sort((a, b) => a.price - b.price);
 
         return NextResponse.json({ quotes: formattedQuotes });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Error fetching quotes:', error);
         return NextResponse.json(
             { error: 'Failed to fetch quotes' },

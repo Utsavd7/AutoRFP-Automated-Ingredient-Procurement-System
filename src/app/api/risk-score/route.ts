@@ -118,8 +118,8 @@ export async function POST(req: Request) {
         scores.sort((a, b) => b.overall - a.overall);
 
         return NextResponse.json({ scores });
-    } catch (err: any) {
-        console.error('[risk-score]', err);
-        return NextResponse.json({ error: err.message }, { status: 500 });
+    } catch (error: unknown) {
+        console.error('[risk-score]', error);
+        return NextResponse.json({ error: error instanceof Error ? error.message : 'Failed to score supplier risk' }, { status: 500 });
     }
 }

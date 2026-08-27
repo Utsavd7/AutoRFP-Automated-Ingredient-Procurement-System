@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import type { Quote } from '@prisma/client';
 import { requireApiTenant } from '@/lib/api/require-api-tenant';
 import { isLegacyFeatureEnabled, legacyFeatureUnavailable } from '@/lib/features/legacy-features';
 import { callGroqThenOllama, parseJSON as parseLLMJSON } from '@/lib/llm';
@@ -7,6 +8,43 @@ import { ingestQuote } from '@/lib/chroma';
 import { prisma } from '@/lib/prisma';
 
 const MAX_TURNS = 1;
+
+interface IngredientInput {
+    name: string;
+    quantity: number;
+    unit: string;
+}
+
+interface PricingInput {
+    name: string;
+    currentPrice: number;
+}
+
+interface SimulationRequest {
+    rfpId?: string;
+    ingredients?: IngredientInput[];
+    pricingData?: PricingInput[];
+    mealName?: string;
+    guestCount?: number;
+    bufferPct?: number;
+}
+
+interface ParsedVendorQuote {
+    price?: number | string | null;
+    deliveryTerms?: string;
+    details?: string;
+    confidence?: string;
+    missingInfo?: string[];
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+    if (error instanceof Error) return error.message || fallback;
+    if (typeof error === 'object' && error !== null && 'message' in error) {
+        const message = error.message;
+        if (typeof message === 'string' && message) return message;
+    }
+    return fallback;
+}
 
 async function createQuoteIfRfpCurrent(input: {
     rfpId: string;
@@ -83,7 +121,14 @@ export async function POST(req: Request) {
     }
 
     try {
-        const { rfpId, ingredients = [], pricingData = [], mealName, guestCount, bufferPct } = await req.json();
+        const {
+            rfpId,
+            ingredients = [],
+            pricingData = [],
+            mealName,
+            guestCount,
+            bufferPct,
+        } = await req.json() as SimulationRequest;
         const tenantId = access.tenant.id;
 
         if (!rfpId) {
@@ -117,7 +162,7 @@ export async function POST(req: Request) {
         const hasRealPricing = estimatedTotal > 0;
 
         const conversationLog: { role: string; message: string }[] = [];
-        let quoteResult = null;
+        let quoteResult: Quote | null = null;
         let turn = 0;
         let lastMessage = '';
         let isFollowUp = false;
@@ -171,7 +216,8 @@ Vendor email:
                     { role: 'user', content: agentParsePrompt }
                 ], true);
 
-                const parsed = parseLLMJSON<any>(agentParseText) ?? JSON.parse(agentParseText || '{}');
+                const parsed = parseLLMJSON<ParsedVendorQuote>(agentParseText)
+                    ?? JSON.parse(agentParseText || '{}') as ParsedVendorQuote;
 
                 if (parsed.price && !isNaN(Number(parsed.price)) && parsed.confidence !== 'LOW') {
                     const details = [
@@ -201,7 +247,7 @@ Vendor email:
                     // Async RAG ingest — fire and forget, never blocks the response
                     const ingText = `Supplier: ${rfp.distributor.name}, Location: ${rfp.distributor.location}. Quoted $${newQuote.price.toFixed(2)} for ${ingredients.length} ingredients. Details: ${newQuote.details ?? 'N/A'}`;
                     getEmbedding(ingText).then(emb => {
-                        if (emb) ingestQuote({ id: newQuote.id, text: ingText, embedding: emb, metadata: { tenantId, distributorName: rfp.distributor.name, location: rfp.distributor.location, price: newQuote.price, ingredients: ingredients.map((i: any) => i.name).join(', '), timestamp: new Date().toISOString() } });
+                        if (emb) ingestQuote({ id: newQuote.id, text: ingText, embedding: emb, metadata: { tenantId, distributorName: rfp.distributor.name, location: rfp.distributor.location, price: newQuote.price, ingredients: ingredients.map((ingredient) => ingredient.name).join(', '), timestamp: new Date().toISOString() } });
                     }).catch(() => {});
 
                     conversationLog.push({
@@ -222,8 +268,11 @@ Write a short, polite follow-up asking for clarification (2-3 sentences only).`;
                     isFollowUp = true;
                 }
             }
-        } catch (aiError: any) {
-            console.warn('LLM providers failed during conversation simulation, attempting simplified fallback call:', aiError.message);
+        } catch (aiError: unknown) {
+            console.warn(
+                'LLM providers failed during conversation simulation, attempting simplified fallback call:',
+                errorMessage(aiError, 'Unknown provider error'),
+            );
 
             // Deterministic vendor margin: hash the distributor name to a stable 8–15% markup
             let nameHash = 0;
@@ -274,7 +323,7 @@ Write a short, polite follow-up asking for clarification (2-3 sentences only).`;
             // Async RAG ingest — fire and forget
             const ingText2 = `Supplier: ${rfp.distributor.name}, Location: ${rfp.distributor.location}. Quoted $${newQuote.price.toFixed(2)} for ${ingredients.length} ingredients. Details: ${newQuote.details ?? 'N/A'}`;
             getEmbedding(ingText2).then(emb => {
-                if (emb) ingestQuote({ id: newQuote.id, text: ingText2, embedding: emb, metadata: { tenantId, distributorName: rfp.distributor.name, location: rfp.distributor.location, price: newQuote.price, ingredients: ingredients.map((i: any) => i.name).join(', '), timestamp: new Date().toISOString() } });
+                if (emb) ingestQuote({ id: newQuote.id, text: ingText2, embedding: emb, metadata: { tenantId, distributorName: rfp.distributor.name, location: rfp.distributor.location, price: newQuote.price, ingredients: ingredients.map((ingredient) => ingredient.name).join(', '), timestamp: new Date().toISOString() } });
             }).catch(() => {});
 
             turn = 1;
@@ -291,8 +340,8 @@ Write a short, polite follow-up asking for clarification (2-3 sentences only).`;
                 : `Conversation completed ${turn} turns but no clear quote was extracted.`
         });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Simulation error:', error);
-        return NextResponse.json({ error: error.message || 'Simulation failed' }, { status: 500 });
+        return NextResponse.json({ error: errorMessage(error, 'Simulation failed') }, { status: 500 });
     }
 }

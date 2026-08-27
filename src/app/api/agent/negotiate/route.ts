@@ -26,6 +26,72 @@ interface NegotiationResult {
     decision: string;
 }
 
+interface OrchestratorPlan {
+    strategy: string;
+    targetVendors: string[];
+    estimatedTotalSavings: number;
+    approachNotes: string;
+}
+
+interface VendorAnalysis {
+    vendorName: string;
+    originalPrice: number;
+    estimatedMarkupPct: string;
+    fairCounterPrice: number;
+    priority: 'HIGH' | 'MEDIUM' | 'SKIP';
+    leverage: string;
+}
+
+interface MarketAnalysis {
+    vendorAnalysis: VendorAnalysis[];
+    marketInsight: string;
+}
+
+interface CounterOffer {
+    subject: string;
+    body: string;
+    counterPrice: number;
+    keyPoints: string[];
+}
+
+interface VendorReply {
+    subject: string;
+    body: string;
+    decision: 'ACCEPT' | 'COUNTER' | 'HOLD';
+    finalPrice: number;
+    reasoning: string;
+}
+
+interface AuditResult {
+    winner: string;
+    winnerFinalPrice: number;
+    totalSavingsAchieved: number;
+    savingsPercentage: number;
+    executiveSummary: string;
+    actionItems: string[];
+    verdict: 'EXCELLENT' | 'GOOD' | 'ACCEPTABLE';
+}
+
+interface BuyerReport {
+    winner: string;
+    winnerPrice: number;
+    totalSavings: number;
+    savingsPercentage: number;
+    verdict: AuditResult['verdict'];
+    executiveSummary: string;
+    actionItems: string[];
+    negotiationResults: NegotiationResult[];
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+    if (error instanceof Error) return error.message || fallback;
+    if (typeof error === 'object' && error !== null && 'message' in error) {
+        const message = error.message;
+        if (typeof message === 'string' && message) return message;
+    }
+    return fallback;
+}
+
 // ─── Agent Definitions ────────────────────────────────────────────────────────
 
 const AGENTS = {
@@ -61,16 +127,19 @@ const AGENTS = {
     },
 } as const;
 
-async function callAgent(agentKey: keyof typeof AGENTS, prompt: string): Promise<Record<string, unknown>> {
+async function callAgent<T extends object = Record<string, unknown>>(
+    agentKey: keyof typeof AGENTS,
+    prompt: string,
+): Promise<T> {
     const agent = AGENTS[agentKey];
     const messages: { role: 'system' | 'user'; content: string }[] = [
         { role: 'system', content: agent.system },
         { role: 'user', content: prompt },
     ];
     const text = await callGroqThenOllama(messages, true);
-    const parsed = parseLLMJSON<Record<string, unknown>>(text);
+    const parsed = parseLLMJSON<T>(text);
     if (parsed && Object.keys(parsed).length > 0) return parsed;
-    return JSON.parse(text || '{}');
+    return JSON.parse(text || '{}') as T;
 }
 
 // ─── Request-scoped SSE Senders ───────────────────────────────────────────────
@@ -94,12 +163,12 @@ const NegotiationState = Annotation.Root({
     marketContextStr: Annotation<string>({ reducer: (_, b) => b, default: () => '' }),
     lowestQuote: Annotation<number>({ reducer: (_, b) => b, default: () => 0 }),
     highestQuote: Annotation<number>({ reducer: (_, b) => b, default: () => 0 }),
-    orchestratorPlan: Annotation<Record<string, any>>({ reducer: (_, b) => b, default: () => ({}) }),
-    marketAnalysis: Annotation<Record<string, any>>({ reducer: (_, b) => b, default: () => ({ vendorAnalysis: [] }) }),
+    orchestratorPlan: Annotation<Partial<OrchestratorPlan>>({ reducer: (_, b) => b, default: () => ({}) }),
+    marketAnalysis: Annotation<MarketAnalysis>({ reducer: (_, b) => b, default: () => ({ vendorAnalysis: [], marketInsight: '' }) }),
     // accumulates as each vendor round completes
     negotiationResults: Annotation<NegotiationResult[]>({ reducer: (a, b) => [...a, ...b], default: () => [] }),
-    auditResult: Annotation<Record<string, any>>({ reducer: (_, b) => b, default: () => ({}) }),
-    completePayload: Annotation<Record<string, any> | null>({ reducer: (_, b) => b, default: () => null }),
+    auditResult: Annotation<Partial<AuditResult>>({ reducer: (_, b) => b, default: () => ({}) }),
+    completePayload: Annotation<BuyerReport | null>({ reducer: (_, b) => b, default: () => null }),
 });
 
 type NegotiationStateType = typeof NegotiationState.State;
@@ -108,7 +177,7 @@ type NegotiationStateType = typeof NegotiationState.State;
 
 async function loadDataNode(state: NegotiationStateType): Promise<Partial<NegotiationStateType>> {
     const { menuId, tenantId } = state;
-    const rfps = await (prisma as any).rFP.findMany({
+    const rfps = await prisma.rFP.findMany({
         where: { menuId, tenantId, status: 'REPLIED' },
         include: {
             distributor: true,
@@ -128,7 +197,7 @@ async function loadDataNode(state: NegotiationStateType): Promise<Partial<Negoti
         data: { status: 'NEGOTIATING', negotiatedAt: new Date() },
     });
 
-    const quotes: QuoteItem[] = rfps.map((rfp: any) => ({
+    const quotes: QuoteItem[] = rfps.map((rfp) => ({
         rfpId: rfp.id,
         vendorName: rfp.distributor.name,
         location: rfp.distributor.location,
@@ -136,7 +205,7 @@ async function loadDataNode(state: NegotiationStateType): Promise<Partial<Negoti
         details: rfp.quotes[0]?.details ?? '',
     }));
 
-    const menu = await (prisma as any).menu.findFirst({
+    const menu = await prisma.menu.findFirst({
         where: { id: menuId, tenantId },
         include: {
             recipes: {
@@ -161,7 +230,7 @@ async function loadDataNode(state: NegotiationStateType): Promise<Partial<Negoti
     }
 
     const marketContextStr = Object.keys(marketPrices).length > 0
-        ? Object.entries(marketPrices).slice(0, 8).map(([k, v]) => `${k}: $${(v as number).toFixed(2)}/unit`).join(', ')
+        ? Object.entries(marketPrices).slice(0, 8).map(([k, v]) => `${k}: $${v.toFixed(2)}/unit`).join(', ')
         : 'Wholesale market pricing estimates unavailable';
 
     const prices = quotes.map(q => q.originalPrice);
@@ -187,9 +256,9 @@ async function orchestrateNode(state: NegotiationStateType): Promise<Partial<Neg
         task: `Analyzing ${quotes.length} vendor quotes and planning optimal negotiation strategy`,
     });
 
-    let orchestratorPlan: Record<string, any>;
+    let orchestratorPlan: OrchestratorPlan;
     try {
-        orchestratorPlan = await callAgent('orchestrator', `
+        orchestratorPlan = await callAgent<OrchestratorPlan>('orchestrator', `
 You received quotes from ${quotes.length} vendors:
 ${quotes.map(q => `  • ${q.vendorName} (${q.location}): $${q.originalPrice.toFixed(2)}`).join('\n')}
 
@@ -232,9 +301,9 @@ async function analyzeNode(state: NegotiationStateType): Promise<Partial<Negotia
         task: `Running market comparison analysis — checking all ${quotes.length} quotes against live market data`,
     });
 
-    let marketAnalysis: Record<string, any>;
+    let marketAnalysis: MarketAnalysis;
     try {
-        marketAnalysis = await callAgent('analyst', `
+        marketAnalysis = await callAgent<MarketAnalysis>('analyst', `
 Analyze these vendor quotes against current wholesale market data.
 
 Vendor quotes:
@@ -304,7 +373,7 @@ async function negotiateNode(state: NegotiationStateType): Promise<Partial<Negot
     const negotiationResults: NegotiationResult[] = [];
 
     for (const vendor of vendorsToNegotiate) {
-        const vendorAnalysis = (marketAnalysis.vendorAnalysis as any[])?.find(v => v.vendorName === vendor.vendorName);
+        const vendorAnalysis = marketAnalysis.vendorAnalysis.find(v => v.vendorName === vendor.vendorName);
         const counterTarget: number = vendorAnalysis?.fairCounterPrice ?? +(vendor.originalPrice * 0.91).toFixed(2);
         const leverage: string = vendorAnalysis?.leverage ?? 'Current wholesale market prices indicate room for a reduction.';
 
@@ -316,9 +385,9 @@ async function negotiateNode(state: NegotiationStateType): Promise<Partial<Negot
             task: `Drafting data-backed counter-offer email to ${vendor.vendorName}`,
         });
 
-        let counterOffer: Record<string, any>;
+        let counterOffer: CounterOffer;
         try {
-            counterOffer = await callAgent('negotiator', `
+            counterOffer = await callAgent<CounterOffer>('negotiator', `
 Draft a professional counter-offer email to ${vendor.vendorName}.
 
 Their quoted price: $${vendor.originalPrice.toFixed(2)}
@@ -361,9 +430,9 @@ Return JSON:
             task: `${vendor.vendorName} reviewing counter-offer and preparing response...`,
         });
 
-        let vendorReply: Record<string, any>;
+        let vendorReply: VendorReply;
         try {
-            vendorReply = await callAgent('vendor', `
+            vendorReply = await callAgent<VendorReply>('vendor', `
 You are the sales team at ${vendor.vendorName}, a wholesale food distributor based in ${vendor.location}.
 
 You just received this counter-offer from a restaurant procurement system:
@@ -442,9 +511,9 @@ async function finalizeNode(state: NegotiationStateType): Promise<Partial<Negoti
     const totalSavings = negotiationResults.reduce((s, r) => s + r.savings, 0);
     const bestDeal = negotiationResults.reduce((best, curr) => curr.negotiatedPrice < best.negotiatedPrice ? curr : best);
 
-    let auditResult: Record<string, any>;
+    let auditResult: AuditResult;
     try {
-        auditResult = await callAgent('auditor', `
+        auditResult = await callAgent<AuditResult>('auditor', `
 Audit this procurement negotiation outcome:
 
 Results by vendor:
@@ -518,7 +587,16 @@ Return JSON:
     }
 
     // Email buyer report
-    await sendBuyerReport({ winner: auditResult.winner, winnerPrice: auditResult.winnerFinalPrice, totalSavings: auditResult.totalSavingsAchieved, savingsPercentage: auditResult.savingsPercentage, verdict: auditResult.verdict, executiveSummary: auditResult.executiveSummary, actionItems: auditResult.actionItems ?? [], negotiationResults }, quotes);
+    await sendBuyerReport({
+        winner: auditResult.winner,
+        winnerPrice: auditResult.winnerFinalPrice,
+        totalSavings: auditResult.totalSavingsAchieved,
+        savingsPercentage: auditResult.savingsPercentage,
+        verdict: auditResult.verdict,
+        executiveSummary: auditResult.executiveSummary,
+        actionItems: auditResult.actionItems ?? [],
+        negotiationResults,
+    });
 
     const completePayload = {
         winner: auditResult.winner ?? bestDeal.vendorName,
@@ -536,7 +614,7 @@ Return JSON:
 
 // ─── Buyer Report Email ───────────────────────────────────────────────────────
 
-async function sendBuyerReport(result: any, quotes: QuoteItem[]) {
+async function sendBuyerReport(result: BuyerReport) {
     if (process.env.AUTORFP_SEND_BUYER_REPORT !== 'true') return;
     const buyerEmail = process.env.BUYER_EMAIL;
     const resendKey = process.env.RESEND_API_KEY;
@@ -546,7 +624,7 @@ async function sendBuyerReport(result: any, quotes: QuoteItem[]) {
     const now = new Date().toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short' });
     const verdictColor = result.verdict === 'EXCELLENT' ? '#10b981' : result.verdict === 'GOOD' ? '#3b82f6' : '#f59e0b';
 
-    const rows = (result.negotiationResults ?? []).map((r: any) => `
+    const rows = result.negotiationResults.map((r) => `
         <tr style="border-bottom:1px solid #1f2937;">
           <td style="padding:10px 16px;font-weight:600;color:#f9fafb;">${r.vendorName}</td>
           <td style="padding:10px 16px;text-align:right;color:#9ca3af;text-decoration:line-through;">$${Number(r.originalPrice).toFixed(2)}</td>
@@ -599,8 +677,8 @@ async function sendBuyerReport(result: any, quotes: QuoteItem[]) {
             subject: `Procurement Report — ${result.winner} selected · −$${Number(result.totalSavings).toFixed(2)} saved`,
             html,
         });
-    } catch (err: any) {
-        console.error('[negotiate] Buyer report email failed:', err.message);
+    } catch (error: unknown) {
+        console.error('[negotiate] Buyer report email failed:', errorMessage(error, 'Unknown email error'));
     }
 }
 
@@ -663,8 +741,8 @@ export async function GET(req: Request) {
                 if (finalState.completePayload) {
                     send('complete', finalState.completePayload);
                 }
-            } catch (error: any) {
-                send('error', { message: error.message || 'Negotiation pipeline failed' });
+            } catch (error: unknown) {
+                send('error', { message: errorMessage(error, 'Negotiation pipeline failed') });
             } finally {
                 _senders.delete(requestId);
                 controller.close();

@@ -15,6 +15,22 @@ type RecommendationResult = {
     savings: number;
 };
 
+type QuoteSummary = {
+    distributorName: string;
+    location: string;
+    price: number;
+    details: string;
+};
+
+function errorMessage(error: unknown, fallback: string): string {
+    if (error instanceof Error) return error.message || fallback;
+    if (typeof error === 'object' && error !== null && 'message' in error) {
+        const message = error.message;
+        if (typeof message === 'string' && message) return message;
+    }
+    return fallback;
+}
+
 // GET /api/recommend?menuId=xxx
 export async function GET(req: Request) {
     const access = await requireApiTenant();
@@ -43,14 +59,14 @@ export async function GET(req: Request) {
                     },
                 },
             },
-        } as any);
+        });
 
         if (!menu) {
             return NextResponse.json({ error: 'Menu not found.' }, { status: 404 });
         }
 
         const rfps = await prisma.rFP.findMany({
-            where: { menuId, tenantId, status: 'REPLIED' } as any,
+            where: { menuId, tenantId, status: 'REPLIED' },
             include: {
                 distributor: true,
                 quotes: { orderBy: { price: 'asc' }, take: 1 },
@@ -61,19 +77,26 @@ export async function GET(req: Request) {
             return NextResponse.json({ error: 'No quotes received yet. Cannot make a recommendation.' }, { status: 404 });
         }
 
-        const quotesSummary = rfps.map((rfp: any) => ({
-            distributorName: rfp.distributor.name,
-            location: rfp.distributor.location,
-            price: rfp.quotes[0]?.price,
-            details: rfp.quotes[0]?.details || 'No details provided',
-        })).filter((q: any) => typeof q.price === 'number');
+        const quotesSummary = rfps
+            .map((rfp): QuoteSummary | null => {
+                const price = rfp.quotes[0]?.price;
+                if (typeof price !== 'number') return null;
+
+                return {
+                    distributorName: rfp.distributor.name,
+                    location: rfp.distributor.location,
+                    price,
+                    details: rfp.quotes[0]?.details || 'No details provided',
+                };
+            })
+            .filter((quote): quote is QuoteSummary => quote !== null);
 
         if (quotesSummary.length === 0) {
             return NextResponse.json({ error: 'No valid quote prices received yet.' }, { status: 404 });
         }
 
         const ingredientPricingMap = new Map<string, number>();
-        for (const recipe of (menu as any)?.recipes ?? []) {
+        for (const recipe of menu.recipes) {
             for (const ing of recipe.ingredients) {
                 if (ing.pricingTrends?.length > 0) {
                     const p = ing.pricingTrends[0].price;
@@ -145,8 +168,12 @@ Return ONLY this JSON:
 
         console.log('recommend: Ollama →', ollamaSettled.status, ollamaRec?.recommendedDistributor ?? 'no result');
         console.log('recommend: Groq   →', groqSettled.status, groqRec?.recommendedDistributor ?? 'no result');
-        if (ollamaSettled.status === 'rejected') console.warn('Ollama recommend failed:', (ollamaSettled as any).reason?.message);
-        if (groqSettled.status === 'rejected') console.warn('Groq recommend failed:', (groqSettled as any).reason?.message);
+        if (ollamaSettled.status === 'rejected') {
+            console.warn('Ollama recommend failed:', errorMessage(ollamaSettled.reason, 'Unknown provider error'));
+        }
+        if (groqSettled.status === 'rejected') {
+            console.warn('Groq recommend failed:', errorMessage(groqSettled.reason, 'Unknown provider error'));
+        }
 
         // Cross-verify
         const agreed = !!(ollamaRec && groqRec &&
@@ -159,8 +186,8 @@ Return ONLY this JSON:
 
         // If both AI models failed, compute a simple price-based fallback
         if (!recommendation) {
-            const cheapest = quotesSummary.reduce((a: any, b: any) => a.price < b.price ? a : b);
-            const expensive = quotesSummary.reduce((a: any, b: any) => a.price > b.price ? a : b);
+            const cheapest = quotesSummary.reduce((a, b) => a.price < b.price ? a : b);
+            const expensive = quotesSummary.reduce((a, b) => a.price > b.price ? a : b);
             recommendation = {
                 recommendedDistributor: cheapest.distributorName,
                 reasoning: `${cheapest.distributorName} offers the lowest price at $${cheapest.price?.toFixed(2)}.`,
@@ -169,9 +196,9 @@ Return ONLY this JSON:
             };
         }
 
-        const highestQuote = Math.max(...quotesSummary.map((q: any) => q.price));
-        const lowestQuote = Math.min(...quotesSummary.map((q: any) => q.price));
-        const recommendedQuote = quotesSummary.find((q: any) =>
+        const highestQuote = Math.max(...quotesSummary.map((q) => q.price));
+        const lowestQuote = Math.min(...quotesSummary.map((q) => q.price));
+        const recommendedQuote = quotesSummary.find((q) =>
             q.distributorName.trim().toLowerCase() === recommendation!.recommendedDistributor.trim().toLowerCase()
         );
         const computedSavings = recommendedQuote ? highestQuote - recommendedQuote.price : highestQuote - lowestQuote;
@@ -189,11 +216,11 @@ Return ONLY this JSON:
                 ragEnhanced: ragContext.length > 0,
             },
             quotes: quotesSummary,
-            lowestPrice: Math.min(...quotesSummary.map((q: any) => q.price)),
+            lowestPrice: Math.min(...quotesSummary.map((q) => q.price)),
         });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Error generating recommendation:', error);
-        return NextResponse.json({ error: error.message || 'Failed to generate recommendation' }, { status: 500 });
+        return NextResponse.json({ error: errorMessage(error, 'Failed to generate recommendation') }, { status: 500 });
     }
 }

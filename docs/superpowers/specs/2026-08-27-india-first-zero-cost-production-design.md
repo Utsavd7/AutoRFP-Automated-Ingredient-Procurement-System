@@ -1,5 +1,7 @@
 # AutoRFP India-First Production Design
 
+> **Superseded on 2026-08-27.** This OCI, Better Auth, worker, and local-AI design is retained for decision history only. The current source of truth is `2026-08-27-launch-product-experience-design.md`.
+
 **Status:** Approved by the user for implementation planning
 
 **Date:** 2026-08-27

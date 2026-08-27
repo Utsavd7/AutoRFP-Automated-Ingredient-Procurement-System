@@ -168,4 +168,23 @@ describe('problemResponse', () => {
       circularArray: ['retained'],
     });
   });
+
+  it('retains repeated non-circular object and array references', async () => {
+    const sharedRecord = { safe: 'retained' };
+    const sharedArray = ['also retained'];
+
+    const response = problemResponse(400, 'Bad request', 'Check the request.', {
+      firstRecord: sharedRecord,
+      secondRecord: sharedRecord,
+      firstArray: sharedArray,
+      secondArray: sharedArray,
+    });
+
+    await expect(response.json()).resolves.toMatchObject({
+      firstRecord: { safe: 'retained' },
+      secondRecord: { safe: 'retained' },
+      firstArray: ['also retained'],
+      secondArray: ['also retained'],
+    });
+  });
 });

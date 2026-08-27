@@ -6,23 +6,28 @@ const OMITTED_EXTENSION_VALUE = Symbol('omitted-extension-value');
 
 function sanitizeExtensionRecord(
   value: Record<string, unknown>,
-  visited: WeakSet<object>,
+  activeObjects: WeakSet<object>,
   omitCoreKeys = false,
 ) {
-  visited.add(value);
-  const entries: [string, unknown][] = [];
+  activeObjects.add(value);
 
-  for (const key of Object.keys(value)) {
-    if (RESERVED_EXTENSION_KEYS.has(key) || (omitCoreKeys && CORE_PROBLEM_KEYS.has(key))) continue;
+  try {
+    const entries: [string, unknown][] = [];
 
-    const sanitizedValue = sanitizeExtensionValue(value[key], visited);
-    if (sanitizedValue !== OMITTED_EXTENSION_VALUE) entries.push([key, sanitizedValue]);
+    for (const key of Object.keys(value)) {
+      if (RESERVED_EXTENSION_KEYS.has(key) || (omitCoreKeys && CORE_PROBLEM_KEYS.has(key))) continue;
+
+      const sanitizedValue = sanitizeExtensionValue(value[key], activeObjects);
+      if (sanitizedValue !== OMITTED_EXTENSION_VALUE) entries.push([key, sanitizedValue]);
+    }
+
+    return Object.fromEntries(entries);
+  } finally {
+    activeObjects.delete(value);
   }
-
-  return Object.fromEntries(entries);
 }
 
-function sanitizeExtensionValue(value: unknown, visited: WeakSet<object>): unknown {
+function sanitizeExtensionValue(value: unknown, activeObjects: WeakSet<object>): unknown {
   if (typeof value === 'function' || value instanceof Error) return OMITTED_EXTENSION_VALUE;
 
   if (value instanceof Date) {
@@ -31,17 +36,22 @@ function sanitizeExtensionValue(value: unknown, visited: WeakSet<object>): unkno
   }
 
   if (!value || typeof value !== 'object') return value;
-  if (visited.has(value)) return OMITTED_EXTENSION_VALUE;
+  if (activeObjects.has(value)) return OMITTED_EXTENSION_VALUE;
 
   if (Array.isArray(value)) {
-    visited.add(value);
-    return value.flatMap((item) => {
-      const sanitizedItem = sanitizeExtensionValue(item, visited);
-      return sanitizedItem === OMITTED_EXTENSION_VALUE ? [] : [sanitizedItem];
-    });
+    activeObjects.add(value);
+
+    try {
+      return value.flatMap((item) => {
+        const sanitizedItem = sanitizeExtensionValue(item, activeObjects);
+        return sanitizedItem === OMITTED_EXTENSION_VALUE ? [] : [sanitizedItem];
+      });
+    } finally {
+      activeObjects.delete(value);
+    }
   }
 
-  return sanitizeExtensionRecord(value as Record<string, unknown>, visited);
+  return sanitizeExtensionRecord(value as Record<string, unknown>, activeObjects);
 }
 
 export function problemResponse(

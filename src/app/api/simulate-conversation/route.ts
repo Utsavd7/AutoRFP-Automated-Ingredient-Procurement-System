@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { requireApiTenant } from '@/lib/api/require-api-tenant';
 import { callGroqThenOllama, parseJSON as parseLLMJSON } from '@/lib/llm';
 import { getEmbedding } from '@/lib/embeddings';
 import { ingestQuote } from '@/lib/chroma';
@@ -44,15 +45,19 @@ function buildIngredientBreakdown(
 
 // POST /api/simulate-conversation
 export async function POST(req: Request) {
+    const access = await requireApiTenant();
+    if (access.response) return access.response;
+
     try {
-        const { rfpId, ingredients = [], pricingData = [], tenantId = 'tenant_demo', mealName, guestCount, bufferPct } = await req.json();
+        const { rfpId, ingredients = [], pricingData = [], mealName, guestCount, bufferPct } = await req.json();
+        const tenantId = access.tenant.id;
 
         if (!rfpId) {
             return NextResponse.json({ error: 'rfpId is required.' }, { status: 400 });
         }
 
-        const rfp = await prisma.rFP.findUnique({
-            where: { id: rfpId },
+        const rfp = await prisma.rFP.findFirst({
+            where: { id: rfpId, tenantId },
             include: { distributor: true }
         });
 
@@ -234,7 +239,7 @@ Write a short, polite follow-up asking for clarification (2-3 sentences only).`;
             // Async RAG ingest — fire and forget
             const ingText2 = `Supplier: ${rfp.distributor.name}, Location: ${rfp.distributor.location}. Quoted $${newQuote.price.toFixed(2)} for ${ingredients.length} ingredients. Details: ${newQuote.details ?? 'N/A'}`;
             getEmbedding(ingText2).then(emb => {
-                if (emb) ingestQuote({ id: newQuote.id, text: ingText2, embedding: emb, metadata: { distributorName: rfp.distributor.name, location: rfp.distributor.location, price: newQuote.price, ingredients: ingredients.map((i: any) => i.name).join(', '), timestamp: new Date().toISOString() } });
+                if (emb) ingestQuote({ id: newQuote.id, text: ingText2, embedding: emb, metadata: { tenantId, distributorName: rfp.distributor.name, location: rfp.distributor.location, price: newQuote.price, ingredients: ingredients.map((i: any) => i.name).join(', '), timestamp: new Date().toISOString() } });
             }).catch(() => {});
 
             turn = 1;

@@ -1,5 +1,7 @@
 import { Annotation, StateGraph, START, END } from '@langchain/langgraph';
 import { Resend } from 'resend';
+import { problemResponse } from '@/lib/api/problem';
+import { requireApiTenant } from '@/lib/api/require-api-tenant';
 import { getEmbedding } from '@/lib/embeddings';
 import { ingestQuote } from '@/lib/chroma';
 import { prisma } from '@/lib/prisma';
@@ -115,13 +117,13 @@ async function loadDataNode(state: NegotiationStateType): Promise<Partial<Negoti
 
     if (rfps.length === 0) throw new Error('No vendor quotes found. Complete Step 4 first.');
 
-    await prisma.menu.update({
-        where: { id: menuId },
+    await prisma.menu.updateMany({
+        where: { id: menuId, tenantId },
         data: { workflowStatus: 'NEGOTIATING', lastActivityAt: new Date() },
     });
 
     await prisma.rFP.updateMany({
-        where: { menuId, status: 'REPLIED' },
+        where: { menuId, tenantId, status: 'REPLIED' },
         data: { status: 'NEGOTIATING', negotiatedAt: new Date() },
     });
 
@@ -133,8 +135,8 @@ async function loadDataNode(state: NegotiationStateType): Promise<Partial<Negoti
         details: rfp.quotes[0]?.details ?? '',
     }));
 
-    const menu = await (prisma as any).menu.findUnique({
-        where: { id: menuId },
+    const menu = await (prisma as any).menu.findFirst({
+        where: { id: menuId, tenantId },
         include: {
             recipes: {
                 include: {
@@ -486,14 +488,14 @@ Return JSON:
         if (!vendor?.rfpId) continue;
         const isWinner = String(result.vendorName ?? '').trim().toLowerCase() === winnerName;
         const finalStatus = isWinner ? 'ACCEPTED' : 'DECLINED';
-        await prisma.rFP.update({
-            where: { id: vendor.rfpId },
+        await prisma.rFP.updateMany({
+            where: { id: vendor.rfpId, tenantId },
             data: { status: finalStatus, acceptedAt: isWinner ? new Date() : undefined, negotiatedAt: new Date() },
         });
     }
 
-    await prisma.menu.update({
-        where: { id: menuId },
+    await prisma.menu.updateMany({
+        where: { id: menuId, tenantId },
         data: { workflowStatus: 'NEGOTIATION_COMPLETE', lastActivityAt: new Date() },
     });
 
@@ -620,9 +622,24 @@ const negotiationGraph = new StateGraph(NegotiationState)
 // ─── Route Handler ────────────────────────────────────────────────────────────
 
 export async function GET(req: Request) {
+    const access = await requireApiTenant();
+    if (access.response) return access.response;
+
     const { searchParams } = new URL(req.url);
     const menuId = searchParams.get('menuId');
-    const tenantId = searchParams.get('tenantId') ?? 'tenant_demo';
+    const tenantId = access.tenant.id;
+
+    if (!menuId) {
+        return problemResponse(400, 'Invalid request', 'menuId is required.');
+    }
+
+    const menu = await prisma.menu.findFirst({
+        where: { id: menuId, tenantId },
+        select: { id: true },
+    });
+    if (!menu) {
+        return problemResponse(404, 'Not found', 'Menu not found.');
+    }
 
     const encoder = new TextEncoder();
 
@@ -634,12 +651,6 @@ export async function GET(req: Request) {
                     controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
                 } catch { /* client disconnected */ }
             };
-
-            if (!menuId) {
-                send('error', { message: 'menuId is required' });
-                controller.close();
-                return;
-            }
 
             _senders.set(requestId, send);
 

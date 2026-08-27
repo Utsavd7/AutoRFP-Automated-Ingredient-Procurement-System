@@ -17,7 +17,50 @@ const sourcePath = (...segments: string[]) =>
 const readSource = (...segments: string[]) =>
   readFileSync(sourcePath(...segments), 'utf8');
 
+const authenticatedRoutes = [
+  'parse-menu',
+  'quotes',
+  'pricing',
+  'distributors',
+  'risk-score',
+  'ml/forecast',
+  'send-rfp',
+  'simulate-conversation',
+  'recommend',
+  'agent/negotiate',
+  'webhooks/inbound-email',
+];
+
 describe('public route surface', () => {
+  test.each(authenticatedRoutes)(
+    'derives the %s tenant before request-controlled work',
+    (route) => {
+      const source = readSource('app', 'api', ...route.split('/'), 'route.ts');
+      const handlerStart = source.search(/export async function (?:GET|POST)/);
+      const handlerSource = source.slice(handlerStart);
+      const guardStart = handlerSource.indexOf(
+        'const access = await requireApiTenant();',
+      );
+      const requestBodyStart = handlerSource.indexOf('await req.json()');
+      const streamStart = handlerSource.indexOf('new ReadableStream');
+
+      expect(source).toContain(
+        "import { requireApiTenant } from '@/lib/api/require-api-tenant';",
+      );
+      expect(handlerStart).toBeGreaterThanOrEqual(0);
+      expect(guardStart).toBeGreaterThanOrEqual(0);
+      expect(handlerSource).toContain('if (access.response) return access.response;');
+      if (requestBodyStart >= 0) expect(guardStart).toBeLessThan(requestBodyStart);
+      if (streamStart >= 0) expect(guardStart).toBeLessThan(streamStart);
+      expect(handlerSource).not.toMatch(
+        /searchParams\.get\((['"])tenantId\1\)/,
+      );
+      expect(handlerSource).not.toMatch(
+        /const\s*\{[\s\S]*?\btenantId\b[\s\S]*?\}\s*=\s*await req\.json\(\)/,
+      );
+    },
+  );
+
   it('does not expose a public LLM diagnostics route', () => {
     expect(existsSync(sourcePath('app', 'api', 'debug-llm', 'route.ts'))).toBe(
       false,

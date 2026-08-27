@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
+import { requireApiTenant } from '@/lib/api/require-api-tenant';
 import { callGroqThenOllama, parseJSON as parseLLMJSON } from '@/lib/llm';
 
 const prisma = new PrismaClient();
@@ -272,6 +273,9 @@ async function fetchLiveCommodityPrice(name: string): Promise<{ price: number; s
 }
 
 export async function POST(req: Request) {
+    const access = await requireApiTenant();
+    if (access.response) return access.response;
+
     try {
         const { ingredients } = await req.json();
 
@@ -284,7 +288,28 @@ export async function POST(req: Request) {
         const validIngredients = (ingredients as any[]).filter(ing => ing.name);
 
         // ── Single batch DB read for all cached trends ────────────────────────
-        const allIds = validIngredients.map(i => i.id).filter(Boolean);
+        const requestedIds = [
+            ...new Set(
+                validIngredients
+                    .map((ingredient) => ingredient.id)
+                    .filter((id): id is string => typeof id === 'string' && id.length > 0),
+            ),
+        ];
+        const ownedIngredients = requestedIds.length > 0
+            ? await prisma.ingredient.findMany({
+                where: {
+                    id: { in: requestedIds },
+                    recipe: { menu: { tenantId: access.tenant.id } },
+                },
+                select: { id: true },
+              })
+            : [];
+
+        if (ownedIngredients.length !== requestedIds.length) {
+            return NextResponse.json({ error: 'Ingredient not found' }, { status: 404 });
+        }
+
+        const allIds = ownedIngredients.map((ingredient) => ingredient.id);
         const allCached = allIds.length > 0
             ? await prisma.pricingTrend.findMany({
                 where: { ingredientId: { in: allIds } },

@@ -1,18 +1,32 @@
 import { NextResponse } from 'next/server';
+import { requireApiTenant } from '@/lib/api/require-api-tenant';
 import { prisma } from '@/lib/prisma';
 
 // In a real application, you would use an email service like Resend or Nodemailer
 // e.g., import { Resend } from 'resend'; const resend = new Resend(process.env.RESEND_API_KEY);
 
 export async function POST(req: Request) {
+    const access = await requireApiTenant();
+    if (access.response) return access.response;
+
     try {
-        const { distributorIds, menuId, ingredients, tenantId = 'tenant_demo', mealName, guestCount, bufferPct } = await req.json();
+        const { distributorIds, menuId, ingredients, mealName, guestCount, bufferPct } = await req.json();
+        const tenantId = access.tenant.id;
 
         if (!distributorIds || distributorIds.length === 0 || !menuId || !ingredients) {
             return NextResponse.json(
                 { error: 'Missing required fields: distributorIds, menuId, or ingredients.' },
                 { status: 400 }
             );
+        }
+
+        const menu = await prisma.menu.findFirst({
+            where: { id: menuId, tenantId },
+            select: { id: true },
+        });
+
+        if (!menu) {
+            return NextResponse.json({ error: 'Menu not found.' }, { status: 404 });
         }
 
         const distributors = await prisma.distributor.findMany({
@@ -29,7 +43,7 @@ export async function POST(req: Request) {
         const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
         await prisma.menu.update({
-            where: { id: menuId },
+            where: { id: menu.id },
             data: {
                 tenantId,
                 mealName: mealName || 'Full menu',

@@ -1,8 +1,12 @@
 import { NextResponse } from 'next/server';
+import { requireApiTenant } from '@/lib/api/require-api-tenant';
 import { callGroqThenOllama, parseJSON as parseLLMJSON } from '@/lib/llm';
 import { prisma } from '@/lib/prisma';
 
 export async function POST(req: Request) {
+    const access = await requireApiTenant();
+    if (access.response) return access.response;
+
     try {
         const { rfpId, emailBody } = await req.json();
 
@@ -13,8 +17,8 @@ export async function POST(req: Request) {
             );
         }
 
-        const rfp = await prisma.rFP.findUnique({
-            where: { id: rfpId },
+        const rfp = await prisma.rFP.findFirst({
+            where: { id: rfpId, tenantId: access.tenant.id },
             include: { distributor: true }
         });
 

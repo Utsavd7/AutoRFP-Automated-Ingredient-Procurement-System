@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
+import { requireApiTenant } from '@/lib/api/require-api-tenant';
 
 const prisma = new PrismaClient();
 
@@ -105,6 +106,9 @@ async function searchGooglePlaces(location: string): Promise<{ name: string; loc
 
 // ─── Main handler ─────────────────────────────────────────────────────────────
 export async function POST(req: Request) {
+    const access = await requireApiTenant();
+    if (access.response) return access.response;
+
     try {
         const { location } = await req.json();
         if (!location) {

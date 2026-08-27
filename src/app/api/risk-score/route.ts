@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { requireApiTenant } from '@/lib/api/require-api-tenant';
 
 interface Quote {
     distributorName: string;
@@ -41,6 +42,9 @@ function scoreCoverage(details = '', ingredientCount: number): number {
 }
 
 export async function POST(req: Request) {
+    const access = await requireApiTenant();
+    if (access.response) return access.response;
+
     try {
         const { quotes, pricingData = [], ingredients = [] } = await req.json() as {
             quotes: Quote[];

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
+import { requireApiTenant } from '@/lib/api/require-api-tenant';
 import { callOllama, callGroq, parseJSON } from '@/lib/llm';
 import { getEmbedding } from '@/lib/embeddings';
 import { searchSimilarQuotes } from '@/lib/chroma';
@@ -15,14 +16,34 @@ type RecommendationResult = {
 
 // GET /api/recommend?menuId=xxx
 export async function GET(req: Request) {
+    const access = await requireApiTenant();
+    if (access.response) return access.response;
+
     try {
         const { searchParams } = new URL(req.url);
         const menuId = searchParams.get('menuId');
-        const tenantId = searchParams.get('tenantId') ?? 'tenant_demo';
+        const tenantId = access.tenant.id;
         const mealName = searchParams.get('mealName') ?? '';
         const guestCount = Number(searchParams.get('guestCount') ?? 0);
         const marketValue = Number(searchParams.get('marketValue') ?? 0);
         if (!menuId) return NextResponse.json({ error: 'menuId is required' }, { status: 400 });
+
+        const menu = await prisma.menu.findFirst({
+            where: { id: menuId, tenantId },
+            include: {
+                recipes: {
+                    include: {
+                        ingredients: {
+                            include: { pricingTrends: { orderBy: { date: 'desc' }, take: 1 } },
+                        },
+                    },
+                },
+            },
+        } as any);
+
+        if (!menu) {
+            return NextResponse.json({ error: 'Menu not found.' }, { status: 404 });
+        }
 
         const rfps = await prisma.rFP.findMany({
             where: { menuId, tenantId, status: 'REPLIED' } as any,
@@ -46,19 +67,6 @@ export async function GET(req: Request) {
         if (quotesSummary.length === 0) {
             return NextResponse.json({ error: 'No valid quote prices received yet.' }, { status: 404 });
         }
-
-        const menu = await prisma.menu.findUnique({
-            where: { id: menuId },
-            include: {
-                recipes: {
-                    include: {
-                        ingredients: {
-                            include: { pricingTrends: { orderBy: { date: 'desc' }, take: 1 } },
-                        },
-                    },
-                },
-            },
-        } as any);
 
         const ingredientPricingMap = new Map<string, number>();
         for (const recipe of (menu as any)?.recipes ?? []) {

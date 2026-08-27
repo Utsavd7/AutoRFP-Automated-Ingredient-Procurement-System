@@ -1,12 +1,15 @@
 import { NextResponse } from 'next/server';
+import { requireApiTenant } from '@/lib/api/require-api-tenant';
 import { prisma } from '@/lib/prisma';
 
 // GET endpoint to fetch all quotes for a specific menuId
 export async function GET(req: Request) {
+    const access = await requireApiTenant();
+    if (access.response) return access.response;
+
     try {
         const { searchParams } = new URL(req.url);
         const menuId = searchParams.get('menuId');
-        const tenantId = searchParams.get('tenantId');
 
         if (!menuId) {
             return NextResponse.json({ error: 'Menu ID is required' }, { status: 400 });
@@ -16,7 +19,7 @@ export async function GET(req: Request) {
         const rfps = await prisma.rFP.findMany({
             where: {
                 menuId: menuId,
-                ...(tenantId ? { tenantId } : {}),
+                tenantId: access.tenant.id,
                 status: { in: ['REPLIED', 'NEGOTIATING', 'ACCEPTED', 'DECLINED'] }
             },
             include: {

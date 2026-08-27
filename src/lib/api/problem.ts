@@ -1,38 +1,47 @@
 import { NextResponse } from 'next/server';
 
 const CORE_PROBLEM_KEYS = new Set(['type', 'status', 'title', 'detail']);
-const INTERNAL_ERROR_KEYS = new Set(['error', 'exception', 'stack']);
+const RESERVED_EXTENSION_KEYS = new Set(['error', 'exception', 'stack', 'toJSON']);
 const OMITTED_EXTENSION_VALUE = Symbol('omitted-extension-value');
 
-function sanitizeExtensionRecord(value: Record<string, unknown>, omitCoreKeys = false) {
+function sanitizeExtensionRecord(
+  value: Record<string, unknown>,
+  visited: WeakSet<object>,
+  omitCoreKeys = false,
+) {
+  visited.add(value);
   const entries: [string, unknown][] = [];
 
-  for (const [key, nestedValue] of Object.entries(value)) {
-    if (INTERNAL_ERROR_KEYS.has(key) || (omitCoreKeys && CORE_PROBLEM_KEYS.has(key))) continue;
+  for (const key of Object.keys(value)) {
+    if (RESERVED_EXTENSION_KEYS.has(key) || (omitCoreKeys && CORE_PROBLEM_KEYS.has(key))) continue;
 
-    const sanitizedValue = sanitizeExtensionValue(nestedValue);
+    const sanitizedValue = sanitizeExtensionValue(value[key], visited);
     if (sanitizedValue !== OMITTED_EXTENSION_VALUE) entries.push([key, sanitizedValue]);
   }
 
   return Object.fromEntries(entries);
 }
 
-function sanitizeExtensionValue(value: unknown): unknown {
-  if (value instanceof Error) return OMITTED_EXTENSION_VALUE;
+function sanitizeExtensionValue(value: unknown, visited: WeakSet<object>): unknown {
+  if (typeof value === 'function' || value instanceof Error) return OMITTED_EXTENSION_VALUE;
+
+  if (value instanceof Date) {
+    const timestamp = Date.prototype.getTime.call(value);
+    return Number.isNaN(timestamp) ? null : new Date(timestamp).toISOString();
+  }
+
+  if (!value || typeof value !== 'object') return value;
+  if (visited.has(value)) return OMITTED_EXTENSION_VALUE;
 
   if (Array.isArray(value)) {
+    visited.add(value);
     return value.flatMap((item) => {
-      const sanitizedItem = sanitizeExtensionValue(item);
+      const sanitizedItem = sanitizeExtensionValue(item, visited);
       return sanitizedItem === OMITTED_EXTENSION_VALUE ? [] : [sanitizedItem];
     });
   }
 
-  if (value instanceof Date) return value;
-  if (value && typeof value === 'object') {
-    return sanitizeExtensionRecord(value as Record<string, unknown>);
-  }
-
-  return value;
+  return sanitizeExtensionRecord(value as Record<string, unknown>, visited);
 }
 
 export function problemResponse(
@@ -41,7 +50,7 @@ export function problemResponse(
   detail: string,
   extensions: Record<string, unknown> = {},
 ) {
-  const safeExtensions = sanitizeExtensionRecord(extensions, true);
+  const safeExtensions = sanitizeExtensionRecord(extensions, new WeakSet(), true);
 
   return NextResponse.json(
     {

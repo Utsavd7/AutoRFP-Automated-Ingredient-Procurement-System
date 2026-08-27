@@ -2,6 +2,24 @@ import { NextResponse } from 'next/server';
 import { requireApiTenant } from '@/lib/api/require-api-tenant';
 import { isLegacyFeatureEnabled, legacyFeatureUnavailable } from '@/lib/features/legacy-features';
 
+type UnknownRecord = Record<string, unknown>;
+
+function isRecord(value: unknown): value is UnknownRecord {
+    return typeof value === 'object' && value !== null;
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+    if (error instanceof Error) return error.message || fallback;
+    if (isRecord(error) && typeof error.message === 'string' && error.message) {
+        return error.message;
+    }
+    return fallback;
+}
+
+function historyEntry(value: unknown): UnknownRecord {
+    return isRecord(value) ? value : {};
+}
+
 // ─── Linear Regression ────────────────────────────────────────────────────────
 // Ordinary Least Squares on a 1-D index (t = 0,1,2,...) vs price
 function linearRegression(prices: number[]) {
@@ -70,15 +88,17 @@ export async function POST(req: Request) {
     }
 
     try {
-        const { ingredients } = await req.json();
+        const { ingredients } = await req.json() as { ingredients?: unknown };
         if (!ingredients || !Array.isArray(ingredients)) {
             return NextResponse.json({ error: 'ingredients array required' }, { status: 400 });
         }
 
-        const forecasts = ingredients.map((ing: any) => {
-            const prices: number[] = (ing.history ?? [])
-                .map((h: any) => h.price)
-                .filter((p: number) => typeof p === 'number' && p > 0);
+        const forecasts = ingredients.map((ingredient) => {
+            const ing = isRecord(ingredient) ? ingredient : {};
+            const history = Array.isArray(ing.history) ? ing.history : [];
+            const prices = history
+                .map((entry) => historyEntry(entry).price)
+                .filter((price): price is number => typeof price === 'number' && price > 0);
 
             if (prices.length < 3) {
                 return {
@@ -97,8 +117,10 @@ export async function POST(req: Request) {
 
             // 3-month forward projection with 95% CI (t=1.96 for large n)
             const lastIdx = prices.length - 1;
-            const lastDate = ing.history[ing.history.length - 1]?.date
-                ? new Date(ing.history[ing.history.length - 1].date)
+            const lastHistoryDate = historyEntry(history[history.length - 1]).date;
+            const hasUsableDate = typeof lastHistoryDate === 'string' || typeof lastHistoryDate === 'number';
+            const lastDate = hasUsableDate
+                ? new Date(lastHistoryDate)
                 : new Date();
 
             const forecast = [1, 2, 3].map(offset => {
@@ -138,8 +160,8 @@ export async function POST(req: Request) {
         });
 
         return NextResponse.json({ forecasts });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('ML forecast error:', error);
-        return NextResponse.json({ error: error.message || 'Forecast failed' }, { status: 500 });
+        return NextResponse.json({ error: errorMessage(error, 'Forecast failed') }, { status: 500 });
     }
 }

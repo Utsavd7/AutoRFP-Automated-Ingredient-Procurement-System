@@ -2,6 +2,15 @@ const OLLAMA_URL = process.env.OLLAMA_URL ?? 'http://localhost:11434';
 const EMBED_MODEL = 'nomic-embed-text';
 const EMBED_DIMENSIONS = 768;
 
+function errorMessage(error: unknown): string {
+    if (error instanceof Error) return error.message;
+    if (typeof error === 'object' && error !== null && 'message' in error) {
+        const message = error.message;
+        if (typeof message === 'string') return message;
+    }
+    return 'Unknown Ollama error';
+}
+
 function fallbackEmbedding(text: string): number[] {
     const vector = new Array(EMBED_DIMENSIONS).fill(0);
     const tokens = text
@@ -33,10 +42,14 @@ export async function getEmbedding(text: string): Promise<number[] | null> {
             signal: AbortSignal.timeout(12000),
         });
         if (!res.ok) throw new Error(`Ollama embeddings HTTP ${res.status}`);
-        const data = await res.json();
-        return Array.isArray(data.embedding) ? data.embedding : null;
-    } catch (err: any) {
-        console.warn('[embeddings] Ollama unavailable, using deterministic fallback:', err.message);
+        const data: unknown = await res.json();
+        if (typeof data !== 'object' || data === null || !('embedding' in data)) return null;
+        const embedding = data.embedding;
+        return Array.isArray(embedding) && embedding.every((value) => typeof value === 'number')
+            ? embedding
+            : null;
+    } catch (error: unknown) {
+        console.warn('[embeddings] Ollama unavailable, using deterministic fallback:', errorMessage(error));
         return fallbackEmbedding(text);
     }
 }

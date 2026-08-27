@@ -8,7 +8,7 @@ export const refreshPricingTrends = inngest.createFunction(
         name: 'Daily Pricing Refresh',
         triggers: [{ cron: 'TZ=America/New_York 0 6 * * *' }],
     },
-    async ({ logger }: { logger: any }) => {
+    async ({ logger }) => {
         const ingredients = await prisma.ingredient.findMany({ select: { id: true, name: true } });
         logger.info(`Refreshing pricing for ${ingredients.length} ingredients`);
         let refreshed = 0;
@@ -31,7 +31,7 @@ export const sendRFPJob = inngest.createFunction(
         retries: 3,
         triggers: [{ event: 'rfp/send' }],
     },
-    async ({ event, step, logger }: { event: any; step: any; logger: any }) => {
+    async ({ event, step, logger }) => {
         const { menuId, rfpIds } = event.data as { menuId: string; rfpIds: string[] };
         logger.info(`Sending RFPs for menu ${menuId} to ${rfpIds.length} vendors`);
 
@@ -47,7 +47,7 @@ export const sendRFPJob = inngest.createFunction(
             )
         );
 
-        const sent = results.filter((r: any) => r.status === 'fulfilled').length;
+        const sent = results.filter((result) => result.status === 'fulfilled').length;
         logger.info(`Marked ${sent}/${rfpIds.length} RFPs as sent`);
         return { sent, total: rfpIds.length };
     }
@@ -60,7 +60,7 @@ export const archiveOldRuns = inngest.createFunction(
         name: 'Archive Old Procurement Runs',
         triggers: [{ cron: 'TZ=America/New_York 0 2 * * 0' }],
     },
-    async ({ logger }: { logger: any }) => {
+    async ({ logger }) => {
         const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
         const count = await prisma.procurementRun.count({ where: { createdAt: { lt: cutoff } } });
         logger.info(`Found ${count} procurement runs older than 90 days`);

@@ -1,4 +1,4 @@
-import { ChromaClient } from 'chromadb';
+import { ChromaClient, type Metadata } from 'chromadb';
 
 const CHROMA_URL = process.env.CHROMA_URL ?? 'http://localhost:8000';
 const COLLECTION = 'autorfp_procurement_history';
@@ -16,17 +16,26 @@ async function getCollection() {
         });
         collectionReady = true;
         return col;
-    } catch (err: any) {
+    } catch {
         if (!collectionReady) console.warn('[chroma] server not available — RAG context disabled. Start with: chroma run --path ./chroma_data');
         return null;
     }
+}
+
+function errorMessage(error: unknown): string {
+    if (error instanceof Error) return error.message;
+    if (typeof error === 'object' && error !== null && 'message' in error) {
+        const message = error.message;
+        if (typeof message === 'string') return message;
+    }
+    return 'Unknown ChromaDB error';
 }
 
 export interface QuoteRecord {
     id: string;
     text: string;
     embedding: number[];
-    metadata: {
+    metadata: Metadata & {
         distributorName: string;
         tenantId?: string;
         location: string;
@@ -44,20 +53,26 @@ export async function ingestQuote(record: QuoteRecord): Promise<boolean> {
             ids: [record.id],
             embeddings: [record.embedding],
             documents: [record.text],
-            metadatas: [record.metadata as any],
+            metadatas: [record.metadata],
         });
         console.log(`[chroma] ingested quote ${record.id} for ${record.metadata.distributorName}`);
         return true;
-    } catch (err: any) {
-        console.warn('[chroma] ingest failed:', err.message);
+    } catch (error: unknown) {
+        console.warn('[chroma] ingest failed:', errorMessage(error));
         return false;
     }
 }
 
-export async function searchSimilarQuotes(embedding: number[], nResults = 3, tenantId?: string): Promise<{
-    documents: string[];
-    metadatas: Record<string, any>[];
-} | null> {
+export interface SimilarQuotesResult {
+    documents: (string | null)[];
+    metadatas: (Metadata | null)[];
+}
+
+export async function searchSimilarQuotes(
+    embedding: number[],
+    nResults = 3,
+    tenantId?: string,
+): Promise<SimilarQuotesResult | null> {
     const col = await getCollection();
     if (!col) return null;
     try {
@@ -65,13 +80,13 @@ export async function searchSimilarQuotes(embedding: number[], nResults = 3, ten
             queryEmbeddings: [embedding],
             nResults,
             ...(tenantId ? { where: { tenantId } } : {}),
-        } as any);
+        });
         return {
-            documents: (results.documents[0] ?? []) as string[],
-            metadatas: (results.metadatas[0] ?? []) as Record<string, any>[],
+            documents: results.documents[0] ?? [],
+            metadatas: results.metadatas[0] ?? [],
         };
-    } catch (err: any) {
-        console.warn('[chroma] search failed:', err.message);
+    } catch (error: unknown) {
+        console.warn('[chroma] search failed:', errorMessage(error));
         return null;
     }
 }

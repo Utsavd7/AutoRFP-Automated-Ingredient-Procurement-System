@@ -203,3 +203,73 @@ describe('public route surface', () => {
     );
   });
 });
+
+describe('production-safe workflow presentation', () => {
+  const publicLegacyFlag =
+    "const legacyDemoEnabled = process.env.NEXT_PUBLIC_AUTORFP_ENABLE_LEGACY_DEMO === 'true';";
+
+  it('stops the procurement flow at a saved demand draft by default', () => {
+    const source = readSource('app', '(app)', 'procurement', 'page.tsx');
+    const applySizingStart = source.indexOf('const applyWholeMenuSizing');
+    const pricingHandlerStart = source.indexOf('const handleFetchPricing');
+    const applySizingSource = source.slice(applySizingStart, pricingHandlerStart);
+
+    expect(source).toContain(publicLegacyFlag);
+    expect(source).toContain('Demand draft ready for review');
+    expect(source).toContain(
+      'Real supplier requests and market evidence are being enabled in the production workflow. Your reviewed menu draft is saved; nothing has been sent.',
+    );
+    expect(applySizingSource).toMatch(
+      /if \(!legacyDemoEnabled\)\s*\{[\s\S]*?setPipelineStatus\('Demand draft ready for review'\);[\s\S]*?return;[\s\S]*?\}/,
+    );
+    expect(applySizingSource.indexOf('if (!legacyDemoEnabled)')).toBeLessThan(
+      applySizingSource.indexOf('handleFetchPricing(sized)'),
+    );
+    expect(source).toContain('{legacyDemoEnabled && (');
+  });
+
+  test.each([
+    'handleFetchPricing',
+    'handleFindDistributors',
+    'handleSendRFPs',
+    'handleFetchRiskScores',
+    'handleAutoConversation',
+    'handleGetRecommendation',
+    'handleAgentNegotiation',
+  ])('guards %s before its legacy workflow can run', (handler) => {
+    const source = readSource('app', '(app)', 'procurement', 'page.tsx');
+    const handlerStart = source.indexOf(`const ${handler}`);
+    const nextHandlerStart = source.indexOf('\n  const handle', handlerStart + 1);
+    const handlerSource = source.slice(
+      handlerStart,
+      nextHandlerStart >= 0 ? nextHandlerStart : undefined,
+    );
+
+    expect(handlerStart).toBeGreaterThanOrEqual(0);
+    expect(handlerSource).toMatch(
+      /=>\s*\{\s*if \(!legacyDemoEnabled\) return(?: \[\])?;/,
+    );
+  });
+
+  it('does not present quarantined workflows as live capabilities', () => {
+    const source = readSource('app', '(app)', 'procurement', 'page.tsx');
+
+    expect(source.toLowerCase()).not.toContain('live market');
+    expect(source.toLowerCase()).not.toContain('emails appear here in real time');
+    expect(source).not.toContain('Submit Official Quote');
+  });
+
+  it('keeps the public quote portal static when the legacy demo is disabled', () => {
+    const source = readSource('app', 'quote', '[rfpId]', 'page.tsx');
+    const pageStart = source.indexOf('export default function QuoteSubmissionPage');
+    const legacyPageStart = source.indexOf('function LegacyQuoteSubmissionPage');
+    const publicPageSource = source.slice(pageStart, legacyPageStart);
+
+    expect(source).toContain(publicLegacyFlag);
+    expect(publicPageSource).toMatch(
+      /if \(!legacyDemoEnabled\)\s*\{\s*return <QuotePortalUnavailable \/>;\s*\}/,
+    );
+    expect(publicPageSource).not.toContain('fetch(');
+    expect(source).not.toContain('Submit Official Quote');
+  });
+});

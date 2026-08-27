@@ -7,12 +7,39 @@ import { twMerge } from 'tailwind-merge';
 import { Skeleton } from '@/components/Skeleton';
 import { toastApiError } from '@/lib/toast';
 
+const legacyDemoEnabled = process.env.NEXT_PUBLIC_AUTORFP_ENABLE_LEGACY_DEMO === 'true';
+
 export function cn(...inputs: (string | undefined | null | false)[]) {
     return twMerge(clsx(inputs));
 }
 
-// Ensure the page takes standard param signature for NextJS App Router
 export default function QuoteSubmissionPage({ params }: { params: Promise<{ rfpId: string }> }) {
+    if (!legacyDemoEnabled) {
+        return <QuotePortalUnavailable />;
+    }
+
+    return <LegacyQuoteSubmissionPage params={params} />;
+}
+
+function QuotePortalUnavailable() {
+    return (
+        <main className="min-h-screen bg-neutral-950 text-neutral-50 p-6 font-sans selection:bg-indigo-500/30">
+            <div className="max-w-xl mx-auto pt-24">
+                <div className="rounded-2xl border border-white/10 bg-neutral-900 p-8 text-center shadow-2xl">
+                    <div className="mx-auto mb-5 inline-flex h-12 w-12 items-center justify-center rounded-xl border border-indigo-500/20 bg-indigo-500/10">
+                        <DollarSign className="h-6 w-6 text-indigo-400" />
+                    </div>
+                    <h1 className="text-2xl font-bold tracking-tight text-white">Supplier quote portal unavailable</h1>
+                    <p className="mt-3 text-sm leading-relaxed text-neutral-400">
+                        Supplier quote collection is being enabled in the production workflow. No quote can be viewed or submitted from this link yet.
+                    </p>
+                </div>
+            </div>
+        </main>
+    );
+}
+
+function LegacyQuoteSubmissionPage({ params }: { params: Promise<{ rfpId: string }> }) {
     // Use React.use() to unwrap params per newer Next.js patterns
     const unwrappedParams = use(params);
     const rfpId = unwrappedParams.rfpId;
@@ -198,7 +225,7 @@ export default function QuoteSubmissionPage({ params }: { params: Promise<{ rfpI
                                 {submitting ? (
                                     <>Submitting...</>
                                 ) : (
-                                    <><Send className="w-5 h-5" /> Submit Official Quote</>
+                                    <><Send className="w-5 h-5" /> Submit Quote</>
                                 )}
                             </button>
                         </form>

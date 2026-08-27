@@ -26,6 +26,8 @@ import {
 import { Skeleton } from '@/components/Skeleton';
 import { toastApiError } from '@/lib/toast';
 
+const legacyDemoEnabled = process.env.NEXT_PUBLIC_AUTORFP_ENABLE_LEGACY_DEMO === 'true';
+
 function cn(...inputs: (string | undefined | null | false)[]) {
   return twMerge(clsx(inputs));
 }
@@ -288,7 +290,7 @@ function ChatThread({ messages }: { messages: any[] }) {
     return (
       <div className="h-full flex flex-col items-center justify-center gap-3 text-[#8A8F98] py-12 border border-dashed border-white/[0.06] rounded-xl">
         <MessageSquare className="w-8 h-8 opacity-20" />
-        <p className="text-[13px] font-medium">Negotiation emails appear here in real time</p>
+        <p className="text-[13px] font-medium">No negotiation messages are available</p>
       </div>
     );
   }
@@ -619,6 +621,11 @@ export default function ProcurementPage() {
   const anomalyCount = useMemo(() => Object.values(mlForecasts).filter((f: any) => f.anomaly).length, [mlForecasts]);
 
   const activeStage = useMemo(() => {
+    if (!legacyDemoEnabled) {
+      if (ingredients.length > 0) return 'Demand draft ready for review';
+      if (recipes.length > 0) return 'Menu draft ready';
+      return 'Drafting';
+    }
     if (negotiationComplete) return 'Deal closed';
     if (negotiating) return 'AI negotiation live';
     if (quotes.length > 0) return 'Quotes under review';
@@ -627,7 +634,7 @@ export default function ProcurementPage() {
     if (pricingData.length > 0) return 'Market priced';
     if (recipes.length > 0) return 'Menu parsed';
     return 'Drafting';
-  }, [distributors.length, negotiationComplete, negotiating, pricingData.length, quotes.length, recipes.length, sentRFPs.length]);
+  }, [distributors.length, ingredients.length, negotiationComplete, negotiating, pricingData.length, quotes.length, recipes.length, sentRFPs.length]);
 
   // ── Handlers ───────────────────────────────────────────────────────────────
   const resolveLocation = (): Promise<string> => {
@@ -690,7 +697,11 @@ export default function ProcurementPage() {
     setAgentEvents([]);
     setEmailThread([]);
     setNegotiationComplete(null);
-    setPipelineStatus('Fetching live market prices…');
+    if (!legacyDemoEnabled) {
+      setPipelineStatus('Demand draft ready for review');
+      return;
+    }
+    setPipelineStatus('Checking legacy market estimates…');
     await handleFetchPricing(sized);
     setPipelineStatus('Finding nearby suppliers…');
     const loc = await resolveLocation();
@@ -703,6 +714,7 @@ export default function ProcurementPage() {
   };
 
   const handleFetchPricing = async (ingredientList: any[] = ingredients) => {
+    if (!legacyDemoEnabled) return;
     if (!ingredientList.length) return;
     setLoadingPricing(true);
     try {
@@ -722,6 +734,7 @@ export default function ProcurementPage() {
   };
 
   const handleFindDistributors = async (locationOverride?: string) => {
+    if (!legacyDemoEnabled) return [];
     const loc = locationOverride ?? distributorLocation.trim();
     if (!loc) return [];
     setLoadingDistributors(true);
@@ -776,6 +789,7 @@ export default function ProcurementPage() {
   };
 
   const handleSendRFPs = async (opts?: { distributorList?: any[]; ingredientList?: any[]; guests?: number; buffer?: number }) => {
+    if (!legacyDemoEnabled) return;
     const targetDistributors = opts?.distributorList ?? distributors;
     const targetIngredients = opts?.ingredientList ?? ingredients;
     const targetGuests = opts?.guests ?? guestCount;
@@ -793,6 +807,7 @@ export default function ProcurementPage() {
   };
 
   const handleFetchQuotes = async (): Promise<any[]> => {
+    if (!legacyDemoEnabled) return [];
     const menuId = recipes[0]?.menuId;
     if (!menuId) return [];
     setLoadingQuotes(true); setError('');
@@ -808,6 +823,7 @@ export default function ProcurementPage() {
   };
 
   const handleFetchRiskScores = async (quotesOverride?: any[]) => {
+    if (!legacyDemoEnabled) return;
     const q = quotesOverride ?? quotes;
     if (!q.length) return;
     try {
@@ -818,6 +834,7 @@ export default function ProcurementPage() {
   };
 
   const handleSimulateEmail = async () => {
+    if (!legacyDemoEnabled) return;
     if (!simulatedEmailRfpId || !simulatedEmailBody.trim()) return;
     setSimulatingEmail(true); setError('');
     try {
@@ -837,6 +854,7 @@ export default function ProcurementPage() {
   };
 
   const handleAutoConversation = async () => {
+    if (!legacyDemoEnabled) return;
     if (!sentRFPs.length) return;
     setSimulatingConversation(true); setError('');
     const unresolved = sentRFPs.filter(rfp => !quotes.some(q => q.rfpId === rfp.id));
@@ -868,6 +886,7 @@ export default function ProcurementPage() {
   };
 
   const handleGetRecommendation = async () => {
+    if (!legacyDemoEnabled) return;
     const menuId = recipes[0]?.menuId;
     if (!menuId) return;
     setLoadingRecommendation(true); setError('');
@@ -889,6 +908,7 @@ export default function ProcurementPage() {
   };
 
   const handleAgentNegotiation = () => {
+    if (!legacyDemoEnabled) return;
     const menuId = recipes[0]?.menuId;
     if (!menuId) return;
     setNegotiating(true); setAgentEvents([]); setEmailThread([]); setNegotiationComplete(null);
@@ -1026,12 +1046,12 @@ export default function ProcurementPage() {
           <div className="max-w-5xl mx-auto px-6">
             <div className="flex divide-x divide-white/5 overflow-x-auto">
               {[
-                { label: 'Order Items',    raw: ingredients.length,  display: ingredients.length || '—',  icon: Package,   color: 'text-blue-400',    hi: ingredients.length > 0 },
-                { label: 'Market Value',   raw: Math.round(marketValue), display: marketValue > 0 ? `$${marketValue.toFixed(0)}` : '—', icon: DollarSign, color: 'text-violet-400', hi: marketValue > 0, prefix: '$' },
-                { label: 'Suppliers',      raw: distributors.length, display: distributors.length || '—', icon: Building2,  color: 'text-indigo-400',  hi: distributors.length > 0 },
-                { label: 'Quotes',         raw: quotes.length,       display: sentRFPs.length ? `${quotes.length} / ${sentRFPs.length}` : '—', icon: FileCheck, color: 'text-amber-400', hi: quotes.length > 0 },
-                { label: 'AI Savings',     raw: negotiationComplete ? Number(negotiationComplete.totalSavings) : 0, display: negotiationComplete ? `$${Number(negotiationComplete.totalSavings).toFixed(0)}` : '—', icon: Target, color: 'text-emerald-400', hi: !!negotiationComplete, green: true },
-              ].map((s, i) => (
+                { label: 'Order Items',    raw: ingredients.length,  display: ingredients.length || 'Pending',  icon: Package,   color: 'text-blue-400',    hi: ingredients.length > 0, safe: true },
+                { label: 'Market Value',   raw: Math.round(marketValue), display: marketValue > 0 ? `$${marketValue.toFixed(0)}` : 'Pending', icon: DollarSign, color: 'text-violet-400', hi: marketValue > 0, prefix: '$', safe: false },
+                { label: 'Suppliers',      raw: distributors.length, display: distributors.length || 'Pending', icon: Building2,  color: 'text-indigo-400',  hi: distributors.length > 0, safe: false },
+                { label: 'Quotes',         raw: quotes.length,       display: sentRFPs.length ? `${quotes.length} / ${sentRFPs.length}` : 'Pending', icon: FileCheck, color: 'text-amber-400', hi: quotes.length > 0, safe: false },
+                { label: 'AI Savings',     raw: negotiationComplete ? Number(negotiationComplete.totalSavings) : 0, display: negotiationComplete ? `$${Number(negotiationComplete.totalSavings).toFixed(0)}` : 'Pending', icon: Target, color: 'text-emerald-400', hi: !!negotiationComplete, green: true, safe: false },
+              ].filter(s => legacyDemoEnabled || s.safe).map((s, i) => (
                 <motion.div
                   key={i}
                   className="flex items-center gap-3 px-5 py-2.5 shrink-0 stat-card cursor-default"
@@ -1077,11 +1097,11 @@ export default function ProcurementPage() {
             </div>
             <p className="text-[11px] font-bold text-violet-400 uppercase tracking-[0.2em] mb-4">Procurement Workbench</p>
             <h1 className="text-[42px] md:text-[52px] font-black tracking-tight gradient-text leading-none mb-5">
-              From menu to best deal<br />
-              <span className="text-white">in under 4 minutes.</span>
+              From menu to a reviewed<br />
+              <span className="text-white">demand draft.</span>
             </h1>
             <p className="text-[15px] text-[#8A8F98] max-w-lg mx-auto leading-relaxed mb-8">
-              Paste your menu — AutoRFP extracts every ingredient, pulls live commodity prices, finds nearby distributors, and negotiates quotes autonomously.
+              Paste menu text, review the extracted dishes, and size an ingredient demand draft for your expected guests.
             </p>
             <div className="flex items-center justify-center gap-3 mb-8">
               <button
@@ -1094,11 +1114,11 @@ export default function ProcurementPage() {
               <span className="text-[12px] text-[#8A8F98]">or paste yours below</span>
             </div>
             <div className="flex items-center justify-center flex-wrap gap-x-5 gap-y-2 text-[11px] font-bold uppercase tracking-widest">
-              <span className="flex items-center gap-1.5 text-violet-400"><span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />Extracts hidden ingredients</span>
+              <span className="flex items-center gap-1.5 text-violet-400"><span className="w-1.5 h-1.5 rounded-full bg-violet-400" />Drafts menu ingredients</span>
               <span className="text-white/20">/</span>
-              <span className="text-blue-400">Live commodity prices</span>
+              <span className="text-blue-400">Scales quantities by guests</span>
               <span className="text-white/20">/</span>
-              <span className="text-[#8A8F98]">Auto-negotiates quotes</span>
+              <span className="text-[#8A8F98]">Sends nothing without review</span>
             </div>
           </div>
         )}
@@ -1115,13 +1135,13 @@ export default function ProcurementPage() {
         {/* ════════════════════
             Menu Analysis
         ════════════════════ */}
-        <Section done={recipes.length > 0} title="Menu Intelligence" subtitle="Paste your menu or a URL — AI uses menu descriptions first, then Groq inference to complete missing ingredients">
+        <Section done={recipes.length > 0} title="Menu Review" subtitle="Paste menu text to create a draft of dishes and procurement ingredients">
           <div className="grid lg:grid-cols-5 gap-6">
             <Card className="lg:col-span-2 p-6 flex flex-col gap-4 border border-white/10">
               <div className="flex items-center justify-between">
                 <div>
                   <label className="text-[13px] font-bold text-[#EEEEEE]">Menu Input</label>
-                  <p className="text-[11px] text-[#8A8F98] mt-0.5">Paste text or drop a URL</p>
+                  <p className="text-[11px] text-[#8A8F98] mt-0.5">Paste menu text</p>
                 </div>
                 {!menuText && (
                   <button
@@ -1135,7 +1155,7 @@ export default function ProcurementPage() {
               <textarea
                 rows={10}
                 className="flex-1 w-full bg-black border border-white/10 rounded-lg p-4 text-[13px] text-[#EEEEEE] placeholder:text-[#8A8F98]/50 focus:outline-none focus:ring-1 focus:ring-white/20 focus:border-white/20 resize-none font-mono leading-relaxed shadow-inner"
-                placeholder={"Classic Cheeseburger  $12\nSpaghetti Bolognese  $16\nGrilled Salmon  $24\n\nor paste a URL to auto-fetch"}
+                placeholder={"Classic Cheeseburger  $12\nSpaghetti Bolognese  $16\nGrilled Salmon  $24"}
                 value={menuText}
                 onChange={e => setMenuText(e.target.value)}
               />
@@ -1146,7 +1166,7 @@ export default function ProcurementPage() {
                 <div className="ml-auto">
                   <Btn onClick={handleParseMenu} disabled={!menuText.trim()} loading={loading}>
                     <Sparkles className="w-4 h-4" />
-                    {loading ? (pipelineStatus || 'Extracting dishes…') : 'Run Pipeline'}
+                    {loading ? (pipelineStatus || 'Preparing draft…') : 'Review menu'}
                   </Btn>
                 </div>
               </div>
@@ -1199,7 +1219,7 @@ export default function ProcurementPage() {
 	                <div className="flex items-start justify-between gap-4 flex-wrap mb-5">
 	                  <div>
 	                    <span className="text-[11px] font-bold text-blue-300 uppercase tracking-widest">Whole Menu Order Sizing</span>
-	                    <p className="text-[13px] text-[#8A8F98] mt-1">Enter the guest count once. AutoRFP scales every extracted dish, combines duplicate ingredients, then runs pricing, supplier discovery, and sends RFPs.</p>
+	                    <p className="text-[13px] text-[#8A8F98] mt-1">Enter the guest count once. AutoRFP scales each extracted dish and combines duplicate ingredients into a reviewable draft.</p>
 	                  </div>
 	                  <Tag color="blue">{recipes.length} dishes</Tag>
 	                </div>
@@ -1239,16 +1259,16 @@ export default function ProcurementPage() {
 	                  </label>
 	                  <Btn onClick={() => applyWholeMenuSizing()} disabled={!recipes.length || loadingPricing || loadingDistributors || sendingRFPs} loading={loadingPricing || loadingDistributors || sendingRFPs}>
 	                    <Target className="w-4 h-4" />
-	                    {pipelineStatus || 'Apply and send RFPs'}
+	                    {pipelineStatus || (legacyDemoEnabled ? 'Apply and send RFPs' : 'Build demand draft')}
 	                  </Btn>
 	                </div>
                 {recipes.length > 0 && (() => {
                   const mix = menuMixFactor(recipes.length);
                   const effCovers = Math.max(1, Math.round(guestCount * mix));
-                  const label = recipes.length <= 4 ? 'limited menu — most guests order most dishes'
-                    : recipes.length <= 7 ? 'standard menu — typical spread across dishes'
-                    : recipes.length <= 11 ? 'medium menu — guests choose among options'
-                    : 'large menu — guests select a few dishes';
+                  const label = recipes.length <= 4 ? 'limited menu, most guests order most dishes'
+                    : recipes.length <= 7 ? 'standard menu, typical spread across dishes'
+                    : recipes.length <= 11 ? 'medium menu, guests choose among options'
+                    : 'large menu, guests select a few dishes';
                   return (
                     <div className="mt-4 flex items-center gap-2.5 px-3 py-2 bg-blue-500/[0.05] border border-blue-500/15 rounded-lg">
                       <span className="text-[11px] font-bold text-blue-300 uppercase tracking-widest shrink-0">Menu mix</span>
@@ -1319,6 +1339,25 @@ export default function ProcurementPage() {
             )}
           </div>
         </Section>
+
+        {!legacyDemoEnabled && ingredients.length > 0 && (
+          <Card className="p-6 border border-emerald-500/20 bg-emerald-500/[0.03]">
+            <div className="flex items-start gap-4">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-emerald-500/20 bg-emerald-500/10">
+                <FileCheck className="h-4 w-4 text-emerald-400" />
+              </div>
+              <div>
+                <h2 className="text-[18px] font-bold tracking-tight text-[#EEEEEE]">Demand draft ready for review</h2>
+                <p className="mt-2 max-w-2xl text-[13px] leading-relaxed text-[#8A8F98]">
+                  Real supplier requests and market evidence are being enabled in the production workflow. Your reviewed menu draft is saved; nothing has been sent.
+                </p>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {legacyDemoEnabled && (
+          <>
 
         {/* ════════════════════
             Market Pricing
@@ -1983,22 +2022,15 @@ export default function ProcurementPage() {
             )}
           </Section>
         )}
+          </>
+        )}
       </main>
 
       {/* Footer */}
       <footer className="border-t border-white/5 bg-black mt-16">
         <div className="max-w-5xl mx-auto px-6 py-5 flex flex-col md:flex-row md:items-center justify-between text-[11px] font-bold text-[#8A8F98] uppercase tracking-widest gap-3">
           <span className="flex items-center gap-2"><ChefHat className="w-3.5 h-3.5 text-white/30" /> AutoRFP Engine</span>
-          <div className="flex items-center flex-wrap gap-3">
-            <span className="flex items-center gap-1.5 text-violet-400/80">
-              <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
-              Ollama + Groq
-            </span>
-            <span className="opacity-30">/</span>
-            <span>CME · CBOT · BLS Pricing</span>
-            <span className="opacity-30">/</span>
-            <span>Google Places Suppliers</span>
-          </div>
+          <span>{legacyDemoEnabled ? 'Legacy demo mode enabled' : 'Production safe demand drafting'}</span>
         </div>
       </footer>
     </div>

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { requireApiTenant } from '@/lib/api/require-api-tenant';
+import { isLegacyFeatureEnabled, legacyFeatureUnavailable } from '@/lib/features/legacy-features';
 
 const prisma = new PrismaClient();
 
@@ -108,6 +109,9 @@ async function searchGooglePlaces(location: string): Promise<{ name: string; loc
 export async function POST(req: Request) {
     const access = await requireApiTenant();
     if (access.response) return access.response;
+    if (!isLegacyFeatureEnabled()) {
+        return legacyFeatureUnavailable();
+    }
 
     try {
         const { location } = await req.json();

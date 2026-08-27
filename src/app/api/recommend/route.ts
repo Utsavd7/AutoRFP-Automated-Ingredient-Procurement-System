@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { requireApiTenant } from '@/lib/api/require-api-tenant';
+import { isLegacyFeatureEnabled, legacyFeatureUnavailable } from '@/lib/features/legacy-features';
 import { callOllama, callGroq, parseJSON } from '@/lib/llm';
 import { getEmbedding } from '@/lib/embeddings';
 import { searchSimilarQuotes } from '@/lib/chroma';
@@ -18,6 +19,9 @@ type RecommendationResult = {
 export async function GET(req: Request) {
     const access = await requireApiTenant();
     if (access.response) return access.response;
+    if (!isLegacyFeatureEnabled()) {
+        return legacyFeatureUnavailable();
+    }
 
     try {
         const { searchParams } = new URL(req.url);

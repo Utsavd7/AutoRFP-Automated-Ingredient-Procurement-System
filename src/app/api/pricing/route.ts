@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { requireApiTenant } from '@/lib/api/require-api-tenant';
+import { isLegacyFeatureEnabled, legacyFeatureUnavailable } from '@/lib/features/legacy-features';
 import { callGroqThenOllama, parseJSON as parseLLMJSON } from '@/lib/llm';
 
 const prisma = new PrismaClient();
@@ -275,6 +276,9 @@ async function fetchLiveCommodityPrice(name: string): Promise<{ price: number; s
 export async function POST(req: Request) {
     const access = await requireApiTenant();
     if (access.response) return access.response;
+    if (!isLegacyFeatureEnabled()) {
+        return legacyFeatureUnavailable();
+    }
 
     try {
         const { ingredients } = await req.json();

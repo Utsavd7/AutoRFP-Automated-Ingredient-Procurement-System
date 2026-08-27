@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireApiTenant } from '@/lib/api/require-api-tenant';
+import { isLegacyFeatureEnabled, legacyFeatureUnavailable } from '@/lib/features/legacy-features';
 import { callGroqThenOllama, parseJSON as parseLLMJSON } from '@/lib/llm';
 import { prisma } from '@/lib/prisma';
 
@@ -36,6 +37,9 @@ async function createQuoteIfRfpCurrent(input: {
 export async function POST(req: Request) {
     const access = await requireApiTenant();
     if (access.response) return access.response;
+    if (!isLegacyFeatureEnabled()) {
+        return legacyFeatureUnavailable();
+    }
 
     try {
         const { rfpId, emailBody } = await req.json();

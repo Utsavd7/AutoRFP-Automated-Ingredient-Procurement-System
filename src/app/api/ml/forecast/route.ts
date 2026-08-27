@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireApiTenant } from '@/lib/api/require-api-tenant';
+import { isLegacyFeatureEnabled, legacyFeatureUnavailable } from '@/lib/features/legacy-features';
 
 // ─── Linear Regression ────────────────────────────────────────────────────────
 // Ordinary Least Squares on a 1-D index (t = 0,1,2,...) vs price
@@ -64,6 +65,9 @@ function getBuySignal(trend: string, anomaly: ReturnType<typeof detectAnomaly>) 
 export async function POST(req: Request) {
     const access = await requireApiTenant();
     if (access.response) return access.response;
+    if (!isLegacyFeatureEnabled()) {
+        return legacyFeatureUnavailable();
+    }
 
     try {
         const { ingredients } = await req.json();

@@ -1,11 +1,16 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { isLegacyFeatureEnabled, legacyFeatureUnavailable } from '@/lib/features/legacy-features';
 
 // GET endpoint to fetch RFP details for the Quote Submission page
 export async function GET(
     req: Request,
     { params }: { params: Promise<{ rfpId: string }> } // updated type to Promise as required by Next 15 App Router
 ) {
+    if (!isLegacyFeatureEnabled()) {
+        return legacyFeatureUnavailable();
+    }
+
     try {
         const { rfpId } = await params;
 
@@ -67,6 +72,10 @@ export async function POST(
     req: Request,
     { params }: { params: Promise<{ rfpId: string }> } // updated type to Promise as required by Next 15 App Router
 ) {
+    if (!isLegacyFeatureEnabled()) {
+        return legacyFeatureUnavailable();
+    }
+
     try {
         const { rfpId } = await params;
         const body = await req.json();

@@ -73,8 +73,21 @@ const transactionMock = prisma.$transaction as unknown as jest.Mock;
 const rfpFindFirst = jest.mocked(prisma.rFP.findFirst);
 const rfpUpdateMany = jest.mocked(prisma.rFP.updateMany);
 const quoteCreate = jest.mocked(prisma.quote.create);
+const originalLegacyFeatureFlag = process.env.AUTORFP_ENABLE_LEGACY_DEMO;
 
 describe('tenant-owned route writes', () => {
+  beforeAll(() => {
+    process.env.AUTORFP_ENABLE_LEGACY_DEMO = 'true';
+  });
+
+  afterAll(() => {
+    if (originalLegacyFeatureFlag === undefined) {
+      delete process.env.AUTORFP_ENABLE_LEGACY_DEMO;
+      return;
+    }
+    process.env.AUTORFP_ENABLE_LEGACY_DEMO = originalLegacyFeatureFlag;
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
     jest.mocked(requireApiTenant).mockResolvedValue(authenticatedTenant);

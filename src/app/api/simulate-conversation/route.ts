@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireApiTenant } from '@/lib/api/require-api-tenant';
+import { isLegacyFeatureEnabled, legacyFeatureUnavailable } from '@/lib/features/legacy-features';
 import { callGroqThenOllama, parseJSON as parseLLMJSON } from '@/lib/llm';
 import { getEmbedding } from '@/lib/embeddings';
 import { ingestQuote } from '@/lib/chroma';
@@ -77,6 +78,9 @@ function buildIngredientBreakdown(
 export async function POST(req: Request) {
     const access = await requireApiTenant();
     if (access.response) return access.response;
+    if (!isLegacyFeatureEnabled()) {
+        return legacyFeatureUnavailable();
+    }
 
     try {
         const { rfpId, ingredients = [], pricingData = [], mealName, guestCount, bufferPct } = await req.json();

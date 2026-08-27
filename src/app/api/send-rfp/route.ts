@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireApiTenant } from '@/lib/api/require-api-tenant';
+import { isLegacyFeatureEnabled, legacyFeatureUnavailable } from '@/lib/features/legacy-features';
 import { prisma } from '@/lib/prisma';
 
 // In a real application, you would use an email service like Resend or Nodemailer
@@ -8,6 +9,9 @@ import { prisma } from '@/lib/prisma';
 export async function POST(req: Request) {
     const access = await requireApiTenant();
     if (access.response) return access.response;
+    if (!isLegacyFeatureEnabled()) {
+        return legacyFeatureUnavailable();
+    }
 
     try {
         const { distributorIds, menuId, ingredients, mealName, guestCount, bufferPct } = await req.json();

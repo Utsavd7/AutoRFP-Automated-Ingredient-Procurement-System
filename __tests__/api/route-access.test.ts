@@ -31,6 +31,29 @@ const authenticatedRoutes = [
   'webhooks/inbound-email',
 ];
 
+const quarantinedAuthenticatedRoutes = [
+  'pricing',
+  'distributors',
+  'risk-score',
+  'ml/forecast',
+  'send-rfp',
+  'simulate-conversation',
+  'recommend',
+  'agent/negotiate',
+  'webhooks/inbound-email',
+];
+
+const legacyGateImport =
+  "import { isLegacyFeatureEnabled, legacyFeatureUnavailable } from '@/lib/features/legacy-features';";
+
+const authenticatedLegacyGate =
+  /export async function (?:GET|POST)\([^)]*\)\s*\{\s*const access = await requireApiTenant\(\);\s*if \(access\.response\) return access\.response;\s*if \(!isLegacyFeatureEnabled\(\)\)\s*\{\s*return legacyFeatureUnavailable\(\);\s*\}/;
+
+const publicLegacyGate = (method: 'GET' | 'POST') =>
+  new RegExp(
+    `export async function ${method}\\([\\s\\S]*?\\)\\s*\\{\\s*if \\(!isLegacyFeatureEnabled\\(\\)\\)\\s*\\{\\s*return legacyFeatureUnavailable\\(\\);\\s*\\}`,
+  );
+
 describe('public route surface', () => {
   test.each(authenticatedRoutes)(
     'derives the %s tenant before request-controlled work',
@@ -58,6 +81,39 @@ describe('public route surface', () => {
       expect(handlerSource).not.toMatch(
         /const\s*\{[\s\S]*?\btenantId\b[\s\S]*?\}\s*=\s*await req\.json\(\)/,
       );
+    },
+  );
+
+  test.each(quarantinedAuthenticatedRoutes)(
+    'gates the authenticated %s workflow immediately after authentication',
+    (route) => {
+      const source = readSource('app', 'api', ...route.split('/'), 'route.ts');
+
+      expect(source).toContain(legacyGateImport);
+      expect(source).toMatch(authenticatedLegacyGate);
+    },
+  );
+
+  test.each(['GET', 'POST'] as const)(
+    'gates the public quote %s handler before request or database work',
+    (method) => {
+      const source = readSource('app', 'api', 'quote', '[rfpId]', 'route.ts');
+
+      expect(source).toContain(legacyGateImport);
+      expect(source).toMatch(publicLegacyGate(method));
+    },
+  );
+
+  test.each(['GET', 'POST', 'PUT'] as const)(
+    'gates the Inngest %s handler before invoking Inngest',
+    (method) => {
+      const source = readSource('app', 'api', 'inngest', 'route.ts');
+      const handlerGate = new RegExp(
+        `export const ${method}[^=]*=\\s*\\([^)]*\\)\\s*=>\\s*\\{\\s*if \\(!isLegacyFeatureEnabled\\(\\)\\)\\s*\\{\\s*return legacyFeatureUnavailable\\(\\);\\s*\\}`,
+      );
+
+      expect(source).toContain(legacyGateImport);
+      expect(source).toMatch(handlerGate);
     },
   );
 

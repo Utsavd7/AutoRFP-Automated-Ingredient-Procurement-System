@@ -2,6 +2,7 @@ import { Annotation, StateGraph, START, END } from '@langchain/langgraph';
 import { Resend } from 'resend';
 import { problemResponse } from '@/lib/api/problem';
 import { requireApiTenant } from '@/lib/api/require-api-tenant';
+import { isLegacyFeatureEnabled, legacyFeatureUnavailable } from '@/lib/features/legacy-features';
 import { getEmbedding } from '@/lib/embeddings';
 import { ingestQuote } from '@/lib/chroma';
 import { prisma } from '@/lib/prisma';
@@ -624,6 +625,9 @@ const negotiationGraph = new StateGraph(NegotiationState)
 export async function GET(req: Request) {
     const access = await requireApiTenant();
     if (access.response) return access.response;
+    if (!isLegacyFeatureEnabled()) {
+        return legacyFeatureUnavailable();
+    }
 
     const { searchParams } = new URL(req.url);
     const menuId = searchParams.get('menuId');

@@ -49,36 +49,39 @@ describe('public route surface', () => {
     expect(source).not.toContain('prisma');
   });
 
-  it('returns the same signup preflight response for existing and absent emails', async () => {
-    const findFirst = jest.mocked(prisma.tenant.findFirst);
-    const payload = {
-      mode: 'signup',
-      name: 'Test Restaurant',
-      email: 'owner@example.com',
-      password: 'valid-password',
-      location: 'Mumbai',
-      cuisineType: 'Indian',
-    };
+  test.each(['signin', 'signup'] as const)(
+    'returns the same %s preflight response for existing and absent emails',
+    async (mode) => {
+      const findFirst = jest.mocked(prisma.tenant.findFirst);
+      const payload = {
+        mode,
+        name: 'Test Restaurant',
+        email: 'owner@example.com',
+        password: 'valid-password',
+        location: 'Mumbai',
+        cuisineType: 'Indian',
+      };
 
-    findFirst.mockResolvedValueOnce(null);
-    const absentResponse = await checkWorkspace(
-      new Request('http://localhost/api/auth/workspace-check', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      }),
-    );
+      findFirst.mockResolvedValueOnce(null);
+      const absentResponse = await checkWorkspace(
+        new Request('http://localhost/api/auth/workspace-check', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        }),
+      );
 
-    findFirst.mockResolvedValueOnce({ id: 'existing' } as never);
-    const existingResponse = await checkWorkspace(
-      new Request('http://localhost/api/auth/workspace-check', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      }),
-    );
+      findFirst.mockResolvedValueOnce({ id: 'existing' } as never);
+      const existingResponse = await checkWorkspace(
+        new Request('http://localhost/api/auth/workspace-check', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        }),
+      );
 
-    expect(existingResponse.status).toBe(absentResponse.status);
-    await expect(existingResponse.json()).resolves.toEqual(
-      await absentResponse.json(),
-    );
-  });
+      expect(existingResponse.status).toBe(absentResponse.status);
+      await expect(existingResponse.json()).resolves.toEqual(
+        await absentResponse.json(),
+      );
+    },
+  );
 });

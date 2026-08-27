@@ -3,6 +3,36 @@ import { requireApiTenant } from '@/lib/api/require-api-tenant';
 import { callGroqThenOllama, parseJSON as parseLLMJSON } from '@/lib/llm';
 import { prisma } from '@/lib/prisma';
 
+async function createQuoteIfRfpCurrent(input: {
+    rfpId: string;
+    tenantId: string;
+    expectedStatus: string;
+    price: number;
+    details: string;
+}) {
+    return prisma.$transaction(async (transaction) => {
+        const claimed = await transaction.rFP.updateMany({
+            where: {
+                id: input.rfpId,
+                tenantId: input.tenantId,
+                status: input.expectedStatus,
+            },
+            data: { status: 'REPLIED', repliedAt: new Date() },
+        });
+
+        if (claimed.count !== 1) return null;
+
+        return transaction.quote.create({
+            data: {
+                rfpId: input.rfpId,
+                price: input.price,
+                details: input.details,
+                status: 'SUBMITTED',
+            },
+        });
+    });
+}
+
 export async function POST(req: Request) {
     const access = await requireApiTenant();
     if (access.response) return access.response;
@@ -95,14 +125,20 @@ Return ONLY the email body text — no subject line, no greeting needed.
             `[AI Confidence: ${parsed.confidence}]`
         ].filter(Boolean).join(' | ');
 
-        const newQuote = await prisma.quote.create({
-            data: { rfpId, price: Number(parsed.price), details, status: 'SUBMITTED' }
+        const newQuote = await createQuoteIfRfpCurrent({
+            rfpId: rfp.id,
+            tenantId: access.tenant.id,
+            expectedStatus: rfp.status,
+            price: Number(parsed.price),
+            details,
         });
 
-        await prisma.rFP.update({
-            where: { id: rfpId },
-            data: { status: 'REPLIED', repliedAt: new Date() }
-        });
+        if (!newQuote) {
+            return NextResponse.json(
+                { error: 'This RFP is no longer available for a quote.' },
+                { status: 409 },
+            );
+        }
 
         return NextResponse.json({
             success: true,

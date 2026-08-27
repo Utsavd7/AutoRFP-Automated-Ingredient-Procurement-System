@@ -7,6 +7,36 @@ import { prisma } from '@/lib/prisma';
 
 const MAX_TURNS = 1;
 
+async function createQuoteIfRfpCurrent(input: {
+    rfpId: string;
+    tenantId: string;
+    expectedStatus: string;
+    price: number;
+    details: string;
+}) {
+    return prisma.$transaction(async (transaction) => {
+        const claimed = await transaction.rFP.updateMany({
+            where: {
+                id: input.rfpId,
+                tenantId: input.tenantId,
+                status: input.expectedStatus,
+            },
+            data: { status: 'REPLIED', repliedAt: new Date() },
+        });
+
+        if (claimed.count !== 1) return null;
+
+        return transaction.quote.create({
+            data: {
+                rfpId: input.rfpId,
+                price: input.price,
+                details: input.details,
+                status: 'SUBMITTED',
+            },
+        });
+    });
+}
+
 /**
  * Given the aggregated ingredient list and current market prices,
  * compute a realistic estimated total order cost.
@@ -147,17 +177,20 @@ Vendor email:
                         `[AI Turn ${turn}, Confidence: ${parsed.confidence}]`
                     ].filter(Boolean).join(' | ');
 
-                    const newQuote = await prisma.quote.create({
-                        data: { rfpId, price: Number(parsed.price), details, status: 'SUBMITTED' }
+                    const newQuote = await createQuoteIfRfpCurrent({
+                        rfpId: rfp.id,
+                        tenantId,
+                        expectedStatus: rfp.status,
+                        price: Number(parsed.price),
+                        details,
                     });
 
-                    await prisma.rFP.update({
-                        where: { id: rfpId },
-                        data: {
-                            status: 'REPLIED',
-                            repliedAt: new Date(),
-                        }
-                    });
+                    if (!newQuote) {
+                        return NextResponse.json(
+                            { error: 'This RFP is no longer available for a quote.' },
+                            { status: 409 },
+                        );
+                    }
 
                     quoteResult = newQuote;
 
@@ -218,22 +251,20 @@ Write a short, polite follow-up asking for clarification (2-3 sentences only).`;
                 message: `✅ Quote extracted: $${totalMockPrice.toFixed(2)}.${hasRealPricing ? ` Market baseline was $${estimatedTotal.toFixed(2)}.` : ''} Saved.`
             });
 
-            const newQuote = await prisma.quote.create({
-                data: {
-                    rfpId,
-                    price: totalMockPrice,
-                    details: `Delivery: Tuesday/Friday Morning ($${deliveryFee} fee). | ${hasRealPricing ? `Calculated from real market pricing for ${ingredients.length} ingredients (est. $${estimatedTotal.toFixed(2)} baseline).` : 'Full bulk order fulfillment confirmed.'} | [Calculated Fallback, Confidence: HIGH]`,
-                    status: 'SUBMITTED',
-                }
+            const newQuote = await createQuoteIfRfpCurrent({
+                rfpId: rfp.id,
+                tenantId,
+                expectedStatus: rfp.status,
+                price: totalMockPrice,
+                details: `Delivery: Tuesday/Friday Morning ($${deliveryFee} fee). | ${hasRealPricing ? `Calculated from real market pricing for ${ingredients.length} ingredients (est. $${estimatedTotal.toFixed(2)} baseline).` : 'Full bulk order fulfillment confirmed.'} | [Calculated Fallback, Confidence: HIGH]`,
             });
 
-            await prisma.rFP.update({
-                where: { id: rfpId },
-                data: {
-                    status: 'REPLIED',
-                    repliedAt: new Date(),
-                }
-            });
+            if (!newQuote) {
+                return NextResponse.json(
+                    { error: 'This RFP is no longer available for a quote.' },
+                    { status: 409 },
+                );
+            }
             quoteResult = newQuote;
 
             // Async RAG ingest — fire and forget

@@ -42,8 +42,8 @@ export async function POST(req: Request) {
         const sentRFPs = [];
         const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
-        await prisma.menu.update({
-            where: { id: menu.id },
+        const menuUpdate = await prisma.menu.updateMany({
+            where: { id: menu.id, tenantId },
             data: {
                 tenantId,
                 mealName: mealName || 'Full menu',
@@ -54,6 +54,10 @@ export async function POST(req: Request) {
                 lastActivityAt: new Date(),
             },
         });
+
+        if (menuUpdate.count !== 1) {
+            return NextResponse.json({ error: 'Menu not found.' }, { status: 404 });
+        }
 
         // Format the ingredient list for the email body
         const ingredientListText = ingredients.map((ing: any) => `- ${ing.quantity} ${ing.unit} of ${ing.name}`).join('\n');

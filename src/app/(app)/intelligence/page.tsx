@@ -3,13 +3,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
-  AlertTriangle, Bell, Building2, ChevronRight, CircleDollarSign,
+  AlertTriangle, Bell, Building2, CircleDollarSign,
   LineChart as LineChartIcon, Medal, PackageSearch, Radar, Sparkles, TrendingUp
 } from 'lucide-react';
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Legend,
   ResponsiveContainer, Tooltip, XAxis, YAxis
 } from 'recharts';
+import type { ValueType } from 'recharts/types/component/DefaultTooltipContent';
 import {
   ACCOUNT_KEY,
   readAccount,
@@ -21,8 +22,23 @@ import { PageSkeleton } from '@/components/Skeleton';
 
 type SupplierScore = NonNullable<ProcurementRecord['supplierScorecards']>[number];
 
+type SavingsTrendPoint = {
+  run: string;
+  date: string;
+  savings: number;
+  spend: number;
+  market: number;
+  cumulativeSavings: number;
+  cumulativeMarket: number;
+};
+
 function money(value: number) {
   return `$${Math.round(value).toLocaleString()}`;
+}
+
+function chartMoney(value: ValueType | undefined) {
+  const numericValue = Array.isArray(value) ? value[0] : value;
+  return money(Number(numericValue));
 }
 
 function Panel({ children, className = '' }: { children: React.ReactNode; className?: string }) {
@@ -88,14 +104,16 @@ export default function IntelligencePage() {
 
   const chronological = useMemo(() => [...history].reverse(), [history]);
   const savingsTrend = useMemo(() => {
-    let cumulativeSavings = 0;
-    let cumulativeMarket = 0;
-    return chronological.map((run, index) => {
+    return chronological.reduce<{
+      points: SavingsTrendPoint[];
+      cumulativeSavings: number;
+      cumulativeMarket: number;
+    }>((summary, run, index) => {
       const savings = run.totalSavings ?? 0;
       const spend = run.totalSpend ?? run.winnerPrice ?? 0;
-      cumulativeSavings += savings;
-      cumulativeMarket += spend + savings;
-      return {
+      const cumulativeSavings = summary.cumulativeSavings + savings;
+      const cumulativeMarket = summary.cumulativeMarket + spend + savings;
+      const point = {
         run: `Run ${index + 1}`,
         date: new Date(run.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
         savings,
@@ -104,7 +122,12 @@ export default function IntelligencePage() {
         cumulativeSavings,
         cumulativeMarket,
       };
-    });
+      return {
+        points: [...summary.points, point],
+        cumulativeSavings,
+        cumulativeMarket,
+      };
+    }, { points: [], cumulativeSavings: 0, cumulativeMarket: 0 }).points;
   }, [chronological]);
 
   const alerts = useMemo(() => history.flatMap(run =>
@@ -224,7 +247,7 @@ export default function IntelligencePage() {
                     <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
                     <XAxis dataKey="date" tick={{ fill: '#8A8F98', fontSize: 11 }} axisLine={false} tickLine={false} />
                     <YAxis tick={{ fill: '#8A8F98', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={money} />
-                    <Tooltip contentStyle={{ background: '#080808', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 12 }} formatter={(v: any) => money(Number(v))} />
+                    <Tooltip contentStyle={{ background: '#080808', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 12 }} formatter={chartMoney} />
                     <Legend wrapperStyle={{ fontSize: 11, color: '#8A8F98' }} />
                     <Area type="monotone" dataKey="market" name="Market baseline" stroke="#60a5fa" fill="transparent" strokeWidth={2} />
                     <Area type="monotone" dataKey="spend" name="Negotiated spend" stroke="#a78bfa" fill="transparent" strokeWidth={2} />
@@ -273,7 +296,7 @@ export default function IntelligencePage() {
                     <CartesianGrid stroke="rgba(255,255,255,0.06)" horizontal={false} />
                     <XAxis type="number" tick={{ fill: '#8A8F98', fontSize: 11 }} tickFormatter={money} axisLine={false} tickLine={false} />
                     <YAxis type="category" dataKey="category" tick={{ fill: '#8A8F98', fontSize: 11 }} width={80} axisLine={false} tickLine={false} />
-                    <Tooltip contentStyle={{ background: '#080808', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 12 }} formatter={(v: any) => money(Number(v))} />
+                    <Tooltip contentStyle={{ background: '#080808', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 12 }} formatter={chartMoney} />
                     <Bar dataKey="savings" name="Savings" fill="#34d399" radius={[0, 5, 5, 0]} />
                   </BarChart>
                 </ResponsiveContainer>

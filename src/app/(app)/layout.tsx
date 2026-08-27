@@ -141,8 +141,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       });
   }, [router]);
 
-  useEffect(() => { setMobileOpen(false); }, [pathname]);
-
   const handleSignOut = async () => {
     await signOut({ redirect: false });
     localStorage.removeItem(ACCOUNT_KEY);

@@ -5,6 +5,15 @@ import { makeTenantId, parseSuppliers } from '@/lib/tenant';
 import { prisma } from '@/lib/prisma';
 import { createPasswordRecord, verifyPassword } from '@/lib/password';
 
+type TenantAuthUser = {
+  tenantId: string;
+  location: string;
+  cuisineType: string;
+  preferredSuppliers: string[];
+  monthlyBudgetTarget: number | null;
+  savingsTargetPct: number | null;
+};
+
 export const authOptions: NextAuthOptions = {
   session: { strategy: 'jwt' },
   providers: [
@@ -43,7 +52,7 @@ export const authOptions: NextAuthOptions = {
             preferredSuppliers: tenant.preferredSuppliers,
             monthlyBudgetTarget: tenant.monthlyBudgetTarget,
             savingsTargetPct: tenant.savingsTargetPct,
-          } as any;
+          };
         }
 
         if (!name) throw new Error('Restaurant name is required.');
@@ -84,14 +93,14 @@ export const authOptions: NextAuthOptions = {
           preferredSuppliers: tenant.preferredSuppliers,
           monthlyBudgetTarget: tenant.monthlyBudgetTarget,
           savingsTargetPct: tenant.savingsTargetPct,
-        } as any;
+        };
       },
     }),
   ],
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
-        const tenantUser = user as any;
+        const tenantUser = user as typeof user & TenantAuthUser;
         token.tenantId = tenantUser.tenantId;
         token.location = tenantUser.location;
         token.cuisineType = tenantUser.cuisineType;
@@ -110,7 +119,7 @@ export const authOptions: NextAuthOptions = {
         preferredSuppliers: token.preferredSuppliers,
         monthlyBudgetTarget: token.monthlyBudgetTarget,
         savingsTargetPct: token.savingsTargetPct,
-      } as any;
+      };
       return session;
     },
   },

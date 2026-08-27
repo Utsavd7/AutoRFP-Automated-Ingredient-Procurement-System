@@ -4,6 +4,10 @@ import { getCurrentTenantId } from './tenant-context';
 // Models that carry tenantId and should be automatically scoped per tenant
 const TENANT_SCOPED = new Set(['Menu', 'RFP', 'ProcurementRun']);
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 function buildPrismaClient() {
     const base = new PrismaClient({
         log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
@@ -15,12 +19,7 @@ function buildPrismaClient() {
     return base.$extends({
         query: {
             $allModels: {
-                async $allOperations({ model, operation, args, query }: {
-                    model: string;
-                    operation: string;
-                    args: Record<string, any>;
-                    query: (args: any) => Promise<any>;
-                }) {
+                async $allOperations({ model, operation, args, query }) {
                     const tenantId = getCurrentTenantId();
 
                     if (!tenantId || !TENANT_SCOPED.has(model)) {
@@ -31,10 +30,12 @@ function buildPrismaClient() {
                     const writeOps = new Set(['create', 'createMany']);
 
                     if (readOps.has(operation)) {
-                        args = { ...args, where: { ...args.where, tenantId } };
+                        const where = Reflect.get(args, 'where');
+                        Object.assign(args, { where: { ...(isRecord(where) ? where : {}), tenantId } });
                     } else if (writeOps.has(operation)) {
                         if (operation === 'create') {
-                            args = { ...args, data: { ...args.data, tenantId } };
+                            const data = Reflect.get(args, 'data');
+                            Object.assign(args, { data: { ...(isRecord(data) ? data : {}), tenantId } });
                         }
                     }
 

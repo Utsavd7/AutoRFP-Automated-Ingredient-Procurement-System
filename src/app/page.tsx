@@ -101,9 +101,10 @@ export default function LandingPage() {
       const { account } = await accountRes.json();
       saveAccount(account);
       router.push('/dashboard');
-    } catch (err: any) {
-      setAuthError(err.message || 'Unable to create restaurant session.');
-      toastApiError(err, mode === 'signin' ? 'Sign in failed' : 'Sign up failed');
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unable to create restaurant session.';
+      setAuthError(message);
+      toastApiError(error, mode === 'signin' ? 'Sign in failed' : 'Sign up failed');
     } finally {
       setLoading(false);
     }

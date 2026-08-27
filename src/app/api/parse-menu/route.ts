@@ -111,26 +111,20 @@ export async function POST(req: Request) {
         text: menuText,
         sourceUrl: null,
         workflowStatus: 'DRAFT',
-      },
-    });
-
-    const recipes = [];
-    for (const dish of dishes) {
-      const recipe = await prisma.recipe.create({
-        data: {
-          name: dish.name,
-          menuId: menu.id,
-          ingredients: { create: [] },
+        recipes: {
+          create: dishes.map((dish) => ({
+            name: dish.name,
+            ingredients: { create: [] },
+          })),
         },
-        include: { ingredients: true },
-      });
-      recipes.push(recipe);
-    }
+      },
+      include: { recipes: { include: { ingredients: true } } },
+    });
 
     return NextResponse.json({
       success: true,
       menuId: menu.id,
-      recipes,
+      recipes: menu.recipes,
       modelSource,
       requiresReview: true,
       menuInsight: null,

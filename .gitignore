@@ -66,6 +66,9 @@ next-env.d.ts
 # ── Local scripts ─────────────────────────────────────────
 /scripts/show-tables.sh
 
+# ── Isolated Codex implementation worktrees ───────────────
+/.worktrees/
+
 # ── One-off test files ────────────────────────────────────
 test.js
 test-groq.js

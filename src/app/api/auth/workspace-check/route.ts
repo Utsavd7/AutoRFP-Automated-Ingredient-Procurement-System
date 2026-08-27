@@ -17,15 +17,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Password must be at least 8 characters.' }, { status: 400 });
   }
 
+  if (mode === 'signin') {
+    return NextResponse.json({ ok: true });
+  }
+
   const existing = await prisma.tenant.findFirst({
     where: { email },
     select: { id: true },
   });
-
-  if (mode === 'signin') {
-    if (!existing) return NextResponse.json({ error: 'No workspace exists for that email. Create a workspace first.' }, { status: 404 });
-    return NextResponse.json({ ok: true });
-  }
 
   if (!name) return NextResponse.json({ error: 'Restaurant name is required.' }, { status: 400 });
   if (!location) return NextResponse.json({ error: 'Location is required.' }, { status: 400 });

@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { createPasswordRecord } from '@/lib/password';
+import {
+  isLegacyFeatureEnabled,
+  legacyFeatureUnavailable,
+} from '@/lib/features/legacy-features';
 import { makeTenantId } from '@/lib/tenant';
 
 const DEMO_EMAIL = 'demo@autorfp.local';
@@ -8,6 +12,10 @@ const DEMO_PASSWORD = 'demo-password';
 const DEMO_NAME = 'Demo Bistro Group';
 
 export async function POST() {
+  if (!isLegacyFeatureEnabled()) {
+    return legacyFeatureUnavailable();
+  }
+
   const id = makeTenantId(DEMO_EMAIL, DEMO_NAME);
   const passwordRecord = createPasswordRecord(DEMO_PASSWORD);
   const tenant = await prisma.tenant.upsert({

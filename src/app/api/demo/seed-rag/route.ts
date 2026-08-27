@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { ingestQuote } from '@/lib/chroma';
 import { getEmbedding } from '@/lib/embeddings';
+import {
+    isLegacyFeatureEnabled,
+    legacyFeatureUnavailable,
+} from '@/lib/features/legacy-features';
 import { makeTenantId } from '@/lib/tenant';
 
 const demoTenantId = makeTenantId('demo@autorfp.local', 'Demo Bistro Group');
@@ -33,6 +37,10 @@ const memories = [
 ];
 
 export async function POST() {
+    if (!isLegacyFeatureEnabled()) {
+        return legacyFeatureUnavailable();
+    }
+
     const results = await Promise.all(memories.map(async memory => {
         const embedding = await getEmbedding(memory.text);
         if (!embedding) return false;

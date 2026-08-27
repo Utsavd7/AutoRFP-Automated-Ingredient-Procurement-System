@@ -1,4 +1,4 @@
-# AutoRFP — Automated Ingredient Procurement System
+# AutoRFP - Automated Ingredient Procurement System
 
 > Built by Utsav Doshi · [github.com/Utsavd7](https://github.com/Utsavd7)
 
@@ -6,7 +6,7 @@
 
 ## Current Status
 
-AutoRFP is in a production-safety rebuild. The default application currently supports authenticated restaurant workspaces, pasted menu text, a saved menu draft, guest-based quantity scaling, and a reviewable ingredient demand draft. It does not send supplier requests, present market estimates as verified evidence, accept public supplier quotes, simulate supplier replies, or run negotiation workflows in the production-safe default.
+AutoRFP is in a production-safety rebuild. The default application currently supports authenticated restaurant workspaces, bounded pasted menu text, and a saved draft of menu text and extracted dish names. It does not yet create an ingredient demand plan, send supplier requests, present market estimates as verified evidence, accept public supplier quotes, simulate supplier replies, or run negotiation workflows.
 
 The earlier pricing, supplier discovery, quote simulation, background-job, public quote, and agent negotiation modules remain quarantined behind explicit legacy-demo flags while they are replaced and verified. They are not production capabilities.
 
@@ -18,7 +18,7 @@ Every restaurant has to buy food. Every single week.
 
 The chef or owner has to figure out: what do we need, how much of it, who sells it, what's the going rate, and are we getting a fair price? Then they call suppliers, wait for quotes, compare them manually, negotiate a little, and place an order. Then do it all over again next week.
 
-You paste menu text, review the extracted dishes, enter a guest count and buffer, and generate a combined ingredient demand draft. The workflow stops there by default. The interface states clearly that no supplier request has been sent.
+You paste menu text and review the extracted dish names. The menu draft is saved, and the workflow stops there. Ingredient entry, quantity planning, and supplier actions are not enabled in the current safe default.
 
 ---
 
@@ -41,11 +41,11 @@ This is a real operational problem for independent restaurants without a dedicat
 
 ## Why I Built This
 
-I wanted to explore the intersection of procurement automation, market evidence, and restaurant operations. The original prototype tested the ideas below. During the production-safety rebuild, only menu drafting and quantity review are enabled by default; the rest are quarantined prototype modules or approved target capabilities.
+I wanted to explore the intersection of procurement automation, market evidence, and restaurant operations. The original prototype tested the ideas below. During the production-safety rebuild, only menu and dish-name drafting are enabled by default; the rest are quarantined prototype modules or approved target capabilities.
 
 **Hidden ingredient prototype** — The original experiment used model inference to add likely cooking ingredients. The production-safe parser does not invent ingredients that are absent from the submitted menu text. Operator-reviewed recipe enrichment is an approved target.
 
-**Realistic quantities** — LLMs are terrible at this. They'll say 500g of garlic for 20 guests without blinking. So I removed AI from that decision. I built a lookup table of 40+ ingredient categories with real kitchen portion standards — salmon is 8oz per guest, pasta is 4oz, herbs are 0.25oz. The LLM says *what*, the app decides *how much*.
+**Quantity-planning prototype** - The legacy interface contains deterministic unit and scaling rules, but the current safe parser does not create ingredients and the safe workflow does not use those rules. Reviewed ingredient entry and quantity planning are target capabilities.
 
 **Market evidence prototype** — The legacy module maps some ingredients to commodity and retail series, then derives estimates. Those estimates are not currently presented as verified supplier-market evidence. The approved target requires source attribution, freshness, units, and India-relevant coverage.
 
@@ -66,7 +66,7 @@ I wanted to explore the intersection of procurement automation, market evidence,
 | Area | Current production-safe default | Approved target |
 |---|---|---|
 | Menu input | Bounded pasted text | Reviewed import options with explicit source handling |
-| Demand planning | Saved menu draft and deterministic guest scaling | Versioned demand plans with operator approval |
+| Demand planning | Not enabled; only menu text and dish names are saved | Versioned demand plans with operator approval |
 | Market evidence | Disabled | Traceable India-relevant evidence with source, timestamp, and unit |
 | Supplier outreach | Disabled | Reviewed requests through a production email provider |
 | Supplier quotes | Public portal disabled | Secure tokenized quote collection and audit history |
@@ -78,11 +78,11 @@ I wanted to explore the intersection of procurement automation, market evidence,
 
 ## Enabled Core Features
 
-**Menu to Procurement List**
-Paste bounded menu text. The application saves a menu draft and applies deterministic per-guest quantity rules. One guest count scales the reviewed menu into a combined ingredient list.
+**Saved Menu Draft**
+Paste bounded menu text. The application saves the submitted text and extracted dish names without inventing ingredients.
 
 **Safe Stop Before External Action**
-After quantity entry, the default workflow stops at `Demand draft ready for review`. Supplier outreach, market evidence, quote collection, recommendation, risk scoring, simulation, and negotiation controls are hidden.
+After the menu draft is saved, the default workflow stops at `Menu draft saved for review`. Ingredient planning, supplier outreach, market evidence, quote collection, recommendation, risk scoring, simulation, and negotiation controls are hidden.
 
 ## Quarantined Legacy Modules
 
@@ -160,12 +160,12 @@ Current production-safe application surface:
 ```text
 src/app/page.tsx                              Sign-in and workspace setup
 src/app/(app)/layout.tsx                      Authenticated application shell
-src/app/(app)/procurement/page.tsx            Menu review and demand drafting by default
+src/app/(app)/procurement/page.tsx            Menu and dish-name drafting by default
 src/app/quote/[rfpId]/page.tsx                Static unavailable state by default
 src/app/api/auth/[...nextauth]/route.ts        Authenticated session handling
 src/app/api/account/route.ts                   Session-derived restaurant profile
 src/app/api/parse-menu/route.ts                Bounded pasted-text menu drafting
-src/app/api/procurement-session/active/route.ts Saved in-progress demand draft
+src/app/api/procurement-session/active/route.ts Saved in-progress workflow metadata
 src/lib/api/require-api-tenant.ts              Session-derived tenant guard
 src/lib/features/legacy-features.ts            Fail-closed legacy feature gate
 prisma/schema.prisma                           Database models and tenant indexes
@@ -262,7 +262,7 @@ Open [http://localhost:3000](http://localhost:3000), create a restaurant workspa
 
 ## Safe Local Workflow
 
-Start the app with the legacy flags left at `false`, create a restaurant workspace, and use pasted menu text. The flow will stop after it creates the demand draft. Demo seeding and external-action workflows are intentionally unavailable in this mode.
+Start the app with the legacy flags left at `false`, create a restaurant workspace, and paste menu text. The flow stops after saving the menu text and extracted dish names. Ingredient planning, demo seeding, and external-action workflows are intentionally unavailable in this mode.
 
 ### Sample menus to try
 

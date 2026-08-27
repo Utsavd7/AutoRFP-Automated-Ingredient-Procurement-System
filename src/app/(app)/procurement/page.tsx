@@ -20,7 +20,6 @@ import {
   tenantKey,
   writeTenantHistory,
   readTenantHistory,
-  type RestaurantAccount,
 } from '@/lib/tenant';
 import { Skeleton } from '@/components/Skeleton';
 import { toastApiError } from '@/lib/toast';
@@ -633,7 +632,6 @@ Classic Tiramisu  $10
 Crème Brûlée  $11`;
 
 export default function ProcurementPage() {
-  const [account, setAccount] = useState<RestaurantAccount | null>(null);
   const [restaurantName, setRestaurantName] = useState('');
 
   const [menuText, setMenuText] = useState('');
@@ -680,7 +678,6 @@ export default function ProcurementPage() {
   useEffect(() => {
     const saved = readAccount();
     if (saved) {
-      setAccount(saved);
       setRestaurantName(saved.name || '');
       if (saved.location) setDistributorLocation(saved.location);
 
@@ -739,8 +736,7 @@ export default function ProcurementPage() {
 
   const activeStage = useMemo(() => {
     if (!legacyDemoEnabled) {
-      if (ingredients.length > 0) return 'Demand draft ready for review';
-      if (recipes.length > 0) return 'Menu draft ready';
+      if (recipes.length > 0) return 'Menu draft saved';
       return 'Drafting';
     }
     if (negotiationComplete) return 'Deal closed';
@@ -751,7 +747,7 @@ export default function ProcurementPage() {
     if (pricingData.length > 0) return 'Market priced';
     if (recipes.length > 0) return 'Menu parsed';
     return 'Drafting';
-  }, [distributors.length, ingredients.length, negotiationComplete, negotiating, pricingData.length, quotes.length, recipes.length, sentRFPs.length]);
+  }, [distributors.length, negotiationComplete, negotiating, pricingData.length, quotes.length, recipes.length, sentRFPs.length]);
 
   // ── Handlers ───────────────────────────────────────────────────────────────
   const resolveLocation = (): Promise<string> => {
@@ -815,7 +811,7 @@ export default function ProcurementPage() {
     setEmailThread([]);
     setNegotiationComplete(null);
     if (!legacyDemoEnabled) {
-      setPipelineStatus('Demand draft ready for review');
+      setPipelineStatus('Menu draft saved for review');
       return;
     }
     setPipelineStatus('Checking legacy market estimates…');
@@ -883,7 +879,7 @@ export default function ProcurementPage() {
       const res = await fetch('/api/parse-menu', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ menuText, tenantId: account?.tenantId ?? null }),
+        body: JSON.stringify({ menuText }),
       });
       const data = await res.json() as { error?: string; recipes?: Recipe[]; modelSource?: string; menuInsight?: string };
       if (!res.ok) throw new Error(data.error || 'Failed to parse menu');
@@ -912,8 +908,7 @@ export default function ProcurementPage() {
     if (!targetDistributors.length || !targetIngredients.length) return;
     setSendingRFPs(true); setError('');
     try {
-      const tenantId = account?.tenantId ?? 'tenant_demo';
-      const res = await fetch('/api/send-rfp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ distributorIds: targetDistributors.map(d => d.id), menuId: recipes[0]?.menuId || 'demo-menu-id', ingredients: targetIngredients, tenantId, mealName: 'Full menu', guestCount: targetGuests, bufferPct: targetBuffer }) });
+      const res = await fetch('/api/send-rfp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ distributorIds: targetDistributors.map(d => d.id), menuId: recipes[0]?.menuId || 'demo-menu-id', ingredients: targetIngredients, mealName: 'Full menu', guestCount: targetGuests, bufferPct: targetBuffer }) });
       const data = await res.json() as { error?: string; rfps?: SentRfp[] };
       if (!res.ok) throw new Error(data.error || 'Failed to send RFPs');
       setSentRFPs(data.rfps ?? []);
@@ -927,8 +922,7 @@ export default function ProcurementPage() {
     if (!menuId) return [];
     setLoadingQuotes(true); setError('');
     try {
-      const tenantId = account?.tenantId ?? 'tenant_demo';
-      const res = await fetch(`/api/quotes?menuId=${menuId}&tenantId=${encodeURIComponent(tenantId)}`);
+      const res = await fetch(`/api/quotes?menuId=${menuId}`);
       const data = await res.json() as { error?: string; quotes?: Quote[] };
       if (!res.ok) throw new Error(data.error || 'Failed to fetch quotes');
       const nextQuotes = data.quotes ?? [];
@@ -982,7 +976,7 @@ export default function ProcurementPage() {
       await Promise.all(unresolved.map(async (rfp) => {
         setVendorProgress(p => ({ ...p, [rfp.id]: 'contacting' }));
         try {
-          const res = await fetch('/api/simulate-conversation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rfpId: rfp.id, ingredients, pricingData, tenantId: account?.tenantId, mealName: 'Full menu', guestCount, bufferPct }) });
+          const res = await fetch('/api/simulate-conversation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rfpId: rfp.id, ingredients, pricingData, mealName: 'Full menu', guestCount, bufferPct }) });
           const data = await res.json() as { conversationLog?: ConversationEntry[]; message?: string };
           newLogs[rfp.id] = [
             { role: 'system', message: `Processing vendor response from ${rfp.distributorName}...` },
@@ -1007,10 +1001,8 @@ export default function ProcurementPage() {
     if (!menuId) return;
     setLoadingRecommendation(true); setError('');
     try {
-      const tenantId = account?.tenantId ?? 'tenant_demo';
       const params = new URLSearchParams({
         menuId,
-        tenantId,
         mealName: 'Full menu',
         guestCount: String(guestCount),
         marketValue: String(marketValue),
@@ -1028,8 +1020,7 @@ export default function ProcurementPage() {
     const menuId = recipes[0]?.menuId;
     if (!menuId) return;
     setNegotiating(true); setAgentEvents([]); setEmailThread([]); setNegotiationComplete(null);
-    const tenantId = account?.tenantId ?? 'tenant_demo';
-    const es = new EventSource(`/api/agent/negotiate?menuId=${menuId}&tenantId=${encodeURIComponent(tenantId)}`);
+    const es = new EventSource(`/api/agent/negotiate?menuId=${menuId}`);
     const stamp = () => new Date().toISOString();
     const add = (type: string, data: Partial<AgentEvent>) => setAgentEvents(prev => [...prev, { type, timestamp: stamp(), ...data }]);
     es.addEventListener('agent_start',       e => add('agent_start',       JSON.parse((e as MessageEvent).data) as Partial<AgentEvent>));
@@ -1082,6 +1073,8 @@ export default function ProcurementPage() {
         };
       });
       // Save to localStorage history
+      const tenantId = readAccount()?.tenantId;
+      if (!tenantId) return;
       const historyItem = {
         id: Date.now().toString(),
         date: new Date().toISOString(),
@@ -1213,11 +1206,11 @@ export default function ProcurementPage() {
             </div>
             <p className="text-[11px] font-bold text-violet-400 uppercase tracking-[0.2em] mb-4">Procurement Workbench</p>
             <h1 className="text-[42px] md:text-[52px] font-black tracking-tight gradient-text leading-none mb-5">
-              From menu to a reviewed<br />
-              <span className="text-white">demand draft.</span>
+              Turn menu text into a<br />
+              <span className="text-white">saved dish draft.</span>
             </h1>
             <p className="text-[15px] text-[#8A8F98] max-w-lg mx-auto leading-relaxed mb-8">
-              Paste menu text, review the extracted dishes, and size an ingredient demand draft for your expected guests.
+              Paste menu text and review the extracted dish names. Ingredient entry and quantity planning are being added next.
             </p>
             <div className="flex items-center justify-center gap-3 mb-8">
               <button
@@ -1230,9 +1223,9 @@ export default function ProcurementPage() {
               <span className="text-[12px] text-[#8A8F98]">or paste yours below</span>
             </div>
             <div className="flex items-center justify-center flex-wrap gap-x-5 gap-y-2 text-[11px] font-bold uppercase tracking-widest">
-              <span className="flex items-center gap-1.5 text-violet-400"><span className="w-1.5 h-1.5 rounded-full bg-violet-400" />Drafts menu ingredients</span>
+              <span className="flex items-center gap-1.5 text-violet-400"><span className="w-1.5 h-1.5 rounded-full bg-violet-400" />Saves menu text</span>
               <span className="text-white/20">/</span>
-              <span className="text-blue-400">Scales quantities by guests</span>
+              <span className="text-blue-400">Extracts dish names only</span>
               <span className="text-white/20">/</span>
               <span className="text-[#8A8F98]">Sends nothing without review</span>
             </div>
@@ -1251,7 +1244,7 @@ export default function ProcurementPage() {
         {/* ════════════════════
             Menu Analysis
         ════════════════════ */}
-        <Section done={recipes.length > 0} title="Menu Review" subtitle="Paste menu text to create a draft of dishes and procurement ingredients">
+        <Section done={recipes.length > 0} title="Menu Review" subtitle="Paste menu text to create a saved draft of dish names">
           <div className="grid lg:grid-cols-5 gap-6">
             <Card className="lg:col-span-2 p-6 flex flex-col gap-4 border border-white/10">
               <div className="flex items-center justify-between">
@@ -1320,7 +1313,9 @@ export default function ProcurementPage() {
                   ) : recipes.map((recipe, i) => (
                     <div key={i} className="flex items-center justify-between px-3 py-1.5 bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-white/10 rounded-md transition-all">
                       <span className="text-[12px] text-[#EEEEEE] font-semibold truncate mr-2">{recipe.name}</span>
-                      <span className="text-[10px] text-[#8A8F98] uppercase tracking-widest shrink-0">{recipe.ingredients?.length ?? 0} ing</span>
+                      <span className="text-[10px] text-[#8A8F98] uppercase tracking-widest shrink-0">
+                        {legacyDemoEnabled ? `${recipe.ingredients?.length ?? 0} ing` : 'Saved dish'}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -1330,7 +1325,7 @@ export default function ProcurementPage() {
               </div>
             </Card>
 
-            {recipes.length > 0 && (
+            {recipes.length > 0 && legacyDemoEnabled && (
               <Card className="lg:col-span-5 p-6 border border-blue-500/20 bg-blue-500/[0.03]">
 	                <div className="flex items-start justify-between gap-4 flex-wrap mb-5">
 	                  <div>
@@ -1375,7 +1370,7 @@ export default function ProcurementPage() {
 	                  </label>
 	                  <Btn onClick={() => applyWholeMenuSizing()} disabled={!recipes.length || loadingPricing || loadingDistributors || sendingRFPs} loading={loadingPricing || loadingDistributors || sendingRFPs}>
 	                    <Target className="w-4 h-4" />
-	                    {pipelineStatus || (legacyDemoEnabled ? 'Apply and send RFPs' : 'Build demand draft')}
+	                    {pipelineStatus || 'Apply and send RFPs'}
 	                  </Btn>
 	                </div>
                 {recipes.length > 0 && (() => {
@@ -1399,7 +1394,7 @@ export default function ProcurementPage() {
               </Card>
             )}
 
-            {ingredients.length > 0 && (
+            {legacyDemoEnabled && ingredients.length > 0 && (
               <Card className="lg:col-span-5 p-6 border border-white/10">
                 {(() => {
                   const mix = menuMixFactor(recipes.length);
@@ -1456,16 +1451,16 @@ export default function ProcurementPage() {
           </div>
         </Section>
 
-        {!legacyDemoEnabled && ingredients.length > 0 && (
+        {!legacyDemoEnabled && recipes.length > 0 && (
           <Card className="p-6 border border-emerald-500/20 bg-emerald-500/[0.03]">
             <div className="flex items-start gap-4">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-emerald-500/20 bg-emerald-500/10">
                 <FileCheck className="h-4 w-4 text-emerald-400" />
               </div>
               <div>
-                <h2 className="text-[18px] font-bold tracking-tight text-[#EEEEEE]">Demand draft ready for review</h2>
+                <h2 className="text-[18px] font-bold tracking-tight text-[#EEEEEE]">Menu draft saved for review</h2>
                 <p className="mt-2 max-w-2xl text-[13px] leading-relaxed text-[#8A8F98]">
-                  Real supplier requests and market evidence are being enabled in the production workflow. Your reviewed menu draft is saved; nothing has been sent.
+                  Real supplier requests and market evidence are being enabled in the production workflow. Your menu and extracted dish names are saved; nothing has been sent.
                 </p>
               </div>
             </div>
@@ -2146,7 +2141,7 @@ export default function ProcurementPage() {
       <footer className="border-t border-white/5 bg-black mt-16">
         <div className="max-w-5xl mx-auto px-6 py-5 flex flex-col md:flex-row md:items-center justify-between text-[11px] font-bold text-[#8A8F98] uppercase tracking-widest gap-3">
           <span className="flex items-center gap-2"><ChefHat className="w-3.5 h-3.5 text-white/30" /> AutoRFP Engine</span>
-          <span>{legacyDemoEnabled ? 'Legacy demo mode enabled' : 'Production safe demand drafting'}</span>
+          <span>{legacyDemoEnabled ? 'Legacy demo mode enabled' : 'Production safe menu drafting'}</span>
         </div>
       </footer>
     </div>

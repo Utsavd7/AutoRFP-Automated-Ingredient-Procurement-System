@@ -208,24 +208,27 @@ describe('production-safe workflow presentation', () => {
   const publicLegacyFlag =
     "const legacyDemoEnabled = process.env.NEXT_PUBLIC_AUTORFP_ENABLE_LEGACY_DEMO === 'true';";
 
-  it('stops the procurement flow at a saved demand draft by default', () => {
+  it('stops the procurement flow at a saved menu draft by default', () => {
     const source = readSource('app', '(app)', 'procurement', 'page.tsx');
     const applySizingStart = source.indexOf('const applyWholeMenuSizing');
     const pricingHandlerStart = source.indexOf('const handleFetchPricing');
     const applySizingSource = source.slice(applySizingStart, pricingHandlerStart);
 
     expect(source).toContain(publicLegacyFlag);
-    expect(source).toContain('Demand draft ready for review');
+    expect(source).toContain('Menu draft saved for review');
     expect(source).toContain(
-      'Real supplier requests and market evidence are being enabled in the production workflow. Your reviewed menu draft is saved; nothing has been sent.',
+      'Real supplier requests and market evidence are being enabled in the production workflow. Your menu and extracted dish names are saved; nothing has been sent.',
     );
     expect(applySizingSource).toMatch(
-      /if \(!legacyDemoEnabled\)\s*\{[\s\S]*?setPipelineStatus\('Demand draft ready for review'\);[\s\S]*?return;[\s\S]*?\}/,
+      /if \(!legacyDemoEnabled\)\s*\{[\s\S]*?setPipelineStatus\('Menu draft saved for review'\);[\s\S]*?return;[\s\S]*?\}/,
     );
     expect(applySizingSource.indexOf('if (!legacyDemoEnabled)')).toBeLessThan(
       applySizingSource.indexOf('handleFetchPricing(sized)'),
     );
     expect(source).toContain('{legacyDemoEnabled && (');
+    expect(source).not.toContain('Build demand draft');
+    expect(source).not.toContain('Scales quantities by guests');
+    expect(source).not.toContain('Drafts menu ingredients');
   });
 
   test.each([
@@ -289,6 +292,18 @@ describe('production-safe workflow presentation', () => {
     );
     expect(readme).not.toContain(
       'prisma.ts                        Prisma client with $extends RLS interceptor',
+    );
+    expect(readme).not.toContain(
+      'a saved menu draft, guest-based quantity scaling, and a reviewable ingredient demand draft',
+    );
+    expect(readme).not.toContain(
+      'enter a guest count and buffer, and generate a combined ingredient demand draft',
+    );
+    expect(readme).not.toContain(
+      'The application saves a menu draft and applies deterministic per-guest quantity rules.',
+    );
+    expect(readme).not.toContain(
+      'The flow will stop after it creates the demand draft.',
     );
   });
 });

@@ -92,6 +92,17 @@ function errorMessage(error: unknown, fallback: string): string {
     return fallback;
 }
 
+function isVendorAnalysis(value: unknown): value is VendorAnalysis {
+    if (typeof value !== 'object' || value === null) return false;
+    const vendor = value as Record<string, unknown>;
+    return typeof vendor.vendorName === 'string'
+        && typeof vendor.originalPrice === 'number'
+        && typeof vendor.estimatedMarkupPct === 'string'
+        && typeof vendor.fairCounterPrice === 'number'
+        && (vendor.priority === 'HIGH' || vendor.priority === 'MEDIUM' || vendor.priority === 'SKIP')
+        && typeof vendor.leverage === 'string';
+}
+
 // ─── Agent Definitions ────────────────────────────────────────────────────────
 
 const AGENTS = {
@@ -328,6 +339,13 @@ Return JSON:
   ],
   "marketInsight": "one-sentence key market observation"
 }`);
+        if (
+            !Array.isArray(marketAnalysis.vendorAnalysis)
+            || !marketAnalysis.vendorAnalysis.every(isVendorAnalysis)
+            || typeof marketAnalysis.marketInsight !== 'string'
+        ) {
+            throw new Error('Invalid market analysis response');
+        }
     } catch {
         const sorted = [...quotes].sort((a, b) => a.originalPrice - b.originalPrice);
         const median = sorted[Math.floor(sorted.length / 2)]?.originalPrice ?? lowestQuote;

@@ -183,4 +183,23 @@ describe('public route surface', () => {
       );
     },
   );
+
+  it('guards malformed analyst output before reading vendor analysis', () => {
+    const source = readSource('app', 'api', 'agent', 'negotiate', 'route.ts');
+    const guardStart = source.indexOf(
+      'Array.isArray(marketAnalysis.vendorAnalysis)',
+    );
+    const lookupStart = source.indexOf('marketAnalysis.vendorAnalysis.find');
+
+    expect(guardStart).toBeGreaterThanOrEqual(0);
+    expect(guardStart).toBeLessThan(lookupStart);
+  });
+
+  it('closes the mobile drawer before opening command search', () => {
+    const source = readSource('app', '(app)', 'layout.tsx');
+
+    expect(source).toMatch(
+      /onClick=\{\(\) => \{\s*onNav\(\);\s*window\.dispatchEvent\(new KeyboardEvent/,
+    );
+  });
 });

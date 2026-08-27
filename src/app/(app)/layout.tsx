@@ -78,7 +78,10 @@ function SidebarContent({
       {/* ⌘K hint */}
       <div className="px-2.5 pb-3">
         <button
-          onClick={() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true }))}
+          onClick={() => {
+            onNav();
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true }));
+          }}
           className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04] transition-colors text-[#8A8F98] hover:text-[#EEEEEE]"
         >
           <Command className="w-3 h-3 shrink-0" />

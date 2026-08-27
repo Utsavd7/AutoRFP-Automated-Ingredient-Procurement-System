@@ -58,4 +58,36 @@ describe('problemResponse', () => {
     expect(JSON.stringify(body)).not.toContain('database password exposed');
     expect(JSON.stringify(body)).not.toContain('DB_SECRET');
   });
+
+  it('recursively omits exception objects and stack traces from nested extensions', async () => {
+    const exception = Object.assign(new Error('nested database password exposed'), {
+      internalCode: 'NESTED_DB_SECRET',
+    });
+
+    const response = problemResponse(500, 'Internal server error', 'Please try again later.', {
+      diagnostics: {
+        requestId: 'request_789',
+        nested: {
+          exception,
+          reason: exception,
+          stack: exception.stack,
+          safe: 'retained',
+        },
+        attempts: [
+          { status: 'failed', error: exception },
+          exception,
+          { status: 'queued' },
+        ],
+      },
+    });
+    const body = await response.json();
+
+    expect(body.diagnostics).toEqual({
+      requestId: 'request_789',
+      nested: { safe: 'retained' },
+      attempts: [{ status: 'failed' }, { status: 'queued' }],
+    });
+    expect(JSON.stringify(body)).not.toContain('nested database password exposed');
+    expect(JSON.stringify(body)).not.toContain('NESTED_DB_SECRET');
+  });
 });

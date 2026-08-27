@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
 
 export async function POST(req: Request) {
   const body = await req.json();
@@ -21,15 +20,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  const existing = await prisma.tenant.findFirst({
-    where: { email },
-    select: { id: true },
-  });
-
   if (!name) return NextResponse.json({ error: 'Restaurant name is required.' }, { status: 400 });
   if (!location) return NextResponse.json({ error: 'Location is required.' }, { status: 400 });
   if (!cuisineType) return NextResponse.json({ error: 'Cuisine type is required.' }, { status: 400 });
-  if (existing) return NextResponse.json({ error: 'A workspace already exists for that email. Use Sign in instead.' }, { status: 409 });
 
   return NextResponse.json({ ok: true });
 }

@@ -1,5 +1,15 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { prisma } from '@/lib/prisma';
+import { POST as checkWorkspace } from '@/app/api/auth/workspace-check/route';
+
+jest.mock('@/lib/prisma', () => ({
+  prisma: {
+    tenant: {
+      findFirst: jest.fn(),
+    },
+  },
+}));
 
 const sourcePath = (...segments: string[]) =>
   join(process.cwd(), 'src', ...segments);
@@ -25,7 +35,7 @@ describe('public route surface', () => {
     },
   );
 
-  it('does not reveal whether a sign-in email has a workspace', () => {
+  it('does not query account existence during workspace preflight', () => {
     const source = readSource(
       'app',
       'api',
@@ -33,12 +43,42 @@ describe('public route surface', () => {
       'workspace-check',
       'route.ts',
     );
-    const signInResponse = source.indexOf("if (mode === 'signin')");
-    const tenantLookup = source.indexOf('await prisma.tenant.findFirst');
 
     expect(source).not.toContain('No workspace exists');
-    expect(signInResponse).toBeGreaterThan(-1);
-    expect(tenantLookup).toBeGreaterThan(-1);
-    expect(signInResponse).toBeLessThan(tenantLookup);
+    expect(source).not.toContain('A workspace already exists');
+    expect(source).not.toContain('prisma');
+  });
+
+  it('returns the same signup preflight response for existing and absent emails', async () => {
+    const findFirst = jest.mocked(prisma.tenant.findFirst);
+    const payload = {
+      mode: 'signup',
+      name: 'Test Restaurant',
+      email: 'owner@example.com',
+      password: 'valid-password',
+      location: 'Mumbai',
+      cuisineType: 'Indian',
+    };
+
+    findFirst.mockResolvedValueOnce(null);
+    const absentResponse = await checkWorkspace(
+      new Request('http://localhost/api/auth/workspace-check', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+    );
+
+    findFirst.mockResolvedValueOnce({ id: 'existing' } as never);
+    const existingResponse = await checkWorkspace(
+      new Request('http://localhost/api/auth/workspace-check', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+    );
+
+    expect(existingResponse.status).toBe(absentResponse.status);
+    await expect(existingResponse.json()).resolves.toEqual(
+      await absentResponse.json(),
+    );
   });
 });

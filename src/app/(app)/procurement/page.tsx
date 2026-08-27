@@ -1,13 +1,12 @@
 'use client';
-import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { toast } from 'sonner';
 import {
   ChefHat, Search, MapPin, Mail, Bot, Zap, Brain,
-  MessageSquare, FileText, Package, DollarSign, Building2,
+  MessageSquare, Package, DollarSign, Building2,
   FileCheck, AlertTriangle, CheckCircle, ArrowUpRight,
-  ArrowDownRight, Minus, Sparkles, ShoppingCart, BarChart3,
-  Clock, Target, Shield, Star, TrendingUp, ChevronRight,
+  ArrowDownRight, Sparkles, BarChart3,
+  Target, Shield, Star, ChevronRight,
   Activity, Cpu, RotateCcw
 } from 'lucide-react';
 import clsx from 'clsx';
@@ -28,35 +27,152 @@ import { toastApiError } from '@/lib/toast';
 
 const legacyDemoEnabled = process.env.NEXT_PUBLIC_AUTORFP_ENABLE_LEGACY_DEMO === 'true';
 
+type TagColor = 'gray' | 'green' | 'blue' | 'amber' | 'red' | 'indigo';
+
+type Ingredient = {
+  name: string;
+  quantity: number;
+  unit: string;
+  perGuestQuantity?: number;
+  perGuestUnit?: string;
+  sourceDishes?: string[];
+};
+
+type Recipe = {
+  name: string;
+  menuId?: string;
+  ingredients: Ingredient[];
+};
+
+type PricePoint = { date: string; price: number };
+
+type PricingItem = {
+  name: string;
+  currentPrice: number;
+  history: PricePoint[];
+  isLive?: boolean;
+  lineTotal?: number;
+  orderQuantity?: number;
+  orderUnit?: string;
+};
+
+type ForecastPoint = { date: string; price: number };
+
+type ForecastData = {
+  name: string;
+  trend?: 'RISING' | 'FALLING' | 'STABLE';
+  trendPct?: number;
+  forecast?: ForecastPoint[];
+  anomaly?: { type: string };
+  buySignal?: { signal: string };
+};
+
+type Distributor = {
+  id: string;
+  name: string;
+  location?: string;
+  specialty?: string;
+  email?: string;
+};
+
+type SentRfp = {
+  id: string;
+  distributorName: string;
+  status?: string;
+};
+
+type Quote = {
+  rfpId: string;
+  distributorName: string;
+  distributorLocation?: string;
+  lifecycleStatus?: string;
+  details?: string;
+  price: number;
+};
+
+type RiskAxis = { axis: string; score: number };
+type RiskScore = { distributorName: string; axes: RiskAxis[]; overall: number };
+
+type ConversationEntry = { role: string; message: string };
+
+type AgentEvent = {
+  type: string;
+  timestamp?: string;
+  agent?: string;
+  task?: string;
+  data?: unknown;
+  vendorName?: string;
+  originalPrice?: number;
+  counterPrice?: number;
+  finalPrice?: number;
+  savings?: number;
+};
+
+type EmailMessage = {
+  direction: 'sent' | 'received';
+  timestamp?: string;
+  from?: string;
+  subject?: string;
+  body?: string;
+  proposedPrice?: number;
+  finalPrice?: number;
+  decision?: string;
+};
+
+type Recommendation = {
+  recommendedDistributor: string;
+  reasoning?: string;
+  potentialRisks?: string;
+  savings: number;
+  ragEnhanced?: boolean;
+  verification?: {
+    ollamaChoice?: string;
+    groqChoice?: string;
+    agreed: boolean;
+    confidence: number;
+  };
+};
+
+type NegotiationResult = {
+  vendorName: string;
+  originalPrice: number;
+  negotiatedPrice: number;
+  finalPrice?: number;
+  savings: number;
+  decision?: string;
+};
+
+type NegotiationComplete = {
+  winner: string;
+  winnerPrice: number;
+  totalSavings: number;
+  savingsPercentage: number;
+  executiveSummary: string;
+  actionItems?: string[];
+  negotiationResults?: NegotiationResult[];
+};
+
+type ProcurementSession = {
+  menuText?: string;
+  recipes?: Recipe[];
+  ingredients?: Ingredient[];
+  guestCount?: number;
+  bufferPct?: number;
+  sentRFPs?: SentRfp[];
+  quotes?: Quote[];
+};
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : 'Unexpected error';
+}
+
 function cn(...inputs: (string | undefined | null | false)[]) {
   return twMerge(clsx(inputs));
 }
 
-function useCountUp(target: number, duration = 800) {
-  const [val, setVal] = useState(0);
-  const prev = useRef(0);
-  useEffect(() => {
-    if (target === 0) { setVal(0); prev.current = 0; return; }
-    const start = prev.current;
-    const diff = target - start;
-    const startTime = performance.now();
-    let raf: number;
-    const step = (now: number) => {
-      const p = Math.min((now - startTime) / duration, 1);
-      const eased = 1 - Math.pow(1 - p, 3);
-      setVal(Math.round(start + diff * eased));
-      if (p < 1) raf = requestAnimationFrame(step);
-      else prev.current = target;
-    };
-    raf = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(raf);
-  }, [target, duration]);
-  return val;
-}
-
 // ─── Shared UI primitives ──────────────────────────────────────────────────────
 
-function Tag({ children, color = 'gray', className }: { children: React.ReactNode; color?: 'gray'|'green'|'blue'|'amber'|'red'|'indigo'; className?: string }) {
+function Tag({ children, color = 'gray', className }: { children: React.ReactNode; color?: TagColor; className?: string }) {
   const base = 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold tracking-wide border';
   const c = {
     gray:   'bg-white/5 text-[#8A8F98] border-white/10',
@@ -138,7 +254,7 @@ function menuMixFactor(numDishes: number): number {
   return 0.28;
 }
 
-function scaleIngredientForGuests(ingredient: any, guestCount: number, bufferPct: number) {
+function scaleIngredientForGuests(ingredient: Ingredient, guestCount: number, bufferPct: number): Ingredient {
   const originalUnit = String(ingredient.unit || 'unit').trim();
   const normalizedUnit = originalUnit.toLowerCase();
   const perGuestQuantity = Number(ingredient.quantity) > 0 ? Number(ingredient.quantity) : 1;
@@ -206,7 +322,7 @@ const AGENT_DEFS = [
 
 type AgentStatus = 'waiting' | 'running' | 'done';
 
-function AgentPipeline({ events, negotiating }: { events: any[]; negotiating: boolean }) {
+function AgentPipeline({ events, negotiating }: { events: AgentEvent[]; negotiating: boolean }) {
   const agentStates = useMemo(() => {
     return AGENT_DEFS.map(def => {
       const started = events.find(e => e.type === 'agent_start' && e.agent === def.key);
@@ -226,7 +342,7 @@ function AgentPipeline({ events, negotiating }: { events: any[]; negotiating: bo
 
   return (
     <div className="space-y-2.5">
-      {agentStates.map((agent, i) => {
+      {agentStates.map(agent => {
         const c = colorMap[agent.color];
         const isRunning = agent.status === 'running';
         const isDone = agent.status === 'done';
@@ -279,7 +395,7 @@ function AgentPipeline({ events, negotiating }: { events: any[]; negotiating: bo
 
 // ─── Live chat thread ──────────────────────────────────────────────────────────
 
-function ChatThread({ messages }: { messages: any[] }) {
+function ChatThread({ messages }: { messages: EmailMessage[] }) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -373,12 +489,13 @@ function ChatThread({ messages }: { messages: any[] }) {
 
 // ─── Vendor conversation thread (simulate-conversation logs) ──────────────────
 
-function VendorConvoThread({ logs, vendorName }: { logs: any[]; vendorName: string }) {
+function VendorConvoThread({ logs, vendorName }: { logs: ConversationEntry[]; vendorName: string }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [logs.length]);
 
   // Assign staggered fake timestamps so messages feel like a real exchange
-  const baseTime = Date.now() - logs.length * 4 * 60 * 1000;
+  const [openedAt] = useState(() => Date.now());
+  const baseTime = openedAt - logs.length * 4 * 60 * 1000;
 
   return (
     <div className="space-y-3 overflow-y-auto max-h-[420px] pr-1">
@@ -455,13 +572,16 @@ function CountdownTimer({ active, estimatedSecs, label }: { active: boolean; est
   const [remaining, setRemaining] = useState(estimatedSecs);
 
   useEffect(() => {
-    setRemaining(estimatedSecs);
     if (!active) return;
     const start = Date.now();
+    const timeout = window.setTimeout(() => setRemaining(estimatedSecs), 0);
     const id = setInterval(() => {
       setRemaining(Math.max(0, estimatedSecs - (Date.now() - start) / 1000));
     }, 100);
-    return () => clearInterval(id);
+    return () => {
+      window.clearTimeout(timeout);
+      clearInterval(id);
+    };
   }, [active, estimatedSecs]);
 
   if (!active) return null;
@@ -515,47 +635,45 @@ Crème Brûlée  $11`;
 export default function ProcurementPage() {
   const [account, setAccount] = useState<RestaurantAccount | null>(null);
   const [restaurantName, setRestaurantName] = useState('');
-  const [restaurantEmail, setRestaurantEmail] = useState('');
 
   const [menuText, setMenuText] = useState('');
   const [loading, setLoading] = useState(false);
   const [pipelineStatus, setPipelineStatus] = useState('');
-  const [recipes, setRecipes] = useState<any[]>([]);
-  const [ingredients, setIngredients] = useState<any[]>([]);
+  const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [parseModelSource, setParseModelSource] = useState<string | null>(null);
   const [menuInsight, setMenuInsight] = useState<string | null>(null);
   const [guestCount, setGuestCount] = useState(20);
   const [bufferPct, setBufferPct] = useState(10);
 
-  const [pricingData, setPricingData] = useState<any[]>([]);
+  const [pricingData, setPricingData] = useState<PricingItem[]>([]);
   const [loadingPricing, setLoadingPricing] = useState(false);
-  const [mlForecasts, setMlForecasts] = useState<Record<string, any>>({});
+  const [mlForecasts, setMlForecasts] = useState<Record<string, ForecastData>>({});
 
-  const [distributors, setDistributors] = useState<any[]>([]);
+  const [distributors, setDistributors] = useState<Distributor[]>([]);
   const [distributorLocation, setDistributorLocation] = useState('');
   const [loadingDistributors, setLoadingDistributors] = useState(false);
-  const [distributorSource, setDistributorSource] = useState<string | null>(null);
   const [sendingRFPs, setSendingRFPs] = useState(false);
-  const [sentRFPs, setSentRFPs] = useState<any[]>([]);
+  const [sentRFPs, setSentRFPs] = useState<SentRfp[]>([]);
 
-  const [quotes, setQuotes] = useState<any[]>([]);
+  const [quotes, setQuotes] = useState<Quote[]>([]);
   const [loadingQuotes, setLoadingQuotes] = useState(false);
   const [showEmailSimulator, setShowEmailSimulator] = useState(false);
   const [simulatedEmailBody, setSimulatedEmailBody] = useState('');
   const [simulatedEmailRfpId, setSimulatedEmailRfpId] = useState('');
   const [simulatingEmail, setSimulatingEmail] = useState(false);
   const [followUpEmail, setFollowUpEmail] = useState('');
-  const [recommendation, setRecommendation] = useState<any>(null);
+  const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
   const [loadingRecommendation, setLoadingRecommendation] = useState(false);
-  const [riskScores, setRiskScores] = useState<any[]>([]);
-  const [conversationLogs, setConversationLogs] = useState<Record<string, any[]>>({});
+  const [riskScores, setRiskScores] = useState<RiskScore[]>([]);
+  const [conversationLogs, setConversationLogs] = useState<Record<string, ConversationEntry[]>>({});
   const [simulatingConversation, setSimulatingConversation] = useState(false);
   const [vendorProgress, setVendorProgress] = useState<Record<string, 'pending' | 'contacting' | 'replied' | 'error'>>({});
 
   const [negotiating, setNegotiating] = useState(false);
-  const [agentEvents, setAgentEvents] = useState<any[]>([]);
-  const [emailThread, setEmailThread] = useState<any[]>([]);
-  const [negotiationComplete, setNegotiationComplete] = useState<any>(null);
+  const [agentEvents, setAgentEvents] = useState<AgentEvent[]>([]);
+  const [emailThread, setEmailThread] = useState<EmailMessage[]>([]);
+  const [negotiationComplete, setNegotiationComplete] = useState<NegotiationComplete | null>(null);
 
   const [error, setError] = useState('');
 
@@ -564,7 +682,6 @@ export default function ProcurementPage() {
     if (saved) {
       setAccount(saved);
       setRestaurantName(saved.name || '');
-      setRestaurantEmail(saved.email || '');
       if (saved.location) setDistributorLocation(saved.location);
 
       const rerun = localStorage.getItem(tenantKey(saved.tenantId, 'run_again'));
@@ -580,7 +697,7 @@ export default function ProcurementPage() {
 
   useEffect(() => {
     fetch('/api/procurement-session/active')
-      .then(async res => res.ok ? await res.json() : null)
+      .then(async res => res.ok ? await res.json() as { session?: ProcurementSession } : null)
       .then(data => {
         const session = data?.session;
         if (!session) return;
@@ -599,7 +716,7 @@ export default function ProcurementPage() {
     fetch('/api/procurement-session/active', { method: 'DELETE' }).catch(() => {});
     setMenuText(''); setRecipes([]); setIngredients([]); setParseModelSource(null); setMenuInsight(null);
     setGuestCount(20); setBufferPct(10);
-    setPricingData([]); setMlForecasts({}); setDistributors([]); setDistributorSource(null);
+    setPricingData([]); setMlForecasts({}); setDistributors([]);
     setSentRFPs([]); setQuotes([]); setConversationLogs({}); setRecommendation(null); setRiskScores([]);
     setAgentEvents([]); setEmailThread([]); setNegotiationComplete(null); setError('');
   };
@@ -618,7 +735,7 @@ export default function ProcurementPage() {
   }, [pricingData, ingredients]);
 
   const liveCount = useMemo(() => pricingData.filter(p => p.isLive).length, [pricingData]);
-  const anomalyCount = useMemo(() => Object.values(mlForecasts).filter((f: any) => f.anomaly).length, [mlForecasts]);
+  const anomalyCount = useMemo(() => Object.values(mlForecasts).filter(f => f.anomaly).length, [mlForecasts]);
 
   const activeStage = useMemo(() => {
     if (!legacyDemoEnabled) {
@@ -661,9 +778,9 @@ export default function ProcurementPage() {
     const numDishes = menuRecipes.length;
     const mixFactor = menuMixFactor(numDishes);
     const effectiveCoversPerDish = Math.max(1, guests * mixFactor);
-    const map = new Map<string, any>();
-    menuRecipes.forEach((recipe: any) => {
-      (recipe.ingredients ?? []).forEach((ing: any) => {
+    const map = new Map<string, Ingredient>();
+    menuRecipes.forEach(recipe => {
+      (recipe.ingredients ?? []).forEach(ing => {
         const scaled = scaleIngredientForGuests(ing, effectiveCoversPerDish, buffer);
         const key = `${String(scaled.name).trim().toLowerCase()}::${String(scaled.unit).trim().toLowerCase()}`;
         const existing = map.get(key);
@@ -713,23 +830,23 @@ export default function ProcurementPage() {
     setPipelineStatus('');
   };
 
-  const handleFetchPricing = async (ingredientList: any[] = ingredients) => {
+  const handleFetchPricing = async (ingredientList: Ingredient[] = ingredients) => {
     if (!legacyDemoEnabled) return;
     if (!ingredientList.length) return;
     setLoadingPricing(true);
     try {
       const res = await fetch('/api/pricing', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ingredients: ingredientList }) });
-      const data = await res.json();
+      const data = await res.json() as { error?: string; pricing: PricingItem[] };
       if (!res.ok) throw new Error(data.error);
       setPricingData(data.pricing);
       try {
         const fr = await fetch('/api/ml/forecast', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ingredients: data.pricing }) });
-        const fd = await fr.json();
-        const map: Record<string, any> = {};
-        (fd.forecasts ?? []).forEach((f: any) => { map[f.name] = f; });
+        const fd = await fr.json() as { forecasts?: ForecastData[] };
+        const map: Record<string, ForecastData> = {};
+        (fd.forecasts ?? []).forEach(f => { map[f.name] = f; });
         setMlForecasts(map);
       } catch { /* non-critical */ }
-    } catch (err: any) { setError(err.message); toastApiError(err, 'Market pricing failed'); }
+    } catch (err: unknown) { setError(getErrorMessage(err)); toastApiError(err, 'Market pricing failed'); }
     finally { setLoadingPricing(false); }
   };
 
@@ -740,10 +857,9 @@ export default function ProcurementPage() {
     setLoadingDistributors(true);
     try {
       const res = await fetch('/api/distributors', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: loc }) });
-      const data = await res.json();
+      const data = await res.json() as { error?: string; distributors?: Distributor[] };
       if (!res.ok) throw new Error(data.error || 'Failed to find distributors');
-      setDistributors(data.distributors);
-      setDistributorSource(data.source || null);
+      setDistributors(data.distributors ?? []);
       setDistributorLocation(loc);
       // New suppliers found — clear all downstream state so RFPs can be sent to the new set
       setSentRFPs([]);
@@ -755,7 +871,7 @@ export default function ProcurementPage() {
       setEmailThread([]);
       setNegotiationComplete(null);
       return data.distributors ?? [];
-    } catch (err: any) { setError(err.message); toastApiError(err, 'Supplier search failed'); }
+    } catch (err: unknown) { setError(getErrorMessage(err)); toastApiError(err, 'Supplier search failed'); }
     finally { setLoadingDistributors(false); }
     return [];
   };
@@ -769,26 +885,25 @@ export default function ProcurementPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ menuText, tenantId: account?.tenantId ?? null }),
       });
-      const data = await res.json();
+      const data = await res.json() as { error?: string; recipes?: Recipe[]; modelSource?: string; menuInsight?: string };
       if (!res.ok) throw new Error(data.error || 'Failed to parse menu');
-      setRecipes(data.recipes);
+      setRecipes(data.recipes ?? []);
       setParseModelSource(data.modelSource ?? null);
       setMenuInsight(data.menuInsight ?? null);
       setIngredients([]);
       setPricingData([]);
       setMlForecasts({});
       setDistributors([]);
-      setDistributorSource(null);
       setSentRFPs([]);
       setQuotes([]);
       setRecommendation(null);
       setRiskScores([]);
       setPipelineStatus('Enter guests and apply quantities…');
-    } catch (err: any) { setError(err.message); toastApiError(err, 'Menu parsing failed'); }
+    } catch (err: unknown) { setError(getErrorMessage(err)); toastApiError(err, 'Menu parsing failed'); }
     finally { setLoading(false); setPipelineStatus(''); }
   };
 
-  const handleSendRFPs = async (opts?: { distributorList?: any[]; ingredientList?: any[]; guests?: number; buffer?: number }) => {
+  const handleSendRFPs = async (opts?: { distributorList?: Distributor[]; ingredientList?: Ingredient[]; guests?: number; buffer?: number }) => {
     if (!legacyDemoEnabled) return;
     const targetDistributors = opts?.distributorList ?? distributors;
     const targetIngredients = opts?.ingredientList ?? ingredients;
@@ -799,14 +914,14 @@ export default function ProcurementPage() {
     try {
       const tenantId = account?.tenantId ?? 'tenant_demo';
       const res = await fetch('/api/send-rfp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ distributorIds: targetDistributors.map(d => d.id), menuId: recipes[0]?.menuId || 'demo-menu-id', ingredients: targetIngredients, tenantId, mealName: 'Full menu', guestCount: targetGuests, bufferPct: targetBuffer }) });
-      const data = await res.json();
+      const data = await res.json() as { error?: string; rfps?: SentRfp[] };
       if (!res.ok) throw new Error(data.error || 'Failed to send RFPs');
-      setSentRFPs(data.rfps);
-    } catch (err: any) { setError(err.message); toastApiError(err, 'RFP dispatch failed'); }
+      setSentRFPs(data.rfps ?? []);
+    } catch (err: unknown) { setError(getErrorMessage(err)); toastApiError(err, 'RFP dispatch failed'); }
     finally { setSendingRFPs(false); }
   };
 
-  const handleFetchQuotes = async (): Promise<any[]> => {
+  const handleFetchQuotes = async (): Promise<Quote[]> => {
     if (!legacyDemoEnabled) return [];
     const menuId = recipes[0]?.menuId;
     if (!menuId) return [];
@@ -814,21 +929,22 @@ export default function ProcurementPage() {
     try {
       const tenantId = account?.tenantId ?? 'tenant_demo';
       const res = await fetch(`/api/quotes?menuId=${menuId}&tenantId=${encodeURIComponent(tenantId)}`);
-      const data = await res.json();
+      const data = await res.json() as { error?: string; quotes?: Quote[] };
       if (!res.ok) throw new Error(data.error || 'Failed to fetch quotes');
-      setQuotes(data.quotes);
-      return data.quotes;
-    } catch (err: any) { setError(err.message); toastApiError(err, 'Quote refresh failed'); return []; }
+      const nextQuotes = data.quotes ?? [];
+      setQuotes(nextQuotes);
+      return nextQuotes;
+    } catch (err: unknown) { setError(getErrorMessage(err)); toastApiError(err, 'Quote refresh failed'); return []; }
     finally { setLoadingQuotes(false); }
   };
 
-  const handleFetchRiskScores = async (quotesOverride?: any[]) => {
+  const handleFetchRiskScores = async (quotesOverride?: Quote[]) => {
     if (!legacyDemoEnabled) return;
     const q = quotesOverride ?? quotes;
     if (!q.length) return;
     try {
       const res = await fetch('/api/risk-score', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ quotes: q, pricingData, ingredients }) });
-      const data = await res.json();
+      const data = await res.json() as { scores?: RiskScore[] };
       setRiskScores(data.scores ?? []);
     } catch { /* non-critical */ }
   };
@@ -839,17 +955,17 @@ export default function ProcurementPage() {
     setSimulatingEmail(true); setError('');
     try {
       const res = await fetch('/api/webhooks/inbound-email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rfpId: simulatedEmailRfpId, emailBody: simulatedEmailBody }) });
-      const data = await res.json();
+      const data = await res.json() as { error?: string; action?: string; followUpEmail?: string };
       if (!res.ok) throw new Error(data.error || 'Failed to process email.');
       if (data.action === 'FOLLOW_UP_SENT') {
-        setFollowUpEmail(data.followUpEmail);
+        setFollowUpEmail(data.followUpEmail ?? '');
         setSimulatedEmailBody(''); setSimulatedEmailRfpId('');
       } else {
         setFollowUpEmail(''); setSimulatedEmailBody(''); setSimulatedEmailRfpId('');
         setShowEmailSimulator(false);
         await handleFetchQuotes();
       }
-    } catch (err: any) { setError(err.message); toastApiError(err, 'Vendor email processing failed'); }
+    } catch (err: unknown) { setError(getErrorMessage(err)); toastApiError(err, 'Vendor email processing failed'); }
     finally { setSimulatingEmail(false); }
   };
 
@@ -860,18 +976,18 @@ export default function ProcurementPage() {
     const unresolved = sentRFPs.filter(rfp => !quotes.some(q => q.rfpId === rfp.id));
     // Initialise all unresolved as pending
     setVendorProgress(Object.fromEntries(unresolved.map(r => [r.id, 'pending'])));
-    const newLogs: Record<string, any[]> = {};
+    const newLogs: Record<string, ConversationEntry[]> = {};
     try {
       // Contact all vendors in parallel — avoids waiting for each sequential LLM call
       await Promise.all(unresolved.map(async (rfp) => {
         setVendorProgress(p => ({ ...p, [rfp.id]: 'contacting' }));
         try {
           const res = await fetch('/api/simulate-conversation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rfpId: rfp.id, ingredients, pricingData, tenantId: account?.tenantId, mealName: 'Full menu', guestCount, bufferPct }) });
-          const data = await res.json();
+          const data = await res.json() as { conversationLog?: ConversationEntry[]; message?: string };
           newLogs[rfp.id] = [
             { role: 'system', message: `Processing vendor response from ${rfp.distributorName}...` },
             ...(data.conversationLog || []),
-            { role: 'system', message: data.message },
+            { role: 'system', message: data.message ?? '' },
           ];
           setVendorProgress(p => ({ ...p, [rfp.id]: 'replied' }));
         } catch {
@@ -881,7 +997,7 @@ export default function ProcurementPage() {
       setConversationLogs(newLogs);
       const fetchedQuotes = await handleFetchQuotes();
       await Promise.all([handleGetRecommendation(), handleFetchRiskScores(fetchedQuotes)]);
-    } catch (err: any) { setError(err.message); toastApiError(err, 'Vendor response simulation failed'); }
+    } catch (err: unknown) { setError(getErrorMessage(err)); toastApiError(err, 'Vendor response simulation failed'); }
     finally { setSimulatingConversation(false); }
   };
 
@@ -900,10 +1016,10 @@ export default function ProcurementPage() {
         marketValue: String(marketValue),
       });
       const res = await fetch(`/api/recommend?${params.toString()}`);
-      const data = await res.json();
+      const data = await res.json() as { error?: string; recommendation?: Recommendation };
       if (!res.ok) throw new Error(data.error || 'Failed to get recommendation');
-      setRecommendation(data.recommendation);
-    } catch (err: any) { setError(err.message); toastApiError(err, 'AI recommendation failed'); }
+      setRecommendation(data.recommendation ?? null);
+    } catch (err: unknown) { setError(getErrorMessage(err)); toastApiError(err, 'AI recommendation failed'); }
     finally { setLoadingRecommendation(false); }
   };
 
@@ -915,18 +1031,18 @@ export default function ProcurementPage() {
     const tenantId = account?.tenantId ?? 'tenant_demo';
     const es = new EventSource(`/api/agent/negotiate?menuId=${menuId}&tenantId=${encodeURIComponent(tenantId)}`);
     const stamp = () => new Date().toISOString();
-    const add = (type: string, data: any) => setAgentEvents(prev => [...prev, { type, timestamp: stamp(), ...data }]);
-    es.addEventListener('agent_start',       e => add('agent_start',       JSON.parse((e as MessageEvent).data)));
-    es.addEventListener('agent_result',      e => add('agent_result',      JSON.parse((e as MessageEvent).data)));
-    es.addEventListener('negotiation_round', e => add('negotiation_round', JSON.parse((e as MessageEvent).data)));
-    es.addEventListener('email_sent',        e => { const d = JSON.parse((e as MessageEvent).data); const timestamp = stamp(); add('email_sent', { ...d, timestamp }); setEmailThread(p => [...p, { direction: 'sent', timestamp, ...d }]); });
-    es.addEventListener('email_received',    e => { const d = JSON.parse((e as MessageEvent).data); const timestamp = stamp(); add('email_received', { ...d, timestamp }); setEmailThread(p => [...p, { direction: 'received', timestamp, ...d }]); });
+    const add = (type: string, data: Partial<AgentEvent>) => setAgentEvents(prev => [...prev, { type, timestamp: stamp(), ...data }]);
+    es.addEventListener('agent_start',       e => add('agent_start',       JSON.parse((e as MessageEvent).data) as Partial<AgentEvent>));
+    es.addEventListener('agent_result',      e => add('agent_result',      JSON.parse((e as MessageEvent).data) as Partial<AgentEvent>));
+    es.addEventListener('negotiation_round', e => add('negotiation_round', JSON.parse((e as MessageEvent).data) as Partial<AgentEvent>));
+    es.addEventListener('email_sent',        e => { const d = JSON.parse((e as MessageEvent).data) as Omit<EmailMessage, 'direction'>; const timestamp = stamp(); add('email_sent', { timestamp }); setEmailThread(p => [...p, { direction: 'sent', timestamp, ...d }]); });
+    es.addEventListener('email_received',    e => { const d = JSON.parse((e as MessageEvent).data) as Omit<EmailMessage, 'direction'>; const timestamp = stamp(); add('email_received', { timestamp }); setEmailThread(p => [...p, { direction: 'received', timestamp, ...d }]); });
     es.addEventListener('complete',          e => {
-      const d = JSON.parse((e as MessageEvent).data);
-      setNegotiationComplete(d); add('complete', d); setNegotiating(false); es.close();
+      const d = JSON.parse((e as MessageEvent).data) as NegotiationComplete;
+      setNegotiationComplete(d); add('complete', { data: d }); setNegotiating(false); es.close();
       const totalSavings = Number(d.totalSavings) || 0;
       const totalMarketSpend = Number(marketValue) || Number(d.winnerPrice) || 0;
-      const categories = ingredients.reduce((acc: Record<string, { spend: number; count: number }>, ing: any) => {
+      const categories = ingredients.reduce((acc: Record<string, { spend: number; count: number }>, ing) => {
         const name = String(ing.name ?? '').toLowerCase();
         const category =
           /beef|steak|chicken|pork|fish|salmon|shrimp|meat|turkey/.test(name) ? 'Proteins' :
@@ -934,7 +1050,7 @@ export default function ProcurementPage() {
           /lettuce|tomato|onion|pepper|herb|vegetable|produce|potato|mushroom/.test(name) ? 'Produce' :
           /flour|pasta|rice|bread|bun|grain/.test(name) ? 'Dry Goods' :
           'Other';
-        const price = pricingData.find((p: any) => String(p.name).toLowerCase() === name)?.currentPrice ?? 0;
+        const price = pricingData.find(p => String(p.name).toLowerCase() === name)?.currentPrice ?? 0;
         const spend = price * (typeof ing.quantity === 'number' ? ing.quantity : 1);
         acc[category] = acc[category] ?? { spend: 0, count: 0 };
         acc[category].spend += spend;
@@ -945,7 +1061,7 @@ export default function ProcurementPage() {
         const share = totalMarketSpend > 0 ? value.spend / totalMarketSpend : 1 / Math.max(Object.keys(categories).length, 1);
         return { category, spend: value.spend, savings: totalSavings * share };
       });
-      const supplierScorecards = (d.negotiationResults ?? []).map((r: any) => {
+      const supplierScorecards = (d.negotiationResults ?? []).map(r => {
         const originalPrice = Number(r.originalPrice) || 0;
         const finalPrice = Number(r.negotiatedPrice) || Number(r.finalPrice) || 0;
         const savings = Number(r.savings) || Math.max(0, originalPrice - finalPrice);
@@ -982,7 +1098,7 @@ export default function ProcurementPage() {
         totalSavings: d.totalSavings,
         savingsPercentage: d.savingsPercentage,
         executiveSummary: d.executiveSummary,
-        marketAlerts: Object.entries(mlForecasts).filter(([, f]: any) => f.anomaly).map(([name, f]: any) =>
+        marketAlerts: Object.entries(mlForecasts).filter(([, f]) => f.anomaly).map(([name, f]) =>
           `${name}: ${f.anomaly?.type === 'SPIKE' ? 'price spike' : 'below average'} detected`
         ),
         categorySavings,
@@ -1401,8 +1517,8 @@ export default function ProcurementPage() {
                 const pct      = prev > 0 ? ((current - prev) / prev) * 100 : 0;
                 const forecast = mlForecasts[item.name];
                 const chartData = [
-                  ...item.history.map((h: any, i: number) => ({ date: h.date, price: h.price, forecast: i === item.history.length - 1 ? h.price : null })),
-                  ...(forecast?.forecast ?? []).map((f: any) => ({ date: f.date, price: null, forecast: f.price }))
+                  ...item.history.map((h, i) => ({ date: h.date, price: h.price, forecast: i === item.history.length - 1 ? h.price : null })),
+                  ...(forecast?.forecast ?? []).map(f => ({ date: f.date, price: null, forecast: f.price }))
                 ];
                 const trendColor = forecast?.trend === 'RISING' ? 'text-red-400' : forecast?.trend === 'FALLING' ? 'text-emerald-400' : 'text-[#8A8F98]';
                 return (
@@ -1419,7 +1535,7 @@ export default function ProcurementPage() {
                           {forecast?.trend && forecast.trend !== 'STABLE' && (
                             <span className={cn('text-[9px] font-bold uppercase tracking-widest flex items-center gap-0.5', trendColor)}>
                               {forecast.trend === 'RISING' ? <ArrowUpRight className="w-2.5 h-2.5" /> : <ArrowDownRight className="w-2.5 h-2.5" />}
-                              {forecast.trendPct > 0 && `${forecast.trendPct}%`}
+                              {Number(forecast.trendPct) > 0 && `${forecast.trendPct}%`}
                             </span>
                           )}
                         </div>
@@ -1449,7 +1565,7 @@ export default function ProcurementPage() {
                             itemStyle={{ color: '#8A8F98', fontSize: '10px' }}
                             labelStyle={{ color: '#EEEEEE', marginBottom: '4px', fontWeight: 700 }}
                             labelFormatter={l => new Date(l).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
-                            formatter={(v: any, n) => [v !== null ? `$${Number(v).toFixed(2)}` : '—', n === 'forecast' ? '📈 Forecast' : '💰 Price'] as [string, string]}
+                            formatter={(value: unknown, name) => [value !== null ? `$${Number(value).toFixed(2)}` : '—', name === 'forecast' ? '📈 Forecast' : '💰 Price'] as [string, string]}
                           />
                           <Area type="monotone" dataKey="price" stroke={forecast?.trend === 'RISING' ? '#f87171' : forecast?.trend === 'FALLING' ? '#34d399' : '#a78bfa'} strokeWidth={1.5} fill={`url(#grad-${idx})`} dot={false} connectNulls={false} />
                           <Line type="monotone" dataKey="forecast" stroke="rgba(255,255,255,0.3)" strokeWidth={1.5} strokeDasharray="4 3" dot={false} connectNulls />
@@ -1576,10 +1692,10 @@ export default function ProcurementPage() {
           >
             {Object.keys(conversationLogs).length > 0 && (
               <div className="space-y-4">
-                {sentRFPs.map((rfp: any) => {
+                {sentRFPs.map(rfp => {
                   const logs = conversationLogs[rfp.id];
                   if (!logs) return null;
-                  const statusColor: Record<string, string> = { REPLIED: 'green', ACCEPTED: 'green', DECLINED: 'red', SENT: 'blue' };
+                  const statusColor: Record<string, TagColor> = { REPLIED: 'green', ACCEPTED: 'green', DECLINED: 'red', SENT: 'blue' };
                   const statusStr = String(rfp.status || 'SENT');
                   return (
                     <Card key={rfp.id} className="p-5 space-y-4">
@@ -1589,10 +1705,10 @@ export default function ProcurementPage() {
                           <div className="w-9 h-9 rounded-full bg-white/[0.05] border border-white/10 flex items-center justify-center text-lg">🏢</div>
                           <div>
                             <p className="text-[13px] font-bold text-[#EEEEEE]">{rfp.distributorName}</p>
-                            <p className="text-[10px] text-[#8A8F98]">Re: Bulk ingredient RFP · {logs.filter((e: any) => e.role !== 'system').length} messages</p>
+                            <p className="text-[10px] text-[#8A8F98]">Re: Bulk ingredient RFP · {logs.filter(e => e.role !== 'system').length} messages</p>
                           </div>
                         </div>
-                        <Tag color={(statusColor[statusStr] as any) ?? 'gray'}>{statusStr.replace(/_/g, ' ')}</Tag>
+                        <Tag color={statusColor[statusStr] ?? 'gray'}>{statusStr.replace(/_/g, ' ')}</Tag>
                       </div>
                       <VendorConvoThread logs={logs} vendorName={rfp.distributorName} />
                     </Card>
@@ -1631,7 +1747,7 @@ export default function ProcurementPage() {
                 <div className="p-5 space-y-3">
                   {simulatingConversation && Object.keys(vendorProgress).length > 0 ? (
                     <div className="space-y-2">
-                      {sentRFPs.filter(r => vendorProgress[r.id]).map((rfp: any) => {
+                      {sentRFPs.filter(r => vendorProgress[r.id]).map(rfp => {
                         const status = vendorProgress[rfp.id];
                         const cfg = {
                           pending:    { dot: 'bg-white/20',                     label: 'Waiting…',    text: 'text-[#8A8F98]' },
@@ -1664,7 +1780,7 @@ export default function ProcurementPage() {
               ) : quotes.length === 0 ? (
                 <div className="py-16 flex flex-col items-center text-[#8A8F98] gap-3">
                   <FileCheck className="w-10 h-10 opacity-20" />
-                  <p className="text-[13px] font-medium">No quotes yet — click "Generate vendor responses" above</p>
+                  <p className="text-[13px] font-medium">No quotes yet. Click &quot;Generate vendor responses&quot; above.</p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -1727,8 +1843,8 @@ export default function ProcurementPage() {
               {riskScores.length > 0 && (() => {
                 const COLORS = ['#34d399','#60a5fa','#a78bfa','#fbbf24','#f87171'];
                 const radarData = ['Price','Reliability','Speed','Market Rate','Coverage'].map(axis => {
-                  const point: any = { axis };
-                  riskScores.forEach(s => { point[s.distributorName] = s.axes.find((a: any) => a.axis === axis)?.score ?? 0; });
+                  const point: Record<string, string | number> = { axis };
+                  riskScores.forEach(s => { point[s.distributorName] = s.axes.find(a => a.axis === axis)?.score ?? 0; });
                   return point;
                 });
                 return (
@@ -1759,7 +1875,7 @@ export default function ProcurementPage() {
                             <div className="flex-1 min-w-0">
                               <p className="text-[13px] font-bold text-[#EEEEEE] truncate">{s.distributorName}</p>
                               <div className="flex gap-2 mt-1.5 flex-wrap">
-                                {s.axes.map((a: any) => (
+                                {s.axes.map(a => (
                                   <span key={a.axis} className="text-[10px] text-[#8A8F98]">
                                     {a.axis} <span className="font-bold" style={{ color: a.score >= 70 ? '#34d399' : a.score >= 45 ? '#fbbf24' : '#f87171' }}>{a.score}</span>
                                   </span>
@@ -1904,8 +2020,8 @@ export default function ProcurementPage() {
                           <ChevronRight className="w-3 h-3 text-white/20 shrink-0" />
                           <span className="text-amber-400">${Number(ev.counterPrice).toFixed(0)}</span>
                           <ChevronRight className="w-3 h-3 text-white/20 shrink-0" />
-                          <span className={cn('font-bold', ev.savings > 0 ? 'text-emerald-400' : 'text-[#8A8F98]')}>${Number(ev.finalPrice).toFixed(0)}</span>
-                          {ev.savings > 0 && <span className="ml-auto text-emerald-400 font-bold text-[11px]">−${Number(ev.savings).toFixed(0)}</span>}
+                          <span className={cn('font-bold', Number(ev.savings) > 0 ? 'text-emerald-400' : 'text-[#8A8F98]')}>${Number(ev.finalPrice).toFixed(0)}</span>
+                          {Number(ev.savings) > 0 && <span className="ml-auto text-emerald-400 font-bold text-[11px]">−${Number(ev.savings).toFixed(0)}</span>}
                         </div>
                       ))}
                     </div>
@@ -1955,7 +2071,7 @@ export default function ProcurementPage() {
                   {[
                     { label: 'Total Savings',  value: `$${Number(negotiationComplete.totalSavings).toFixed(2)}`,    color: 'emerald' },
                     { label: 'Cost Reduction', value: `${Number(negotiationComplete.savingsPercentage).toFixed(1)}%`, color: 'blue' },
-                    { label: 'Deals Improved', value: negotiationComplete.negotiationResults?.filter((r: any) => r.savings > 0).length ?? 0, color: 'indigo' },
+                    { label: 'Deals Improved', value: negotiationComplete.negotiationResults?.filter(r => r.savings > 0).length ?? 0, color: 'indigo' },
                   ].map((s, i) => (
                     <div key={i} className={cn('rounded-xl p-5 border shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)]',
                       s.color === 'emerald' ? 'bg-emerald-500/10 border-emerald-500/20' :
@@ -1976,10 +2092,10 @@ export default function ProcurementPage() {
                 </div>
 
                 {/* Action items */}
-                {negotiationComplete.actionItems?.length > 0 && (
+                {(negotiationComplete.actionItems?.length ?? 0) > 0 && (
                   <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl px-6 py-5 space-y-2.5 relative z-10">
                     <p className="text-[11px] font-bold text-amber-500 uppercase tracking-widest mb-1">Action Items</p>
-                    {negotiationComplete.actionItems.map((item: string, i: number) => (
+                    {(negotiationComplete.actionItems ?? []).map((item, i) => (
                       <p key={i} className="text-[13px] font-medium text-amber-400/90 flex items-start gap-2">
                         <span className="text-amber-500 opacity-60 shrink-0 mt-1">•</span> {item}
                       </p>
@@ -1994,7 +2110,7 @@ export default function ProcurementPage() {
                     <div className="text-right">Original</div>
                     <div className="text-right">Final</div>
                   </div>
-                  {negotiationComplete.negotiationResults?.map((r: any, i: number) => (
+                  {negotiationComplete.negotiationResults?.map((r, i) => (
                     <div key={i} className="grid grid-cols-4 px-5 py-4 text-[13px] font-medium border-b border-white/5 last:border-0 items-center hover:bg-white/[0.03] transition-colors">
                       <div className="col-span-2 flex items-center gap-3 min-w-0">
                         <span className="font-bold text-[#EEEEEE] truncate">{r.vendorName}</span>

@@ -155,55 +155,40 @@ History and intelligence screens can display stored records. The safe default do
 
 ## Project Structure
 
-```text
-src/
-  app/
-    page.tsx                         Landing / sign-in / sign-up
-    (app)/
-      layout.tsx                     Sidebar, toaster, command palette, app footer
-      dashboard/page.tsx             Procurement dashboard
-      procurement/page.tsx           New procurement workflow (6-step)
-      history/page.tsx               Tenant-scoped run history
-      intelligence/page.tsx          Price alerts, analytics, scorecards
-      settings/page.tsx              Restaurant profile and integrations
-    demo-seed/page.tsx               Postgres-backed demo workspace seed
-    quote/[rfpId]/page.tsx           Vendor quote portal
-    api/
-      auth/[...nextauth]/route.ts    NextAuth credentials session
-      account/route.ts               Current tenant profile
-      dashboard/route.ts             Tenant dashboard + history
-      history/route.ts               Procurement history
-      inngest/route.ts               Inngest serve handler (GET/POST/PUT)
-      parse-menu/route.ts            Dish + hidden ingredient extraction
-      pricing/route.ts               Live market pricing (futures + BLS)
-      ml/forecast/route.ts           OLS forecast + anomaly detection
-      distributors/route.ts          Supplier search
-      send-rfp/route.ts              RFP email dispatch
-      simulate-conversation/route.ts Quote simulation
-      recommend/route.ts             AI recommendation + RAG context
-      agent/negotiate/route.ts       LangGraph 5-node negotiation pipeline (SSE)
-  inngest/
-    client.ts                        Inngest client (id: 'autorfp')
-    functions.ts                     Background functions (pricing, rfp, archive)
-  lib/
-    auth.ts                          NextAuth options
-    tenant.ts                        Tenant types + browser fallback helpers
-    tenant-context.ts                AsyncLocalStorage for row-level tenant scope
-    llm.ts                           Ollama/Groq chat helpers + model fallback chain
-    prisma.ts                        Prisma client with $extends RLS interceptor
-    embeddings.ts                    Ollama/fallback embeddings
-    chroma.ts                        ChromaDB RAG memory client
-    toast.ts                         Sonner toast helpers
-  components/
-    CommandPalette.tsx               cmdk palette (⌘K) with nav + actions
-    ErrorBoundary.tsx                React class error boundary + Sentry capture
-    Skeleton.tsx                     Loading skeletons
-    ToastViewport.tsx                Legacy no-op (replaced by Sonner)
+Current production-safe application surface:
 
-prisma/schema.prisma                 Prisma schema (tenantId indexes on all scoped models)
-instrumentation.ts                   Next.js App Router Sentry server init hook
-sentry.client.config.ts             Sentry browser config
-sentry.server.config.ts             Sentry server config
+```text
+src/app/page.tsx                              Sign-in and workspace setup
+src/app/(app)/layout.tsx                      Authenticated application shell
+src/app/(app)/procurement/page.tsx            Menu review and demand drafting by default
+src/app/quote/[rfpId]/page.tsx                Static unavailable state by default
+src/app/api/auth/[...nextauth]/route.ts        Authenticated session handling
+src/app/api/account/route.ts                   Session-derived restaurant profile
+src/app/api/parse-menu/route.ts                Bounded pasted-text menu drafting
+src/app/api/procurement-session/active/route.ts Saved in-progress demand draft
+src/lib/api/require-api-tenant.ts              Session-derived tenant guard
+src/lib/features/legacy-features.ts            Fail-closed legacy feature gate
+prisma/schema.prisma                           Database models and tenant indexes
+```
+
+Quarantined prototype modules:
+
+```text
+src/app/demo-seed/page.tsx                     Disabled demo workspace seeding
+src/app/quote/[rfpId]/page.tsx                 Disabled legacy quote form
+src/app/api/inngest/route.ts                    Disabled background-function handler
+src/app/api/pricing/route.ts                    Disabled market-estimate prototype
+src/app/api/ml/forecast/route.ts                Disabled forecast prototype
+src/app/api/distributors/route.ts               Disabled supplier-search prototype
+src/app/api/send-rfp/route.ts                   Disabled supplier-request prototype
+src/app/api/simulate-conversation/route.ts      Disabled vendor-simulation prototype
+src/app/api/recommend/route.ts                  Disabled recommendation prototype
+src/app/api/agent/negotiate/route.ts            Disabled negotiation graph prototype
+src/inngest/functions.ts                       Unverified background-function definitions
+src/lib/llm.ts                                  Optional local and legacy model adapters
+src/lib/embeddings.ts                           Optional legacy embedding adapter
+src/lib/chroma.ts                               Optional legacy vector-memory adapter
+src/lib/prisma.ts                               Prisma client with selected tenant safeguards
 ```
 
 ---

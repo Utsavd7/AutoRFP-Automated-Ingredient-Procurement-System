@@ -272,4 +272,23 @@ describe('production-safe workflow presentation', () => {
     expect(publicPageSource).not.toContain('fetch(');
     expect(source).not.toContain('Submit Official Quote');
   });
+
+  it('labels the documented application tree by its production-safe surface', () => {
+    const readme = readFileSync(join(process.cwd(), 'README.md'), 'utf8');
+
+    expect(readme).toContain('Current production-safe application surface:');
+    expect(readme).toContain('Quarantined prototype modules:');
+    expect(readme).not.toContain(
+      'procurement/page.tsx           New procurement workflow (6-step)',
+    );
+    expect(readme).not.toContain(
+      'quote/[rfpId]/page.tsx           Vendor quote portal',
+    );
+    expect(readme).not.toContain(
+      'pricing/route.ts               Live market pricing (futures + BLS)',
+    );
+    expect(readme).not.toContain(
+      'prisma.ts                        Prisma client with $extends RLS interceptor',
+    );
+  });
 });

@@ -9,6 +9,31 @@ import { toastApiError } from '@/lib/toast';
 
 const legacyDemoEnabled = process.env.NEXT_PUBLIC_AUTORFP_ENABLE_LEGACY_DEMO === 'true';
 
+type QuoteIngredient = {
+    name: string;
+    quantity: number;
+    unit: string;
+};
+
+type QuoteRecipe = {
+    ingredients: QuoteIngredient[];
+};
+
+type QuoteRfp = {
+    status: string;
+    distributor: { name: string };
+    menu: { recipes: QuoteRecipe[] };
+};
+
+type QuoteApiResponse = {
+    rfp: QuoteRfp;
+    error?: string;
+};
+
+function getErrorMessage(error: unknown) {
+    return error instanceof Error ? error.message : 'Unexpected error';
+}
+
 export function cn(...inputs: (string | undefined | null | false)[]) {
     return twMerge(clsx(inputs));
 }
@@ -45,7 +70,7 @@ function LegacyQuoteSubmissionPage({ params }: { params: Promise<{ rfpId: string
     const rfpId = unwrappedParams.rfpId;
 
     const [loading, setLoading] = useState(true);
-    const [rfpData, setRfpData] = useState<any>(null);
+    const [rfpData, setRfpData] = useState<QuoteRfp | null>(null);
     const [error, setError] = useState('');
 
     const [totalQuote, setTotalQuote] = useState('');
@@ -58,15 +83,15 @@ function LegacyQuoteSubmissionPage({ params }: { params: Promise<{ rfpId: string
         const fetchRFP = async () => {
             try {
                 const response = await fetch(`/api/quote/${rfpId}`);
-                const data = await response.json();
+                const data = await response.json() as QuoteApiResponse;
 
                 if (!response.ok) throw new Error(data.error || 'Failed to load RFP');
                 if (data.rfp.status !== 'SENT' && data.rfp.status !== 'VIEWED') {
                     setSubmitted(true);
                 }
                 setRfpData(data.rfp);
-            } catch (err: any) {
-                setError(err.message);
+            } catch (err: unknown) {
+                setError(getErrorMessage(err));
                 toastApiError(err, 'Could not load this RFP');
             } finally {
                 setLoading(false);
@@ -93,12 +118,12 @@ function LegacyQuoteSubmissionPage({ params }: { params: Promise<{ rfpId: string
                 })
             });
 
-            const data = await response.json();
+            const data = await response.json() as { error?: string };
             if (!response.ok) throw new Error(data.error || 'Failed to submit quote');
 
             setSubmitted(true);
-        } catch (err: any) {
-            setError(err.message);
+        } catch (err: unknown) {
+            setError(getErrorMessage(err));
             toastApiError(err, 'Could not submit quote');
         } finally {
             setSubmitting(false);
@@ -159,7 +184,7 @@ function LegacyQuoteSubmissionPage({ params }: { params: Promise<{ rfpId: string
                                 <h3 className="font-medium text-neutral-200 border-b border-neutral-800 pb-2">Requested Items</h3>
                                 <ul className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar pr-2">
                                     {/* Flatten ingredients from recipes for display */}
-                                    {rfpData?.menu.recipes.map((r: any) => r.ingredients).flat().map((ing: any, idx: number) => (
+                                    {rfpData?.menu.recipes.map(r => r.ingredients).flat().map((ing, idx) => (
                                         <li key={idx} className="flex justify-between items-center text-sm p-3 bg-neutral-950 rounded-xl">
                                             <span className="font-medium text-neutral-300">{ing.name}</span>
                                             <span className="text-neutral-500 bg-neutral-900 px-2 py-1 rounded-md">{ing.quantity} {ing.unit}</span>

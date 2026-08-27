@@ -1099,10 +1099,12 @@ export default function ProcurementPage() {
       };
       const existing = readTenantHistory(tenantId);
       writeTenantHistory(tenantId, [historyItem, ...existing].slice(0, 20));
+      const serverHistoryItem = { ...historyItem };
+      Reflect.deleteProperty(serverHistoryItem, 'tenantId');
       fetch('/api/history', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(historyItem),
+        body: JSON.stringify(serverHistoryItem),
       }).catch(() => {});
     });
     es.addEventListener('error', e => { const raw = (e as MessageEvent).data; if (raw) add('error', JSON.parse(raw)); setNegotiating(false); es.close(); });

@@ -1,6 +1,6 @@
 # India-First Launch Product and Website Design
 
-**Status:** Ready for user review
+**Status:** Approved for implementation
 
 **Date:** 2026-08-27
 
@@ -52,6 +52,7 @@ Primary navigation:
 - Procurement
 - Suppliers
 - Menus
+- Insights
 - History
 - Settings
 
@@ -117,6 +118,21 @@ Deployment:
 
 This is a near-zero-cost launch target, not a promise of a permanent zero bill. Cloud billing must be enabled, cross-cloud egress can cost money, Supabase Free can pause, and independent backups may have a small storage cost.
 
+### 5.1 Free-first operating limits
+
+The pilot starts inside free allocations and upgrades only after real usage reaches a documented trigger:
+
+- Cloud Run uses request-based billing, 512 MiB memory, min 0, max 2, concurrency 20, and no always-on worker.
+- Supabase Free is limited to a 500 MB database. Files, PDFs, QR codes, raw imports, and exports are not stored in PostgreSQL.
+- Database warnings trigger at 350 MB and 425 MB. New tenant onboarding pauses at 450 MB until the operator chooses an upgrade or archives eligible raw input.
+- Encrypted `pg_dump` backups use Cloudflare R2 Standard with a 30-day rolling retention and four monthly restore points. The job fails closed before projected storage exceeds 8 GB of the 10 GB monthly free allocation.
+- Artifact Registry retains only the two newest deployable images and must remain below its free storage allowance.
+- GitHub Actions runs required checks on pull requests and protected-branch pushes, cancels superseded runs, and avoids scheduled duplicate test runs.
+- Cloud budget alerts are warnings, not hard spending caps. The service configuration itself provides the primary guard through min 0, max 2, small memory, bounded request size, and no background compute.
+- No infrastructure plan automatically upgrades a paid tier. Scaling requires an explicit operator decision documented in the cost-boundary runbook.
+
+Upgrade triggers are product evidence, not calendar dates: sustained database size above 70%, pool saturation, p95 authenticated latency above 800 ms at normal query load, backup size beyond the safe retention envelope, or repeated Cloud Run usage beyond its free allowance.
+
 Application boundaries:
 
 - Next.js Server Components for public and authenticated page composition.
@@ -158,12 +174,32 @@ Add the real production core:
 - `SupplierQuote`
 - `SupplierQuoteItem`
 - `Award`
+- `AwardLine`
 - `AuditEvent`
 - `RateLimitBucket`
 
 Authoritative money is stored as integer paise. GST rates use basis points. Quantities use decimal values with an explicit unit. Launch units are deliberately small and practical: kilogram, gram, litre, millilitre, piece, pack, case, and crate.
 
 An opened procurement request copies reviewed ingredients into immutable request items. Later menu edits do not change an issued request.
+
+### 7.1 Minimum-schema rule
+
+The database contains only fields used by the launch workflow, a security policy, or a required audit record. It does not reserve columns for possible future features.
+
+Specifically:
+
+- Remove legacy savings targets, simulated savings, predicted spend, market alerts, AI summaries, agent state, pricing trends, and preferred-supplier text fields from production authority.
+- Do not add analytics, forecast, vector, embedding, job, email-delivery, purchase-order, inventory, or government-price tables at launch.
+- Compute dashboard counts and comparison views from transactional records instead of storing duplicate reporting rows.
+- Keep `tenantId` directly on tenant-owned tables even when it is relationally redundant because forced RLS depends on it.
+- Keep immutable request and quote snapshots because issued commercial records must not change when a menu or supplier record changes.
+- Store flexible address and commercial-term details as small validated JSON objects only when they are not filtered, joined, or sorted. Keep identifiers, money, dates, status, role, and foreign keys as typed columns.
+- Create indexes only for tenant-scoped list pages, unique identities, public-token lookup, request deadlines, and foreign keys.
+- Paginate history and supplier/request lists. Never load unbounded rows into the application.
+- Expire rate-limit buckets automatically and keep audit metadata compact and allow-listed.
+- Retain raw menu input for at most 30 days after review unless it is still attached to a draft.
+
+The goal is minimum stored data and minimum query work, not the fewest possible table names. Separate request items, quote items, award lines, and token grants remain justified because combining them would weaken validation, isolation, or auditability.
 
 ## 8. Complete product workflow
 
@@ -190,7 +226,7 @@ An opened procurement request copies reviewed ingredients into immutable request
 1. A user selects reviewed demand, delivery details, deadline, terms, and suppliers.
 2. Opening the request creates immutable request-item snapshots.
 3. The server creates one high-entropy supplier token per supplier and stores only a domain-separated token digest.
-4. The restaurant shares links through Copy, Web Share, WhatsApp deep link, or its own email client.
+4. The restaurant shares links through Copy, Web Share, WhatsApp deep link, locally generated QR code, or its own email client.
 
 ### Supplier quote
 
@@ -205,12 +241,41 @@ An opened procurement request copies reviewed ingredients into immutable request
 
 1. Comparison is deterministic and displays total landed cost, item coverage, delivery, validity, substitutions, and commercial terms.
 2. The product does not hide a scoring formula or recommend a winner with AI.
-3. An owner selects a quote, adds optional rationale, and confirms the award.
-4. Award creation and its audit event commit atomically.
+3. An owner can award the whole request to one quote or select winning quote items per request item.
+4. The server validates that awarded quantities do not exceed requested quantities and that every selected quote item belongs to the request.
+5. Award lines, the award envelope, and its audit event commit atomically.
+6. A purchase-order PDF can be generated on demand per awarded supplier from the committed award. It does not require a purchase-order table.
 
 ### History and insights
 
 History shows issued requests, quote revisions, awards, and audit events. Insights use only actual quotes and awards. A `Run again` action duplicates a past request into a new draft; it never mutates the historical record.
+
+### Original capability preservation
+
+The original demonstration's useful product ideas remain, but simulated claims are replaced by real or manual behavior:
+
+| Original capability | Launch implementation |
+|---|---|
+| Menu parsing | Deterministic draft extraction followed by explicit dish, ingredient, quantity, and unit review |
+| Supplier discovery | Searchable tenant supplier directory with manual entry and CSV import |
+| Supplier outreach | Copy, Web Share, WhatsApp deep link, and prefilled email composer using secure supplier links |
+| Negotiation agent | Human-reviewed counter-offer text, copy/share actions, and immutable supplier quote revisions |
+| Conversation simulation | Factual request activity and revision history; no invented messages |
+| Market pricing | Unit-price history computed from the restaurant's actual submitted quotes and awards |
+| Forecasting | Repeat-request creation and historical quantity views; no invented demand forecast |
+| Savings dashboard | Transparent comparison between real submitted quotes, labeled as quote variance rather than realized savings |
+| Intelligence page | Actual quote coverage, awarded spend, supplier response, delivery terms, and item-price history |
+| RFP history | Immutable request, supplier-link, quote-revision, award, and audit history |
+
+These equivalents keep the product's functional breadth without depending on AI, scraped supplier data, paid communications, or fabricated evidence.
+
+Zero-cost operational utilities are included where they improve the real workflow without adding a hosted service:
+
+- CSV supplier import with row-level validation and an error report.
+- CSV exports for requests, quotes, awards, and accounting handoff.
+- Locally generated QR codes for supplier links.
+- On-demand purchase-order PDFs generated from committed award data.
+- Whole-request and line-level split awards.
 
 ## 9. Safety and public-link rules
 
@@ -280,11 +345,9 @@ The following are deferred until real pilot evidence justifies them:
 
 - Automated email or WhatsApp Business sending.
 - Inventory receiving and invoice reconciliation.
-- Purchase-order PDFs.
-- Split awards by individual line.
-- Accounting integrations.
-- Government price feeds.
-- Supplier discovery.
+- Full accounting integrations. CSV accounting exports are included.
+- External government or commercial price feeds. Actual quote and award price history is included.
+- External supplier discovery. The real tenant supplier directory, search, and CSV import are included.
 - AI parsing, assistants, agents, forecasting, negotiation, or recommendations.
 - Configurable roles and permissions.
 - Multi-location organizations.
@@ -292,3 +355,21 @@ The following are deferred until real pilot evidence justifies them:
 
 Deferring these items preserves a complete launch product while preventing infrastructure and interface work that the first 1-10 customers do not need.
 
+## 14. India competitor response
+
+The launch scope reflects a current review of restaurant procurement and adjacent sourcing products in India.
+
+- Petpooja Purchase Manager is the closest small-restaurant alternative. It can compare Hyperpure and DMart prices with uploaded local supplier rate cards, but it is available only to active Petpooja POSS customers and uploaded local prices can become stale.
+- Workwise Hospitality, Procol, QuickProc, ERPNext, and Odoo cover broader sourcing or procure-to-pay workflows. Their strength is breadth; their trade-off for this launch segment is setup, supplier accounts or apps, and enterprise process weight.
+- Restroworks and SupplyNote connect procurement with inventory and multi-location restaurant operations. Those capabilities become relevant later, after customers prove a need for receiving, stock, and invoice reconciliation.
+- Hyperpure, horeca360 by udaan, Udaan, Amazon Business, METRO, and Procura India are catalogues or marketplaces. They are possible suppliers or reference channels, not neutral multi-supplier comparison systems.
+
+The product therefore competes on a narrower and defensible workflow:
+
+1. It is standalone and does not require the restaurant to replace its POS.
+2. It works with the restaurant's own supplier relationships rather than forcing marketplace fulfilment.
+3. Suppliers respond through a secure mobile link without an account or app.
+4. Comparison normalizes availability, units, GST, freight, delivery, validity, and missing items instead of comparing an uploaded headline rate alone.
+5. A restaurant can award one complete basket or split lines across suppliers, then generate an auditable PO.
+
+The product will not copy reverse auctions, inventory depletion, GRN, payments, credit, logistics, contracts, marketplace discovery, or enterprise approval builders merely because competitors offer them. Those are separate products or later stages of the purchasing lifecycle and would weaken the launch workflow.

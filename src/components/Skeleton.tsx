@@ -1,7 +1,7 @@
 'use client';
 
 export function Skeleton({ className = '' }: { className?: string }) {
-  return <div className={`rounded-lg bg-white/[0.06] skeleton-shimmer ${className}`} />;
+  return <div className={`rounded-lg skeleton-shimmer ${className}`} />;
 }
 
 export function PageSkeleton() {

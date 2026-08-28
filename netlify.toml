@@ -1,0 +1,12 @@
+[build]
+  command = "npm run build"
+  publish = ".next"
+  ignore = "node -e \"process.exit(process.env.CONTEXT === 'production' && process.env.QUOTEPLATE_APPROVED_RELEASE !== '1' ? 0 : 1)\""
+
+[build.environment]
+  NODE_VERSION = "20.18.1"
+  NPM_FLAGS = "--omit=peer"
+  NEXT_TELEMETRY_DISABLED = "1"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"

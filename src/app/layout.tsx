@@ -1,9 +1,48 @@
 import type { Metadata } from "next";
+import "@fontsource-variable/manrope";
+import "@fontsource-variable/newsreader";
 import "./globals.css";
+import { brand } from "@/config/brand";
+import { resolveSiteMetadataUrls } from "@/config/site-url";
+
+const siteUrls = resolveSiteMetadataUrls();
 
 export const metadata: Metadata = {
-  title: "AutoRFP — Intelligent Procurement Platform",
-  description: "AI-powered restaurant ingredient procurement: menu parsing, live pricing, supplier discovery, and autonomous negotiation.",
+  metadataBase: siteUrls.metadataBase,
+  title: {
+    default: `${brand.productName} — ${brand.tagline}`,
+    template: `%s — ${brand.productName}`,
+  },
+  description: brand.description,
+  applicationName: brand.productName,
+  icons: {
+    icon: "/icon.svg",
+  },
+  openGraph: {
+    type: "website",
+    locale: "en_IN",
+    siteName: brand.productName,
+    title: `${brand.productName} — ${brand.tagline}`,
+    description: brand.description,
+    images: [
+      {
+        url: siteUrls.socialImageUrl,
+        width: 1200,
+        height: 630,
+        alt: `${brand.productName} — ${brand.tagline}`,
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: `${brand.productName} — ${brand.tagline}`,
+    description: brand.description,
+    images: [siteUrls.socialImageUrl],
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
 export default function RootLayout({
@@ -12,12 +51,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark bg-black">
-      <body
-        className="antialiased bg-black text-[#F2F2F2] selection:bg-[#5E6AD2]/30 selection:text-white"
-      >
-        {children}
-      </body>
+    <html lang="en-IN">
+      <body>{children}</body>
     </html>
   );
 }

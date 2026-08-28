@@ -1,0 +1,106 @@
+name: Encrypted PostgreSQL backup
+
+on:
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quoteplate-production-backup
+  cancel-in-progress: false
+
+jobs:
+  backup-and-monthly-restore:
+    environment: production-backup
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out recovery scripts
+        uses: actions/checkout@v4
+
+      - name: Install open-source recovery tools
+        run: |
+          set -eu
+          key_file="$RUNNER_TEMP/postgresql-pgdg.asc"
+          key_fingerprint='B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8'
+          curl --fail --silent --show-error --location \
+            --proto '=https' --tlsv1.2 \
+            --output "$key_file" \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          test "$(gpg --show-keys --with-colons "$key_file" | awk -F: '$1 == "fpr" { print $10; exit }')" = "$key_fingerprint"
+          sudo install -d -m 0755 /etc/apt/keyrings
+          sudo gpg --batch --yes --dearmor \
+            --output /etc/apt/keyrings/postgresql-pgdg.gpg \
+            "$key_file"
+          . /etc/os-release
+          test "$VERSION_CODENAME" = 'noble'
+          printf '%s\n' \
+            "deb [signed-by=/etc/apt/keyrings/postgresql-pgdg.gpg] https://apt.postgresql.org/pub/repos/apt noble-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/postgresql-pgdg.list >/dev/null
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            age postgresql-client-17 rclone
+          pg_dump --version | grep -Eq 'PostgreSQL\) 17\.'
+
+      - name: Decide whether this run includes restore verification
+        id: calendar
+        run: |
+          set -eu
+          if [ "$(date -u +%d)" = "01" ]; then
+            printf '%s\n' 'monthly=true' >> "$GITHUB_OUTPUT"
+          else
+            printf '%s\n' 'monthly=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Back up with the dedicated read-only database role
+        env:
+          BACKUP_DATABASE_URL: ${{ secrets.NEON_BACKUP_DATABASE_URL }}
+          AGE_RECIPIENT: ${{ secrets.AGE_BACKUP_RECIPIENT }}
+          RCLONE_CONFIG_B2_TYPE: b2
+          RCLONE_CONFIG_B2_ACCOUNT: ${{ secrets.B2_APPLICATION_KEY_ID }}
+          RCLONE_CONFIG_B2_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+          RCLONE_REMOTE: b2
+          RCLONE_BUCKET: ${{ secrets.B2_BUCKET_NAME }}
+        run: |
+          set -eu
+          encrypted_file="$RUNNER_TEMP/quoteplate-latest.dump.gz.age"
+          test -n "$BACKUP_DATABASE_URL"
+          backup_authority=${BACKUP_DATABASE_URL#*://}
+          backup_userinfo=${backup_authority%%@*}
+          backup_user=${backup_userinfo%%:*}
+          test "$backup_authority" != "$BACKUP_DATABASE_URL"
+          test "$backup_userinfo" != "$backup_authority"
+          if [ "$backup_user" != 'autorfp_backup' ]; then
+            printf '%s\n' 'Backup refused: NEON_BACKUP_DATABASE_URL must use autorfp_backup' >&2
+            exit 1
+          fi
+          if [ '${{ steps.calendar.outputs.monthly }}' = 'true' ]; then
+            BACKUP_OUTPUT_FILE="$encrypted_file" scripts/backup-postgres.sh
+          else
+            scripts/backup-postgres.sh
+          fi
+
+      - name: Verify the encrypted dump in the disposable restore database
+        if: steps.calendar.outputs.monthly == 'true'
+        env:
+          RESTORE_DATABASE_URL: ${{ secrets.NEON_RESTORE_DATABASE_URL }}
+          AGE_BACKUP_IDENTITY: ${{ secrets.AGE_BACKUP_IDENTITY }}
+        run: |
+          set -eu
+          identity_file="$RUNNER_TEMP/quoteplate-age-identity.txt"
+          encrypted_file="$RUNNER_TEMP/quoteplate-latest.dump.gz.age"
+          trap 'rm -f "$identity_file"' EXIT HUP INT TERM
+          umask 077
+          printf '%s' "$AGE_BACKUP_IDENTITY" > "$identity_file"
+          AGE_IDENTITY_FILE="$identity_file" scripts/restore-verify.sh "$encrypted_file"
+
+      - name: Remove local encrypted material
+        if: always()
+        run: |
+          rm -f \
+            "$RUNNER_TEMP/quoteplate-age-identity.txt" \
+            "$RUNNER_TEMP/quoteplate-latest.dump.gz.age" \
+            "$RUNNER_TEMP/postgresql-pgdg.asc"

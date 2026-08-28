@@ -55,9 +55,16 @@ next-env.d.ts
 
 # ── Testing ───────────────────────────────────────────────
 /coverage
+/.next-auth-e2e/
+/.auth-e2e-support/
+/test-results/
+/playwright-report/
 
 # ── Vercel ────────────────────────────────────────────────
 .vercel
+
+# ── Netlify local build output ────────────────────────────
+/.netlify/
 
 # ── ChromaDB vector store data ────────────────────────────
 /chroma_data/

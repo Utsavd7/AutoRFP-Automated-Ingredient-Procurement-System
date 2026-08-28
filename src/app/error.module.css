@@ -1,0 +1,89 @@
+.page {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  padding: clamp(1.25rem, 5vw, 4rem);
+  color: #101817;
+  background: #f5f1e8;
+}
+
+.rootPage {
+  min-height: 100vh;
+}
+
+.panel {
+  width: min(100%, 38rem);
+  padding: clamp(1.5rem, 4vw, 2.75rem);
+  border: 1px solid #d9d2c6;
+  border-top: 4px solid #d8834e;
+  background: #fbf9f4;
+  box-shadow: 0 1.25rem 4rem rgb(16 24 23 / 8%);
+}
+
+.icon {
+  width: 2.5rem;
+  height: 2.5rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid #e0b6a0;
+  color: #93451f;
+  background: #f8e8dd;
+}
+
+.icon svg {
+  width: 1.1rem;
+}
+
+.eyebrow {
+  margin: 1.4rem 0 .45rem;
+  color: #93451f;
+  font-size: .68rem;
+  font-weight: 800;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.panel h1 {
+  margin: 0;
+  max-width: 28rem;
+  font-family: var(--font-newsreader), Georgia, serif;
+  font-size: clamp(2rem, 5vw, 3.25rem);
+  font-weight: 500;
+  letter-spacing: -.035em;
+  line-height: 1.02;
+}
+
+.description {
+  margin: 1rem 0 0;
+  max-width: 31rem;
+  color: #626764;
+  font-size: .9rem;
+  line-height: 1.65;
+}
+
+.button {
+  min-height: 2.9rem;
+  margin-top: 1.5rem;
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .7rem 1rem;
+  border: 1px solid #101817;
+  border-radius: .45rem;
+  color: #fffdf8;
+  background: #101817;
+  box-shadow: 0 3px 0 #d8834e;
+  font: inherit;
+  font-size: .8rem;
+  font-weight: 780;
+  cursor: pointer;
+}
+
+.button svg {
+  width: .95rem;
+}
+
+.button:focus-visible {
+  outline: 3px solid #d8834e;
+  outline-offset: 3px;
+}

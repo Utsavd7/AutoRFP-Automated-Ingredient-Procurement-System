@@ -1,351 +1,210 @@
-# AutoRFP — Automated Ingredient Procurement System
+# QuotePlate
 
-> Built by Utsav Doshi · [github.com/Utsavd7](https://github.com/Utsavd7)
+**Every supplier quote. One accountable decision.**
 
----
+QuotePlate is an India-first restaurant procurement workspace. A restaurant can prepare an ingredient request, collect quotes from its own suppliers without asking them to create accounts, compare the real landed cost, record a whole or split award, and keep the complete commercial history for the next buying cycle.
 
-## What This Does
+Built by [Utsav Doshi](https://github.com/Utsavd7) · [View the repository](https://github.com/Utsavd7/AutoRFP-Automated-Ingredient-Procurement-System)
 
-Every restaurant has to buy food. Every single week.
+![QuotePlate wordmark](public/brand/wordmark-horizontal.svg)
 
-The chef or owner has to figure out: what do we need, how much of it, who sells it, what's the going rate, and are we getting a fair price? Then they call suppliers, wait for quotes, compare them manually, negotiate a little, and place an order. Then do it all over again next week.
+## Product status
 
-**AutoRFP automates that entire process.**
+The complete launch workflow is implemented and passes the local release gate. Unit, integration, responsive browser, accessibility, migration, tenant-isolation, production-build, and bounded 20-restaurant load checks pass. Production provider setup, one encrypted remote restore, and the live canary remain intentionally pending; none of those steps may add a card, enable billing, or accept a paid upgrade.
 
-You paste your menu in. The system figures out every ingredient you need — including the ones no one thinks about, like the butter used to finish a sauce or the stock a risotto is cooked in. It calculates realistic quantities based on your guest count. It looks up what those ingredients are actually trading for on commodity markets right now. It finds suppliers near you and emails them RFPs. It runs an AI negotiation to push for a better price. And it tells you exactly who to buy from and what you'll save.
+The controlled launch is sized for **one to four restaurants** on cardless free plans. The code and test profile already cover **20 isolated restaurant workspaces** so the application can grow without a rewrite.
 
-What used to take hours of back-and-forth every week becomes something you click through in minutes.
+## What a restaurant can do
 
----
+- Activate a production owner workspace with an approved Google account; invited or existing users can use local credentials where configured.
+- Invite team members with expiring, single-use links and sign out from every responsive layout.
+- Paste a menu, review dishes and ingredient quantities, correct them, approve the reviewed menu, and track its version number.
+- Add, search, edit, deactivate, import, or export up to 500 suppliers per operation in the restaurant's own directory.
+- Build a draft request with delivery details, dates, commercial terms, up to 250 items, and up to 20 suppliers.
+- Open the request and share a different secure link or QR code with each supplier.
+- Let a supplier quote without an account, including partial availability, substitutions, GST, tax-inclusive rates, freight, delivery, validity, terms, and a deliberate no-quote choice.
+- Preserve every submitted quote revision instead of silently replacing earlier prices.
+- Compare normalized unit rates, coverage, GST, freight, delivery fit, and final landed totals in one view.
+- Award the complete request to one supplier or split it item by item, with a human-entered reason and an immutable decision record.
+- Download request, comparison, award, and accounting CSVs plus one PDF purchase order per winning supplier.
+- Review history and practical spend insights, then repeat an earlier request as a fresh editable draft.
 
-## Why This Problem Is Worth Solving
+## Why suppliers do not need another app
 
-Food is the single biggest controllable cost in a restaurant — typically 28–35% of revenue. Even small inefficiencies compound fast.
+QuotePlate works with the suppliers a restaurant already knows. Each supplier receives a private, expiring request link and can submit from a phone without registering, installing an app, or joining a marketplace. A restaurant can create, rotate, or revoke that link and see when it was first viewed.
 
-But the way most restaurants actually handle procurement hasn't changed much in decades:
+## Why a restaurant keeps using it after meeting a supplier
 
-- **No price visibility.** Suppliers quote whatever they want. Most restaurant owners have no idea if chicken breast is up 15% this month because of avian flu or if their beef distributor is padding margins. There's no live market signal in the room.
-- **No negotiation leverage.** A single restaurant calling one supplier has almost none. There's no data, no comparison, and no time to shop around.
-- **No memory.** Every procurement cycle starts from zero. Nobody knows what they paid last quarter, which vendor came in cheapest for salmon, or that the last time wheat spiked they should've locked in flour early.
-- **It's all manual.** Phone calls, emails, spreadsheets. The chef is doing this on top of running a kitchen. It's the last thing anyone wants to spend time on.
+Direct supplier relationships are expected, not blocked. The lasting value is the next purchase: comparing fresh prices, checking GST and freight, tracking revisions, splitting an award, generating purchase orders, and knowing exactly why a decision was made. Going back to calls and spreadsheets removes that shared record and makes price changes harder to spot.
 
-The result: restaurants routinely overpay, miss pricing windows, and have no visibility into whether their food costs are trending in the right direction.
+## Product principles
 
-This is a real operational problem for the ~1 million restaurants in the US alone. Most of them are small businesses that can't afford a procurement team. That's exactly who this is built for.
+- **Factual, not automated theatre.** QuotePlate records supplier-entered facts and keeps the final award under human control.
+- **No marketplace lock-in.** The restaurant owns its supplier relationships and procurement records.
+- **No paid API dependency.** The launch product uses no paid AI, email, SMS, WhatsApp, pricing, payments, or supplier-discovery API.
+- **No surprise billing.** Provider-side caps, card removal, and a manual release check protect the free-plan boundary. Project workflows never add a payment method, enable overage, auto-recharge, or accept an upgrade.
+- **Useful on an ordinary phone.** The public site, authenticated workspace, forms, tables, dialogs, and supplier quote flow are tested across phone, tablet, and desktop layouts.
 
----
+## Technology
 
-## Why I Built This
+| Layer | Choice |
+| --- | --- |
+| Web application | Next.js 16, React 19, TypeScript, Tailwind CSS 4 |
+| Database | PostgreSQL with Prisma 5 |
+| Authentication | NextAuth, Google OAuth, Argon2 local credentials |
+| Documents | CSV, QR code PNG, and PDF generated inside the application |
+| Production host | Netlify Free |
+| Production database | Neon Postgres Free |
+| Automation | GitHub Actions with manual production approval |
+| Production backup | Encrypted Backblaze B2 Free storage |
+| Self-hosting option | Multi-stage, non-root Docker image |
 
-I wanted to build something at the intersection of AI agents, live market data, and a real operational workflow — not a toy demo. Here's what made each piece tricky and how I handled it:
+All production dependencies are open source. There is no LLM, vector database, background-job platform, paid monitoring service, transactional-email vendor, or usage-priced API in the runtime.
 
-**Hidden ingredients** — A menu says "pan-seared salmon." That's one ingredient. But you also need butter, shallots, stock, lemon, and oil to actually cook it. None of that is written anywhere. I built a two-pass extraction: first pull what's on the menu, then a second pass infers the hidden cooking ingredients every kitchen uses but never advertises.
+## Lean database
 
-**Realistic quantities** — LLMs are terrible at this. They'll say 500g of garlic for 20 guests without blinking. So I removed AI from that decision. I built a lookup table of 40+ ingredient categories with real kitchen portion standards — salmon is 8oz per guest, pasta is 4oz, herbs are 0.25oz. The LLM says *what*, the app decides *how much*.
+The launch schema has **17 tables and 171 scalar fields**. It is deliberately normalized: identity, invitations, quote revisions, award lines, and the audit trail remain separate because merging them would weaken security or destroy useful history while saving negligible storage.
 
-**Live market prices** — Ingredients map to real commodity futures tickers. Beef → live cattle futures on CME. Pasta → wheat futures on CBOT. Coffee → arabica on ICE. Prices pull from Yahoo Finance and convert to per-pound wholesale rates. Anything not on a futures market falls back to BLS retail data. Nothing is hardcoded.
+Four unsupported or redundant fields were removed in the final minimal-column migration:
 
-**Production-grade negotiation pipeline** — One prompt asking an LLM to "negotiate" just gets you a polite email. So I built 5 typed LangGraph nodes that run in sequence: `loadData → orchestrate → analyze → negotiate → finalize`. Each node has a typed state slice, deterministic fallbacks when LLM fails, and real-time SSE streaming to the browser throughout the entire run.
+- recipe retirement timestamp;
+- duplicate request-item source reference;
+- supplier verification timestamp;
+- supplier verifier reference.
 
-**Parallel quote simulation** — Vendor response simulation previously ran one supplier at a time (sequential `for` loop), making 5 suppliers take 5× as long. It now fires all vendor requests in parallel via `Promise.all`, cutting wall-clock time from ~35s to ~12s. Each vendor exchange is capped at 1 LLM round-trip — the high-quality deterministic fallback handles pricing without needing follow-up turns.
+The canonical schema-only reference lists every retained table and field: [docs/database-schema.md](docs/database-schema.md).
 
-**Background reliability** — Heavy operations (pricing refreshes, RFP delivery) run in Inngest background jobs with automatic retry. The UI never blocks on them.
+## Security model
 
-**Tenant isolation** — Every Prisma query for `Menu`, `RFP`, and `ProcurementRun` is automatically filtered by `tenantId` through a `$extends` query interceptor backed by `AsyncLocalStorage`. No query escapes its tenant scope without an explicit bypass.
+- Every restaurant-owned table has forced PostgreSQL row-level security.
+- The running application uses a restricted `autorfp_app` role with no superuser, database-creation, role-creation, replication, inherited privilege, or RLS-bypass capability.
+- Tenant context is set inside transactions; cross-restaurant reads and writes are tested against real PostgreSQL.
+- Supplier and invitation secrets are random opaque tokens; only their digests are stored.
+- Supplier links expire and can be revoked or rotated. Quote revisions and final awards are immutable records.
+- Browser mutations require a same-origin check, and public/auth endpoints use bounded bodies and persistent rate limits.
+- Authentication responses avoid account-discovery details. The deployment runbook requires `QUOTEPLATE_RUNTIME_STARTUP_CHECK=1`, which makes production startup and readiness fail closed on unsafe configuration.
+- Security headers, private database functions, owner/member authorization, bounded exports, and cursor pagination are verified in automated tests.
 
-**Procurement memory** — Every completed run gets embedded and stored in ChromaDB. Next time you buy the same ingredient, the system pulls up what worked last time and uses it. It gets better with every cycle instead of forgetting everything.
+## Run locally
 
----
+### Requirements
 
-## What Makes It Different
+- Node.js `20.18.1` through `24.x`
+- npm
+- PostgreSQL 15 or newer for manual development
+- Docker, or complete local PostgreSQL server binaries (`initdb`, `postgres`, `createdb`, `psql`), for the integration and browser suites
 
-| | AutoRFP | Typical "AI for restaurants" |
-|---|---|---|
-| **Ingredient extraction** | Infers hidden ingredients (cooking fats, bases, finishes) · 6–10 per entree | Only extracts hero ingredients from menu text |
-| **Portion accuracy** | 40+ keyword-mapped industry-standard kitchen portions per ingredient category | Generic quantities or LLM guesses |
-| **Market pricing** | CME/CBOT/ICE futures + BLS retail series + dynamic year range | Static price tables or none |
-| **Supplier discovery** | Google Places API near restaurant location · curated fallback pool | Hardcoded distributors |
-| **Quote collection** | All vendors contacted in parallel (`Promise.all`) · ~12s for 5 suppliers · realistic progress timers | Sequential blocking calls |
-| **Negotiation** | 5-node LangGraph pipeline · typed state · SSE-streamed · deterministic fallbacks · tenant-scoped query | Single LLM prompt |
-| **Background jobs** | Inngest: daily pricing refresh, RFP sending with 3-retry, weekly archival | Fire-and-forget or blocking requests |
-| **Tenant isolation** | `$extends` Prisma middleware + AsyncLocalStorage row-level security | None or manual `WHERE` clauses |
-| **Procurement memory** | ChromaDB RAG: past negotiation outcomes inform future recommendations | Stateless — forgets everything |
-| **Error monitoring** | Sentry + React Error Boundaries on every page | None |
-| **Multi-tenant SaaS** | Full NextAuth workspace with tenant-scoped history, analytics, and settings | Single-user or demo only |
+Install the exact dependency tree:
 
----
-
-## Core Features
-
-**Menu → Procurement List**
-Paste a menu URL or plain text. Groq extracts every dish, infers hidden procurement ingredients using culinary context, and applies deterministic per-guest portion defaults. One guest count scales the entire menu.
-
-**Live Market Pricing**
-Ingredients are matched to CME/CBOT/ICE futures tickers (beef, pork, wheat, corn, soy, coffee, sugar, cocoa, OJ) and BLS retail price series. Yahoo Finance dual-URL fallback keeps pricing live. Category-specific mock wholesale prices handle anything not covered by live data.
-
-**ML Price Forecasting**
-OLS linear regression on 6-month price history produces a 3-month forward forecast with 95% confidence intervals. Z-score anomaly detection (|z| > 1.4) generates buy/wait/neutral signals and price spike alerts.
-
-**5-Node LangGraph Negotiation Pipeline (SSE streamed)**
-
-The negotiation pipeline is built as a typed `StateGraph` with five nodes:
-
-1. **loadData** — pulls vendor quotes and live market prices from the database
-2. **orchestrate** — sets negotiation strategy and identifies target vendors
-3. **analyze** — grounds strategy in live commodity price data
-4. **negotiate** — drafts counter-offers and simulates vendor responses (one round per vendor)
-5. **finalize** — audits outcomes, writes executive summary, saves results, sends buyer report
-
-Each node has typed state slices via `Annotation.Root` and deterministic fallbacks when the LLM is unavailable. SSE events stream to the browser in real-time throughout the entire graph traversal.
-
-**Inngest Background Jobs**
-Three background functions registered at `/api/inngest`:
-- `refresh-pricing-trends` — daily cron at 6am ET refreshes market prices for all known ingredients
-- `send-rfp-emails` — event-triggered with 3 automatic retries; fires when RFPs are dispatched
-- `archive-old-runs` — weekly cron reports on procurement runs older than 90 days
-
-**Row-Level Security**
-Every Prisma read and create on `Menu`, `RFP`, and `ProcurementRun` models is automatically scoped to the current tenant via a `$extends` query interceptor. Tenant identity flows through the Node.js call stack via `AsyncLocalStorage` — no manual `where: { tenantId }` required anywhere in route handlers.
-
-**RAG Procurement Memory**
-Past negotiation outcomes are embedded (Ollama `nomic-embed-text` or deterministic fallback) and stored in ChromaDB. Before each recommendation, similar past runs are retrieved and injected as context so the system compounds learning across procurement cycles.
-
-**Automatic RFP Dispatch & Parallel Quote Collection**
-Compiled ingredient lists are emailed to discovered suppliers via Resend. Vendors can respond through a quote portal at `/quote/[rfpId]`. When simulating vendor responses, all suppliers are contacted in parallel — wall-clock time is bounded by the slowest single vendor (~12s for 5 suppliers), not the sum. Each exchange is capped at one LLM round-trip; the deterministic fallback computes accurate market-based pricing without needing follow-up turns. Switching to a new supplier set (re-running Supplier Discovery) automatically clears quotes, conversation logs, and negotiation state so the pipeline always runs against the current supplier set.
-
-**Error Monitoring**
-`@sentry/nextjs` captures exceptions with stack traces and component context. Every authenticated page is wrapped in a React `ErrorBoundary` class component that shows a recovery UI and reports to Sentry on `componentDidCatch`. Set `NEXT_PUBLIC_SENTRY_DSN` to activate; the app runs normally without it.
-
-**Procurement History & Intelligence**
-Every completed run is saved to Postgres. The Intelligence page shows spend trends, savings analytics, price spike alerts, category breakdown, and supplier scorecards across all runs.
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| Framework | Next.js 16 App Router + TypeScript |
-| Auth | NextAuth v4 · Credentials provider · JWT sessions |
-| Database | PostgreSQL via Prisma ORM (Supabase or local) |
-| Pipeline | LangGraph `@langchain/langgraph` · typed StateGraph · 5-node negotiation graph |
-| Background jobs | Inngest v4 · daily cron + event-triggered with retry |
-| Cloud LLM | Groq `llama-3.3-70b-versatile` · model fallback chain on rate-limit |
-| Local LLM | Ollama `llama3.2` (optional) |
-| Embeddings | Ollama `nomic-embed-text` · deterministic fallback |
-| Vector store | ChromaDB (optional) |
-| Market data | Yahoo Finance (CME/CBOT/ICE futures) · BLS public API |
-| ML | OLS linear regression · Z-score anomaly detection |
-| Email | Resend API |
-| Supplier search | Google Places API · curated fallback pool |
-| Streaming | Server-Sent Events (SSE) for negotiation transcript |
-| Tenant isolation | Prisma `$extends` + Node.js `AsyncLocalStorage` |
-| Error monitoring | Sentry `@sentry/nextjs` + React Error Boundaries |
-| UI animations | Framer Motion · `motion.div` + `AnimatePresence` + spring transitions |
-| Toasts | Sonner |
-| Command palette | `cmdk` · `⌘K` keyboard shortcut |
-| Styling | Tailwind CSS v4 |
-
----
-
-## Project Structure
-
-```text
-src/
-  app/
-    page.tsx                         Landing / sign-in / sign-up
-    (app)/
-      layout.tsx                     Sidebar, toaster, command palette, app footer
-      dashboard/page.tsx             Procurement dashboard
-      procurement/page.tsx           New procurement workflow (6-step)
-      history/page.tsx               Tenant-scoped run history
-      intelligence/page.tsx          Price alerts, analytics, scorecards
-      settings/page.tsx              Restaurant profile and integrations
-    demo-seed/page.tsx               Postgres-backed demo workspace seed
-    quote/[rfpId]/page.tsx           Vendor quote portal
-    api/
-      auth/[...nextauth]/route.ts    NextAuth credentials session
-      account/route.ts               Current tenant profile
-      dashboard/route.ts             Tenant dashboard + history
-      history/route.ts               Procurement history
-      inngest/route.ts               Inngest serve handler (GET/POST/PUT)
-      parse-menu/route.ts            Dish + hidden ingredient extraction
-      pricing/route.ts               Live market pricing (futures + BLS)
-      ml/forecast/route.ts           OLS forecast + anomaly detection
-      distributors/route.ts          Supplier search
-      send-rfp/route.ts              RFP email dispatch
-      simulate-conversation/route.ts Quote simulation
-      recommend/route.ts             AI recommendation + RAG context
-      agent/negotiate/route.ts       LangGraph 5-node negotiation pipeline (SSE)
-  inngest/
-    client.ts                        Inngest client (id: 'autorfp')
-    functions.ts                     Background functions (pricing, rfp, archive)
-  lib/
-    auth.ts                          NextAuth options
-    tenant.ts                        Tenant types + browser fallback helpers
-    tenant-context.ts                AsyncLocalStorage for row-level tenant scope
-    llm.ts                           Ollama/Groq chat helpers + model fallback chain
-    prisma.ts                        Prisma client with $extends RLS interceptor
-    embeddings.ts                    Ollama/fallback embeddings
-    chroma.ts                        ChromaDB RAG memory client
-    toast.ts                         Sonner toast helpers
-  components/
-    CommandPalette.tsx               cmdk palette (⌘K) with nav + actions
-    ErrorBoundary.tsx                React class error boundary + Sentry capture
-    Skeleton.tsx                     Loading skeletons
-    ToastViewport.tsx                Legacy no-op (replaced by Sonner)
-
-prisma/schema.prisma                 Prisma schema (tenantId indexes on all scoped models)
-instrumentation.ts                   Next.js App Router Sentry server init hook
-sentry.client.config.ts             Sentry browser config
-sentry.server.config.ts             Sentry server config
-```
-
----
-
-## Getting Started
-
-### 1. Clone and install
-
-```bash
+```sh
 git clone https://github.com/Utsavd7/AutoRFP-Automated-Ingredient-Procurement-System.git
 cd AutoRFP-Automated-Ingredient-Procurement-System
-npm install
-```
-
-### 2. Configure environment
-
-```bash
+npm ci --omit=peer
 cp .env.sample .env
 ```
 
-| Variable | Required | Purpose |
-|---|---|---|
-| `DATABASE_URL` | Yes | PostgreSQL connection string. Use Supabase or local Postgres. |
-| `NEXTAUTH_URL` | Yes | App URL — `http://localhost:3000` locally. |
-| `NEXTAUTH_SECRET` | Yes | Session signing secret. Run `openssl rand -base64 32`. |
-| `GROQ_API_KEY` | Yes | Cloud LLM for parsing, negotiation, quotes. Get one at [console.groq.com](https://console.groq.com/keys). |
-| `GOOGLE_MAPS_API_KEY` | Optional | Real supplier discovery via Google Places. |
-| `RESEND_API_KEY` | Optional | RFP email delivery. Without it, RFPs are stored/logged only. |
-| `MOCK_EMAIL` | Optional | Routes all demo vendor emails to one inbox. |
-| `AUTORFP_SEND_BUYER_REPORT` | Optional | Set `true` to email the final buyer report. |
-| `BUYER_EMAIL` | Optional | Recipient for buyer reports. |
-| `CHROMA_URL` | Optional | ChromaDB URL. Defaults to `http://localhost:8000`. |
-| `OLLAMA_URL` | Optional | Ollama URL. Defaults to `http://localhost:11434`. |
-| `NEXT_PUBLIC_SENTRY_DSN` | Optional | Sentry DSN. Error tracking is disabled when unset. |
-| `INNGEST_EVENT_KEY` | Optional | Inngest event key for production. Not needed for local dev. |
-| `INNGEST_SIGNING_KEY` | Optional | Inngest signing key for production. |
+Create a local database with your PostgreSQL owner account, then apply the committed migrations. Replace `YOUR_LOCAL_OWNER` with that local PostgreSQL username. Do not use `prisma db push`.
 
-### 3. Initialize the database
-
-```bash
-npx prisma generate
-npx prisma db push
+```sh
+createdb --username YOUR_LOCAL_OWNER quoteplate
+QUOTEPLATE_OWNER_URL='postgresql://YOUR_LOCAL_OWNER@127.0.0.1:5432/quoteplate?schema=public'
+DATABASE_URL="$QUOTEPLATE_OWNER_URL" DIRECT_URL="$QUOTEPLATE_OWNER_URL" npx prisma migrate deploy
+psql "$QUOTEPLATE_OWNER_URL"
 ```
 
-### 4. Optional: local AI services
+At the interactive PostgreSQL prompt, give the restricted application role a local password:
 
-Ollama for local/private inference (confirmed working with `llama3.2` + `nomic-embed-text`):
-```bash
-ollama pull llama3.2
-ollama pull nomic-embed-text
+```text
+\password autorfp_app
+\q
 ```
 
-ChromaDB for RAG procurement memory:
-```bash
-chroma run --path ./chroma_data
+Then set these values in `.env`; URL-encode the application password if it contains reserved URL characters. Keep the owner URL out of `.env` because it is needed only while applying migrations.
+
+```dotenv
+DATABASE_URL="postgresql://autorfp_app:URL_ENCODED_LOCAL_APP_PASSWORD@127.0.0.1:5432/quoteplate?schema=public"
+NEXTAUTH_URL="http://localhost:3000"
+NEXTAUTH_SECRET="REPLACE_WITH_AT_LEAST_32_RANDOM_CHARACTERS"
+QUOTEPLATE_PILOT_EMAILS="owner@example.com"
 ```
 
-Both are optional — the app degrades gracefully without them.
+Google OAuth is optional locally. Add both Google values from `.env.sample` only when you want to exercise the real provider, then start the application:
 
-### 5. Run
-
-```bash
+```sh
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000), create a restaurant workspace, and paste a menu.
+For the fastest clean review, `npm run test:integration` and `npm run test:e2e` create and remove their own disposable local PostgreSQL environments; they do not use a remote database or paid service.
 
----
+## Verification
 
-## Quick Demo
-
-```bash
-./demo.sh
+```sh
+npm test
+npm run test:integration
+npm run test:e2e
+npm run lint
+npm run typecheck
+npm run build
 ```
 
-This starts ChromaDB (if available), starts Next.js, seeds RAG memory, and opens a pre-seeded demo workspace. After sign-out:
+Recorded release evidence:
 
+The pull-request workflow repeats lint, type checks, unit tests, real PostgreSQL integration, the production build, responsive browser journeys, and the production dependency audit on a clean Ubuntu runner.
+
+| Gate | Result |
+| --- | --- |
+| Unit and API tests | 83 suites, 559 tests passed |
+| Real PostgreSQL integration | 22 suites, 38 tests passed |
+| Responsive end-to-end journeys | 39 passed across desktop, phone and tablet; 3 intentional provider/duplicate-flow skips |
+| Empty-database migrations and forced-RLS isolation | Passed |
+| Bounded 20-restaurant profile | Passed with zero errors or tenant mismatches |
+| Production dependency audit | 0 vulnerabilities |
+| Lint, TypeScript, Next.js build | Passed |
+| Offline Netlify production packaging | Passed |
+
+See [docs/reports/launch-verification.md](docs/reports/launch-verification.md) for the evidence and remaining provider gates.
+
+## Free-only production release
+
+Production is intentionally not published on every push. The release workflow accepts only an exact commit already on `main`, requires successful CI for that commit, waits for approval in the protected GitHub `production` environment, applies migrations with a step-scoped owner credential, publishes once, and runs a canary.
+
+Before a first release:
+
+1. Confirm Netlify, Neon, GitHub, Google, and Backblaze B2 are cardless Free accounts with no paid overage or auto-recharge.
+2. Configure Google OAuth with the exact callback `${NEXTAUTH_URL}/api/auth/callback/google`; every production owner email must be Google-verified and exactly listed in `QUOTEPLATE_PILOT_EMAILS`.
+3. Run the database-only bootstrap workflow for the approved `main` commit.
+4. Set the runtime-role password interactively and store only the restricted pooled URL in Netlify.
+5. Configure the dedicated read-only backup role and complete one real encrypted restore using the cardless backup environment.
+6. Run the manually approved Netlify release workflow. Stop immediately if any provider asks for payment or an upgrade.
+
+Operational instructions:
+
+- [Deployment](docs/runbooks/deployment.md)
+- [No-billing boundaries](docs/runbooks/cost-boundaries.md)
+- [Backup and restore](docs/runbooks/backup-restore.md)
+- [Rollback](docs/runbooks/rollback.md)
+- [Incident response](docs/runbooks/incident.md)
+
+## Repository map
+
+```text
+src/app/                 public pages, authenticated screens, and route handlers
+src/components/          product workspaces and responsive UI
+src/lib/                 auth, tenancy, procurement, quotes, awards, exports, reporting
+prisma/schema.prisma     canonical database model
+prisma/migrations/       reviewed, forward-only PostgreSQL migrations
+tests/e2e/               complete desktop, phone, and tablet product journeys
+tests/load/              bounded 20-restaurant launch profile
+__tests__/integration/   real PostgreSQL migration and isolation checks
+scripts/                 canary, backup, restore, and operational safeguards
+public/brand/            canonical SVG logo, app icon, and social card
+docs/                    schema, research, verification, brand, and runbooks
 ```
-email: demo@autorfp.local
-password: demo-password
-```
 
-### Sample menus to try
+## Design and research
 
-**Real restaurant URL** — paste directly into the menu input:
-```
-https://carminesnyc.com/menus/menus-c44-q420-dining#
-```
+- [Brand kit and canonical SVG assets](docs/brand/README.md)
+- [India restaurant procurement competitive review](docs/research/india-restaurant-procurement-competitive-review.md)
+- [Schema-only database reference](docs/database-schema.md)
 
-**Plain text** — paste into New Procurement:
-```
-Classic Cheeseburger $14
-Spaghetti Carbonara $18
-Grilled Salmon $26
-Chicken Parmesan $22
-Caesar Salad $14
-Margherita Pizza $16
-Eggs Benedict $13
-Tiramisu $10
-```
-
----
-
-## AI Fallback Behavior
-
-| Capability | Primary | Fallback |
-|---|---|---|
-| Menu parsing | Groq `llama-3.3-70b-versatile` | Model fallback chain: `llama-3.1-8b-instant` → `llama3-8b-8192` on 429 |
-| Negotiation nodes | Groq (via LangGraph nodes) | Deterministic fallback inside each node — pipeline never crashes |
-| Local inference | Ollama `llama3.2` | Groq if Ollama is unavailable |
-| Embeddings | Ollama `nomic-embed-text` | Deterministic 768-dim local fallback |
-| RAG memory | ChromaDB | Skipped gracefully if ChromaDB is down |
-| Background jobs | Inngest (with 3 retries) | Direct DB write if Inngest is not configured |
-| Error tracking | Sentry | Silent if `NEXT_PUBLIC_SENTRY_DSN` not set |
-
-Missing local services never take down the app.
-
----
-
-## Architecture Notes
-
-### LangGraph Negotiation Pipeline
-
-The `GET /api/agent/negotiate` route compiles a `StateGraph` at module load time:
-
-```
-loadData → orchestrate → analyze → negotiate → finalize → END
-```
-
-Each node returns a partial state update. The `negotiate` node loops over vendor rounds internally, emitting SSE events in real-time via a request-scoped `Map<requestId, sendFn>` that lives outside graph state (stream controllers aren't serialisable). This gives true real-time streaming without batching events per-node.
-
-`loadDataNode` filters by both `menuId` and `tenantId` — defense in depth on top of the Prisma `$extends` RLS interceptor. This ensures the negotiation pipeline only sees quotes belonging to the current tenant's current procurement run, even if AsyncLocalStorage isn't populated in the request context.
-
-### Parallel Quote Simulation
-
-`handleAutoConversation` fires all vendor RFP simulations via `Promise.all` rather than a sequential `for` loop. With 5 suppliers, this reduces wall-clock time from ~35s (sequential, 3 turns each) to ~12s (parallel, 1 turn each). Each `/api/simulate-conversation` call does one LLM round-trip to generate a vendor reply, one to parse it, then falls back to a deterministic hash-based markup if either fails — so the pipeline is fast and never blocks on an unresponsive model.
-
-### Row-Level Security
-
-`src/lib/prisma.ts` exports a Prisma client extended with a `$allModels.$allOperations` interceptor. It reads the current tenant from `AsyncLocalStorage` (set by `withTenantContext()` in middleware) and injects `where: { tenantId }` on reads and `data: { tenantId }` on creates for the three tenant-scoped models. Nothing leaks across tenants without an explicit raw query bypass.
-
-### Inngest
-
-Three background functions are registered at `GET|POST|PUT /api/inngest`. In local dev, the Inngest Dev Server auto-discovers this endpoint. In production, set `INNGEST_EVENT_KEY` and `INNGEST_SIGNING_KEY`. The `rfp/send` event can be triggered from the send-rfp route to move email delivery fully off the request path.
-
----
-
-## License
-
-MIT
+**QuotePlate** combines the two sides of the product: supplier **quotes** and the restaurant **plate** those purchases ultimately serve. The two document forms in the mark represent a request and a quote moving toward one recorded decision. The product and company names remain provisional until formal trademark, company-name, and domain clearance is completed.

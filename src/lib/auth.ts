@@ -1,117 +1,140 @@
 import type { NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
-import { Prisma } from '@prisma/client';
-import { makeTenantId, parseSuppliers } from '@/lib/tenant';
-import { prisma } from '@/lib/prisma';
-import { createPasswordRecord, verifyPassword } from '@/lib/password';
+import GoogleProvider from 'next-auth/providers/google';
 
-export const authOptions: NextAuthOptions = {
-  session: { strategy: 'jwt' },
-  providers: [
+import {
+  authenticateCredentials,
+  type CredentialsRepository,
+} from '@/lib/auth/credentials';
+import {
+  resolveGoogleIdentity,
+  type GoogleIdentityRepository,
+  type GoogleIdentityUser,
+} from '@/lib/auth/google-identity';
+import type { GoogleOnboarding } from '@/lib/auth/oauth-start';
+import { consumeCredentialsRateLimit } from '@/lib/auth/rate-limit';
+import { pilotEmailAllowed } from '@/lib/auth/pilot-access';
+
+export type AuthEnvironment = {
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  NEXTAUTH_SECRET?: string;
+  NODE_ENV?: string;
+  QUOTEPLATE_PILOT_EMAILS?: string;
+};
+
+type AuthOptionsInput = {
+  env?: AuthEnvironment;
+  googleOnboarding?: GoogleOnboarding | null;
+  credentialsRepository?: CredentialsRepository;
+  credentialsClientIdentifier?: string | null;
+  credentialsRateLimit?: typeof consumeCredentialsRateLimit;
+  now?: () => Date;
+  googleIdentityRepository?: GoogleIdentityRepository;
+};
+
+export function googleAuthAvailable(env: AuthEnvironment = process.env) {
+  return Boolean(
+    env.GOOGLE_CLIENT_ID?.trim() && env.GOOGLE_CLIENT_SECRET?.trim(),
+  );
+}
+
+export function createAuthOptions(
+  input: AuthOptionsInput = {},
+): NextAuthOptions {
+  const env = input.env ?? process.env;
+  const providers: NextAuthOptions['providers'] = [
     CredentialsProvider({
-      name: 'Restaurant Workspace',
+      name: 'Email and password',
       credentials: {
-        name: { label: 'Restaurant name', type: 'text' },
         email: { label: 'Work email', type: 'email' },
         password: { label: 'Password', type: 'password' },
-        location: { label: 'Location', type: 'text' },
-        cuisineType: { label: 'Cuisine type', type: 'text' },
-        preferredSuppliers: { label: 'Preferred suppliers', type: 'text' },
-        monthlyBudgetTarget: { label: 'Monthly budget target', type: 'text' },
-        savingsTargetPct: { label: 'Savings target percent', type: 'text' },
-        mode: { label: 'Mode', type: 'text' },
       },
       async authorize(credentials) {
-        const mode = credentials?.mode === 'signup' ? 'signup' : 'signin';
-        const name = credentials?.name?.trim();
-        const email = credentials?.email?.trim().toLowerCase();
-        const password = credentials?.password ?? '';
-        const location = credentials?.location?.trim();
-        if (!email || !email.includes('@')) throw new Error('Enter a valid work email.');
-        if (password.length < 8) throw new Error('Password must be at least 8 characters.');
-
-        if (mode === 'signin') {
-          const tenant = await prisma.tenant.findFirst({ where: { email } });
-          if (!tenant || !verifyPassword(password, tenant.passwordHash, tenant.passwordSalt)) throw new Error('Email or password is incorrect.');
-          return {
-            id: tenant.id,
-            tenantId: tenant.id,
-            name: tenant.restaurantName,
-            email: tenant.email,
-            location: tenant.location,
-            cuisineType: tenant.cuisineType || 'General restaurant',
-            preferredSuppliers: tenant.preferredSuppliers,
-            monthlyBudgetTarget: tenant.monthlyBudgetTarget,
-            savingsTargetPct: tenant.savingsTargetPct,
-          } as any;
-        }
-
-        if (!name) throw new Error('Restaurant name is required.');
-        if (!location) throw new Error('Location is required.');
-        const existing = await prisma.tenant.findFirst({ where: { email } });
-        if (existing) throw new Error('A workspace already exists for that email. Use Sign in instead.');
-
-        const tenantId = makeTenantId(email, name);
-        const passwordRecord = createPasswordRecord(password);
-        let tenant;
-        try {
-          tenant = await prisma.tenant.create({
-            data: {
-              id: tenantId,
-              restaurantName: name,
-              email,
-              ...passwordRecord,
-              location,
-              cuisineType: credentials?.cuisineType?.trim() || 'General restaurant',
-              preferredSuppliers: parseSuppliers(credentials?.preferredSuppliers ?? ''),
-              monthlyBudgetTarget: credentials?.monthlyBudgetTarget ? Number(credentials.monthlyBudgetTarget) : null,
-              savingsTargetPct: credentials?.savingsTargetPct ? Number(credentials.savingsTargetPct) : null,
-            },
-          });
-        } catch (error) {
-          if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-            throw new Error('A workspace already exists for that email. Use Sign in instead.');
-          }
-          throw new Error('Unable to create workspace. Check the database connection and try again.');
-        }
-        return {
-          id: tenant.id,
-          tenantId: tenant.id,
-          name: tenant.restaurantName,
-          email: tenant.email,
-          location: tenant.location,
-          cuisineType: tenant.cuisineType || 'General restaurant',
-          preferredSuppliers: tenant.preferredSuppliers,
-          monthlyBudgetTarget: tenant.monthlyBudgetTarget,
-          savingsTargetPct: tenant.savingsTargetPct,
-        } as any;
+        return authenticateCredentials(
+          {
+            email: credentials?.email,
+            password: credentials?.password,
+          },
+          input.credentialsRepository,
+          {
+            clientIdentifier: input.credentialsClientIdentifier,
+            now: input.now?.() ?? new Date(),
+            rateLimit: input.credentialsRateLimit,
+          },
+        );
       },
     }),
-  ],
-  callbacks: {
-    async jwt({ token, user }) {
-      if (user) {
-        const tenantUser = user as any;
-        token.tenantId = tenantUser.tenantId;
-        token.location = tenantUser.location;
-        token.cuisineType = tenantUser.cuisineType;
-        token.preferredSuppliers = tenantUser.preferredSuppliers;
-        token.monthlyBudgetTarget = tenantUser.monthlyBudgetTarget;
-        token.savingsTargetPct = tenantUser.savingsTargetPct;
-      }
-      return token;
+  ];
+
+  if (googleAuthAvailable(env)) {
+    providers.push(
+      GoogleProvider({
+        clientId: env.GOOGLE_CLIENT_ID!.trim(),
+        clientSecret: env.GOOGLE_CLIENT_SECRET!.trim(),
+        authorization: { params: { scope: 'openid email profile' } },
+      }),
+    );
+  }
+
+  let requestGoogleIdentity: GoogleIdentityUser | null = null;
+
+  return {
+    secret: env.NEXTAUTH_SECRET,
+    session: { strategy: 'jwt' },
+    pages: {
+      signIn: '/signin',
+      error: '/signin',
     },
-    async session({ session, token }) {
-      session.user = {
-        ...session.user,
-        tenantId: token.tenantId,
-        location: token.location,
-        cuisineType: token.cuisineType,
-        preferredSuppliers: token.preferredSuppliers,
-        monthlyBudgetTarget: token.monthlyBudgetTarget,
-        savingsTargetPct: token.savingsTargetPct,
-      } as any;
-      return session;
+    providers,
+    callbacks: {
+      async signIn({ account, profile }) {
+        if (account?.provider !== 'google') return true;
+
+        requestGoogleIdentity = await resolveGoogleIdentity(
+          {
+            account: {
+              provider: account.provider,
+              providerAccountId: account.providerAccountId,
+            },
+            profile: profile ?? {},
+            onboarding: input.googleOnboarding ?? null,
+            pilotAccess: (email) => pilotEmailAllowed(email, env),
+          },
+          input.googleIdentityRepository,
+        );
+        return true;
+      },
+
+      async jwt({ token, user, account }) {
+        if (account?.provider === 'google') {
+          return requestGoogleIdentity
+            ? {
+                userId: requestGoogleIdentity.userId,
+                tenantId: requestGoogleIdentity.tenantId,
+              }
+            : {};
+        }
+
+        const stableUser = user as
+          | (typeof user & { userId?: string; tenantId?: string })
+          | undefined;
+        const userId = stableUser?.userId ?? token.userId;
+        const tenantId = stableUser?.tenantId ?? token.tenantId;
+        return userId && tenantId ? { userId, tenantId } : {};
+      },
+
+      async session({ session, token }) {
+        session.user =
+          token.userId && token.tenantId
+            ? { userId: token.userId, tenantId: token.tenantId }
+            : undefined;
+        return session;
+      },
     },
-  },
-};
+  };
+}
+
+// Server-side session reads do not execute an OAuth callback. The callback route
+// creates a fresh options object per request so Google callback state stays local.
+export const authOptions = createAuthOptions();

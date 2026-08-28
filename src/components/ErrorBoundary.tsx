@@ -1,6 +1,5 @@
 'use client';
 import React from 'react';
-import * as Sentry from '@sentry/nextjs';
 
 interface Props {
     children: React.ReactNode;
@@ -10,7 +9,6 @@ interface Props {
 interface State {
     hasError: boolean;
     error?: Error;
-    eventId?: string;
 }
 
 export class ErrorBoundary extends React.Component<Props, State> {
@@ -24,45 +22,52 @@ export class ErrorBoundary extends React.Component<Props, State> {
     }
 
     componentDidCatch(error: Error, info: React.ErrorInfo) {
-        const eventId = Sentry.captureException(error, { extra: { componentStack: info.componentStack } });
-        this.setState({ eventId });
+        if (process.env.NODE_ENV !== 'production') {
+            console.error('QuotePlate render error', error, info.componentStack);
+        }
     }
 
     render() {
         if (this.state.hasError) {
             if (this.props.fallback) return this.props.fallback;
+            const detail =
+                process.env.NODE_ENV !== 'production' && this.state.error?.message
+                    ? this.state.error.message
+                    : 'Please try again. Your saved work is still safe.';
 
             return (
-                <div className="min-h-screen bg-black flex items-center justify-center p-8">
+                <div
+                    aria-labelledby="error-boundary-heading"
+                    aria-live="assertive"
+                    className="min-h-screen bg-[#f5f0e7] flex items-center justify-center p-8 text-[#101817]"
+                    role="alert"
+                >
                     <div className="max-w-md w-full text-center space-y-5">
-                        <div className="w-12 h-12 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto text-xl">
-                            ⚡
+                        <div className="w-12 h-12 rounded-xl bg-[#d8834f]/15 border border-[#d8834f]/30 flex items-center justify-center mx-auto text-xl" aria-hidden="true">
+                            Q
                         </div>
                         <div>
-                            <h2 className="text-lg font-bold text-[#EEEEEE] mb-2">Something went wrong</h2>
-                            <p className="text-sm text-[#8A8F98] leading-relaxed">
-                                {this.state.error?.message ?? 'An unexpected error occurred'}
+                                <h2 id="error-boundary-heading" className="text-lg font-bold text-[#101817] mb-2">Something went wrong</h2>
+                                <p className="text-sm text-[#5d625f] leading-relaxed">
+                                    {detail}
                             </p>
                         </div>
                         <div className="flex gap-3 justify-center">
                             <button
-                                onClick={() => this.setState({ hasError: false })}
-                                className="px-4 py-2 rounded-lg bg-violet-500/20 border border-violet-500/30 text-sm font-semibold text-violet-300 hover:bg-violet-500/30 transition-colors"
+                                className="px-4 py-2 rounded-lg bg-[#101817] border border-[#101817] text-sm font-semibold text-[#f5f0e7] hover:bg-[#26312e] transition-colors"
+                                onClick={() => this.setState({ hasError: false, error: undefined })}
+                                type="button"
                             >
                                 Try again
                             </button>
                             <button
+                                className="px-4 py-2 rounded-lg bg-transparent border border-[#b8b4ab] text-sm font-semibold text-[#4f5552] hover:text-[#101817] transition-colors"
                                 onClick={() => window.location.reload()}
-                                className="px-4 py-2 rounded-lg bg-white/[0.04] border border-white/[0.08] text-sm font-semibold text-[#8A8F98] hover:text-[#EEEEEE] transition-colors"
+                                type="button"
                             >
                                 Reload page
                             </button>
                         </div>
-                        {this.state.eventId && (
-                            <p className="text-[10px] font-mono text-[#8A8F98]/50">
-                                Error ID: {this.state.eventId}
-                            </p>
-                        )}
                     </div>
                 </div>
             );

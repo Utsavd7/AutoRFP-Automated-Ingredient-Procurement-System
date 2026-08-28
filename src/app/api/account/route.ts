@@ -1,42 +1,34 @@
 import { NextResponse } from 'next/server';
-import { requireTenant, tenantToAccount } from '@/lib/server-account';
-import { prisma } from '@/lib/prisma';
-import { parseSuppliers } from '@/lib/tenant';
 
-export async function GET() {
-  const tenant = await requireTenant();
-  if (!tenant) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  return NextResponse.json({ account: tenantToAccount(tenant) });
+import {
+  requireAccountContext,
+  tenantToAccount,
+} from '@/lib/server-account';
+
+function privateResponse<T extends Response>(response: T): T {
+  response.headers.set('Cache-Control', 'private, no-store');
+  response.headers.set('Referrer-Policy', 'no-referrer');
+  response.headers.set('X-Content-Type-Options', 'nosniff');
+  return response;
 }
 
-export async function PUT(req: Request) {
-  const tenant = await requireTenant();
-  if (!tenant) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-  const body = await req.json();
-  const name = String(body.name ?? '').trim();
-  const email = String(body.email ?? '').trim().toLowerCase();
-  const location = String(body.location ?? '').trim();
-  const cuisineType = String(body.cuisineType ?? '').trim() || 'General restaurant';
-
-  if (!name || !email.includes('@') || !location) {
-    return NextResponse.json({ error: 'Restaurant name, email, and location are required.' }, { status: 400 });
+export async function GET() {
+  let context;
+  try {
+    context = await requireAccountContext();
+  } catch {
+    return privateResponse(NextResponse.json(
+      { error: 'Workspace account is temporarily unavailable.' },
+      { status: 503 },
+    ));
   }
-
-  const updated = await prisma.tenant.update({
-    where: { id: tenant.id },
-    data: {
-      restaurantName: name,
-      email,
-      location,
-      cuisineType,
-      preferredSuppliers: Array.isArray(body.preferredSuppliers)
-        ? body.preferredSuppliers
-        : parseSuppliers(String(body.preferredSuppliers ?? '')),
-      monthlyBudgetTarget: body.monthlyBudgetTarget != null && body.monthlyBudgetTarget !== '' ? Number(body.monthlyBudgetTarget) : null,
-      savingsTargetPct: body.savingsTargetPct != null && body.savingsTargetPct !== '' ? Number(body.savingsTargetPct) : null,
-    },
-  });
-
-  return NextResponse.json({ account: tenantToAccount(updated) });
+  if (!context) {
+    return privateResponse(NextResponse.json(
+      { error: 'Unauthorized' },
+      { status: 401 },
+    ));
+  }
+  return privateResponse(NextResponse.json({
+    account: tenantToAccount(context.tenant, context.user.email),
+  }));
 }

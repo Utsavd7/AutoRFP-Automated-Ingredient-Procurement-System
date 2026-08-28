@@ -1,36 +1,39 @@
 import { NextResponse } from 'next/server';
-import { requireTenant } from '@/lib/server-account';
-import { prisma } from '@/lib/prisma';
 
-export async function DELETE() {
-  const tenant = await requireTenant();
-  if (!tenant) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  await prisma.procurementRun.deleteMany({ where: { tenantId: tenant.id } });
-  return NextResponse.json({ ok: true });
+import { problemResponse } from '@/lib/api/problem';
+import { AuthorizationError } from '@/lib/auth/guards';
+import {
+  listProcurementHistory,
+  ReportingValidationError,
+} from '@/lib/reporting/reporting-service';
+import { requireAccountContext } from '@/lib/server-account';
+
+function privateResponse<T extends Response>(response: T): T {
+  response.headers.set('Cache-Control', 'private, no-store');
+  response.headers.set('Referrer-Policy', 'no-referrer');
+  response.headers.set('X-Content-Type-Options', 'nosniff');
+  return response;
 }
 
-export async function POST(req: Request) {
-  const tenant = await requireTenant();
-  if (!tenant) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const body = await req.json();
-
-  const run = await prisma.procurementRun.create({
-    data: {
-      tenantId: tenant.id,
-      menuText: body.menuText ?? null,
-      totalSpend: body.totalSpend != null ? Number(body.totalSpend) : null,
-      totalSavings: body.totalSavings != null ? Number(body.totalSavings) : null,
-      savingsPercentage: body.savingsPercentage != null ? Number(body.savingsPercentage) : null,
-      bestVendor: body.winner ?? body.bestVendor ?? null,
-      winnerPrice: body.winnerPrice != null ? Number(body.winnerPrice) : null,
-      recipesCount: Number(body.recipesCount ?? 0),
-      ingredientsCount: Number(body.ingredientsCount ?? 0),
-      distributorsCount: Number(body.distributorsCount ?? 0),
-      quotesCount: Number(body.quotesCount ?? 0),
-      executiveSummary: body.executiveSummary ?? null,
-      marketAlerts: Array.isArray(body.marketAlerts) ? body.marketAlerts : [],
-    },
-  });
-
-  return NextResponse.json({ run });
+export async function GET(request: Request) {
+  const account = await requireAccountContext();
+  if (!account) return privateResponse(problemResponse(401, 'Unauthorized', 'Authentication is required.'));
+  const url = new URL(request.url);
+  const limit = url.searchParams.get('limit');
+  try {
+    const history = await listProcurementHistory({
+      actor: { tenantId: account.tenant.id, userId: account.user.id },
+      cursor: url.searchParams.get('cursor') ?? undefined,
+      limit: limit === null ? undefined : Number(limit),
+    });
+    return privateResponse(NextResponse.json(history));
+  } catch (error) {
+    if (error instanceof ReportingValidationError) {
+      return privateResponse(problemResponse(422, 'Invalid history request', error.message, { errors: error.errors }));
+    }
+    if (error instanceof AuthorizationError) {
+      return privateResponse(problemResponse(403, 'Forbidden', 'You cannot view this history.'));
+    }
+    throw error;
+  }
 }

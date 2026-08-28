@@ -1,5 +1,7 @@
 # AutoRFP India-First Production Program Implementation Plan
 
+> **Superseded on 2026-08-27.** Do not execute this OCI, Better Auth, worker, or local-AI plan suite. A new lean plan will be written from `../specs/2026-08-27-launch-product-experience-design.md` after user review.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Convert the current AutoRFP demonstration into an invite-only, real-user procurement product for 1–10 Indian restaurant organizations, prove it at 20 organizations, and keep recurring infrastructure at ₹0 while OCI Always Free capacity remains available.

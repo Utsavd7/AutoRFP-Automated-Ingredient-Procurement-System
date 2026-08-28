@@ -1,0 +1,115 @@
+'use client';
+
+import { ArrowRight, BarChart3, CheckCircle2, IndianRupee, RefreshCw, Users } from 'lucide-react';
+import Link from 'next/link';
+import { useEffect, useRef, useState } from 'react';
+
+import { formatInr } from '@/lib/domain/money';
+import styles from './reporting.module.css';
+
+export type FactualInsights = {
+  generatedAt: string;
+  capped: boolean;
+  summary: {
+    requestSampleSize: number;
+    supplierRequestsSent: number;
+    supplierResponses: number;
+    responseRatePercent: string | null;
+    quoteLinesExpected: number;
+    quoteLinesFullyCovered: number;
+    quotedLineCoveragePercent: string | null;
+    awardedRequestCount: number;
+    totalAwardedPaise: string;
+  };
+  priceRanges: Array<{
+    itemName: string;
+    unit: string;
+    quoteCount: number;
+    minimumUnitRatePaise: string;
+    maximumUnitRatePaise: string;
+    minimumSupplierName: string;
+    maximumSupplierName: string;
+    observedVariancePercent: string | null;
+  }>;
+  notes: string[];
+};
+
+function unitLabel(unit: string) {
+  return ({ KILOGRAM: 'kg', GRAM: 'g', LITRE: 'L', MILLILITRE: 'ml', PIECE: 'piece', PACK: 'pack', CASE: 'case', CRATE: 'crate' } as Record<string, string>)[unit] ?? unit.toLowerCase();
+}
+
+async function problem(response: Response) {
+  const body = (await response.json().catch(() => ({}))) as { detail?: string };
+  return body.detail || 'We could not load procurement insights.';
+}
+
+export function InsightsWorkspace({ initialData }: { initialData?: FactualInsights }) {
+  const [data, setData] = useState<FactualInsights | null>(initialData ?? null);
+  const [loading, setLoading] = useState(!initialData);
+  const [error, setError] = useState('');
+  const started = useRef(false);
+
+  async function load() {
+    setLoading(true);
+    setError('');
+    try {
+      const response = await fetch('/api/insights', { cache: 'no-store' });
+      if (!response.ok) throw new Error(await problem(response));
+      setData((await response.json()) as FactualInsights);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'We could not load procurement insights.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (initialData || started.current) return;
+    started.current = true;
+    void load();
+  }, [initialData]);
+
+  return (
+    <main className={styles.page}>
+      <header className={styles.pageHeader}>
+        <div><p>Submitted facts only</p><h1>Insights</h1><span>See how suppliers respond and where submitted prices differ. No estimates or automatic winner.</span></div>
+        <button type="button" disabled={loading} onClick={() => void load()}><RefreshCw aria-hidden="true" />{loading ? 'Refreshing…' : 'Refresh'}</button>
+      </header>
+      {error && <div className={styles.error} role="alert">{error}</div>}
+      {loading && !data ? <div className={styles.loading} aria-label="Loading insights"><span /><span /><span /></div> : data && data.summary.requestSampleSize > 0 ? (
+        <>
+          <section className={styles.metrics} aria-label="Procurement summary">
+            <article><Users aria-hidden="true" /><span><small>Supplier response</small><strong>{data.summary.responseRatePercent ?? '—'}{data.summary.responseRatePercent ? '%' : ''}</strong><em>{data.summary.supplierResponses} of {data.summary.supplierRequestsSent} requested suppliers</em></span></article>
+            <article><CheckCircle2 aria-hidden="true" /><span><small>Full line coverage</small><strong>{data.summary.quotedLineCoveragePercent ?? '—'}{data.summary.quotedLineCoveragePercent ? '%' : ''}</strong><em>{data.summary.quoteLinesFullyCovered} of {data.summary.quoteLinesExpected} expected quote lines</em></span></article>
+            <article><IndianRupee aria-hidden="true" /><span><small>Awarded value</small><strong>{formatInr(data.summary.totalAwardedPaise)}</strong><em>{data.summary.awardedRequestCount} completed {data.summary.awardedRequestCount === 1 ? 'award' : 'awards'}</em></span></article>
+            <article><BarChart3 aria-hidden="true" /><span><small>Requests in this view</small><strong>{data.summary.requestSampleSize}</strong><em>{data.capped ? 'Latest 50 requests' : 'All open and awarded requests'}</em></span></article>
+          </section>
+
+          <section className={styles.panel}>
+            <header><div><p>Observed quote range</p><h2>Where submitted unit rates differ</h2></div><span>{data.priceRanges.length} comparable {data.priceRanges.length === 1 ? 'item' : 'items'}</span></header>
+            {data.priceRanges.length === 0 ? <div className={styles.inlineEmpty}><h3>More comparable quotes are needed</h3><p>A price range appears after at least two suppliers quote the same requested item in comparable units.</p></div> : (
+              <div className={styles.rangeTable} role="region" aria-label="Observed supplier price ranges" tabIndex={0}>
+                <div className={styles.rangeHeader}><span>Item</span><span>Lowest submitted</span><span>Highest submitted</span><span>Observed difference</span><span>Evidence</span></div>
+                {data.priceRanges.map((range) => (
+                  <div className={styles.rangeRow} key={`${range.itemName}:${range.unit}`}>
+                    <span><strong>{range.itemName}</strong><small>per {unitLabel(range.unit)}</small></span>
+                    <span><strong>{formatInr(range.minimumUnitRatePaise)}</strong><small>{range.minimumSupplierName}</small></span>
+                    <span><strong>{formatInr(range.maximumUnitRatePaise)}</strong><small>{range.maximumSupplierName}</small></span>
+                    <span><strong>{range.observedVariancePercent ? `${range.observedVariancePercent}%` : '—'}</strong><small>range, not savings</small></span>
+                    <span>{range.quoteCount} quotes</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+          <aside className={styles.method}><strong>How to read this</strong>{data.notes.map((note) => <p key={note}>{note}</p>)}</aside>
+        </>
+      ) : data ? (
+        <section className={styles.empty}>
+          <BarChart3 aria-hidden="true" /><p>Insights start with real supplier responses</p><h2>Collect your first comparable quotes</h2><span>Open a procurement request and share the secure supplier links. This page will use only submitted records.</span>
+          <Link href="/procurement/new">Create a request <ArrowRight aria-hidden="true" /></Link>
+        </section>
+      ) : null}
+    </main>
+  );
+}

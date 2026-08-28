@@ -1,0 +1,292 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import {
+  restaurantSampleQuotes,
+  restaurantSampleRequest,
+} from '../../src/data/sample-procurement';
+
+const root = path.resolve(__dirname, '../..');
+
+function source(file: string) {
+  const absolute = path.join(root, file);
+  return fs.existsSync(absolute) ? fs.readFileSync(absolute, 'utf8') : '';
+}
+
+function luminance(hex: string) {
+  const channels = hex.match(/[\da-f]{2}/gi)?.map((channel) => {
+    const value = Number.parseInt(channel, 16) / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  if (!channels || channels.length !== 3) throw new Error(`Invalid color: ${hex}`);
+  return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+}
+
+function contrastRatio(foreground: string, background: string) {
+  const values = [luminance(foreground), luminance(background)].sort((a, b) => b - a);
+  return (values[0] + 0.05) / (values[1] + 0.05);
+}
+
+const publicFiles = [
+  'src/app/page.tsx',
+  'src/app/product/page.tsx',
+  'src/app/privacy/page.tsx',
+  'src/app/terms/page.tsx',
+  'src/components/public/PublicLandingPage.tsx',
+  'src/components/public/PublicHeader.tsx',
+  'src/components/public/PublicFooter.tsx',
+  'src/components/public/LegalPageLayout.tsx',
+  'src/components/public/SampleQuoteComparison.tsx',
+  'src/components/public/ProductTour.tsx',
+];
+
+describe('public website contract', () => {
+  test('keeps the provisional name and tagline in one brand authority', () => {
+    const brand = source('src/config/brand.ts');
+    const routeAndComponentSource = publicFiles.map(source).join('\n');
+
+    expect(brand).toContain("productName: 'QuotePlate'");
+    expect(brand).toContain("companyName: 'QuotePlate Technologies'");
+    expect(brand).toContain("tagline: 'Every quote, accountable.'");
+    expect(routeAndComponentSource).not.toMatch(/['"`]QuotePlate(?: Technologies)?['"`]/);
+  });
+
+  test('keeps the home page static and independent of identity or data access', () => {
+    const home = source('src/app/page.tsx');
+
+    expect(home).not.toContain("'use client'");
+    expect(home).not.toMatch(/next-auth|@\/lib\/(?:auth|prisma)|\/api\//);
+    expect(home).toContain('<PublicLandingPage');
+  });
+
+  test('exposes every required public destination with honest calls to action', () => {
+    const allPublicSource = publicFiles.map(source).join('\n');
+
+    for (const destination of ['/product', '#how-it-works', '#security', '/privacy', '/terms', '/signin', '/start']) {
+      expect(allPublicSource).toContain(destination);
+    }
+
+    expect(allPublicSource).toContain('See the product');
+    expect(allPublicSource).toContain('Start a pilot');
+    expect(allPublicSource).not.toMatch(
+      /\b(?:AI|artificial intelligence|automatic negotiation|market pricing|guaranteed savings|customer count|integrations?)\b/i,
+    );
+  });
+
+  test('labels every public quote record as sample data', () => {
+    const preview = source('src/components/public/SampleQuoteComparison.tsx');
+    const tour = source('src/components/public/ProductTour.tsx');
+
+    expect(preview).toMatch(/Sample data/);
+    expect(preview).toMatch(/Sample request/);
+    expect(tour).toMatch(/Sample (?:request|supplier view|comparison)/g);
+  });
+
+  test('states concrete workflow and security boundaries without certifications', () => {
+    const allPublicSource = publicFiles.map(source).join('\n');
+
+    expect(allPublicSource).toMatch(/INR/);
+    expect(allPublicSource).toMatch(/GST/);
+    expect(allPublicSource).toMatch(/no supplier account/i);
+    expect(allPublicSource).toMatch(/human award/i);
+    expect(allPublicSource).toMatch(/tenant isolation/i);
+    expect(allPublicSource).toMatch(/expir(?:ing|y)/i);
+    expect(allPublicSource).toMatch(/audit history/i);
+    expect(allPublicSource).toMatch(/run the request again/i);
+    expect(allPublicSource).toMatch(/saved history/i);
+    expect(allPublicSource).not.toMatch(/SOC\s?2|ISO\s?27001|certified|compliant with/i);
+  });
+
+  test('ships conservative privacy and terms drafts with navigation home', () => {
+    const legalLayout = source('src/components/public/LegalPageLayout.tsx');
+    const privacy = `${source('src/app/privacy/page.tsx')}\n${legalLayout}`;
+    const terms = `${source('src/app/terms/page.tsx')}\n${legalLayout}`;
+
+    expect(privacy).toMatch(/pilot/i);
+    expect(privacy).toMatch(/data (?:we )?collect/i);
+    expect(privacy).toContain('href="/"');
+    expect(terms).toMatch(/pilot/i);
+    expect(terms).toMatch(/supplier quote/i);
+    expect(terms).toContain('href="/"');
+    expect(`${privacy}\n${terms}`).not.toMatch(/registered (?:office|address)|CIN|LLP|Private Limited/i);
+  });
+
+  test('uses the approved palette, local open-source fonts, and restrained motion', () => {
+    const css = source('src/app/globals.css');
+    const layout = source('src/app/layout.tsx');
+    const packageJson = source('package.json');
+
+    for (const color of ['#101817', '#172521', '#F5F1E8', '#EBE5D9', '#D8834F', '#285E4D']) {
+      expect(css).toContain(color);
+    }
+    expect(packageJson).toContain('@fontsource-variable/manrope');
+    expect(packageJson).toContain('@fontsource-variable/newsreader');
+    expect(layout).toContain('@fontsource-variable/manrope');
+    expect(layout).toContain('@fontsource-variable/newsreader');
+    expect(css).toContain('font-variant-numeric: tabular-nums');
+    expect(css).toContain('@media (prefers-reduced-motion: reduce)');
+    expect(css).not.toMatch(/transition[^;]*(?:300|500)ms/);
+  });
+
+  test('provides an accessible ledger mark, skip link, metadata, and SVG icon', () => {
+    const mark = source('src/components/brand/BrandMark.tsx');
+    const allPublicSource = publicFiles.map(source).join('\n');
+    const layout = source('src/app/layout.tsx');
+
+    expect(mark).toContain('<svg');
+    expect(mark).toContain('<title>');
+    expect(mark).toContain('viewBox="0 0 34 40"');
+    expect(mark).not.toMatch(/gradient|ChefHat|MessageCircle|speech/i);
+    expect(allPublicSource).toContain('Skip to main content');
+    expect(layout).toContain('metadataBase');
+    expect(layout).toContain('openGraph');
+    expect(source('src/app/icon.svg')).toContain('<svg');
+  });
+
+  test('contains wide quote comparisons inside the mobile product tour', () => {
+    const preview = source('src/components/public/SampleQuoteComparison.tsx');
+    const css = source('src/app/globals.css');
+
+    expect(preview).toContain('Scroll to compare all suppliers');
+    expect(css).toContain('.tour-step > *');
+    expect(css).toContain('min-width: 0');
+    expect(css).toContain('.sample-scroll-hint');
+  });
+
+  test('keeps repeated wordmark symbols decorative without duplicate title ids', () => {
+    const mark = source('src/components/brand/BrandMark.tsx');
+    const wordmark = source('src/components/brand/Wordmark.tsx');
+    const css = source('src/app/globals.css');
+    const brandGuide = source('docs/brand/README.md');
+
+    expect(mark).not.toContain('aria-labelledby=');
+    expect(mark).toContain('decorative?: boolean');
+    expect(mark).toContain('aria-hidden={decorative');
+    expect(wordmark).toContain('<BrandMark decorative');
+    expect(css).toMatch(
+      /\.wordmark__name \{[^}]*font-family: var\(--font-display\);[^}]*font-weight: 520;/,
+    );
+    expect(brandGuide).toContain('Newsreader Variable**: display headings and the QuotePlate wordmark');
+    expect(brandGuide).not.toContain('Manrope lettering');
+  });
+
+  test('uses contrast-safe text tokens on every light public surface', () => {
+    const css = source('src/app/globals.css');
+    const copperText = css.match(/--copper-text:\s*(#[\dA-F]{6})/i)?.[1];
+    const mutedLabel = css.match(/--ink-label:\s*(#[\dA-F]{6})/i)?.[1];
+
+    expect(copperText).toBeDefined();
+    expect(mutedLabel).toBeDefined();
+    expect(contrastRatio(copperText!, '#F5F1E8')).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(copperText!, '#EBE5D9')).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(mutedLabel!, '#F5F1E8')).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(mutedLabel!, '#EBE5D9')).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(mutedLabel!, '#FBF8F1')).toBeGreaterThanOrEqual(4.5);
+    expect(css).toMatch(/\.public-hero h1 em,[\s\S]*?\.product-hero h1 em[\s\S]*?color: var\(--copper-text\)/);
+    expect(css).toMatch(/\.workflow__list > li > span[\s\S]*?color: var\(--copper-text\)/);
+    expect(css).toMatch(/\.tour-index \{ color: var\(--copper-text\); \}/);
+    expect(css).toMatch(/\.sample-label,[\s\S]*?\.supplier-sheet header span[\s\S]*?color: var\(--ink-label\)/);
+    expect(css).toMatch(/\.public-hero__mark \{[\s\S]*?color: var\(--ink-label\)/);
+  });
+
+  test('lets the root title template add the product name exactly once', () => {
+    expect(source('src/app/product/page.tsx')).toContain("title: 'Product'");
+    expect(source('src/app/privacy/page.tsx')).toContain("title: 'Privacy'");
+    expect(source('src/app/terms/page.tsx')).toContain("title: 'Terms'");
+    expect(publicFiles.map(source).join('\n')).not.toMatch(/title: `(?:Product|Privacy|Terms) \|/);
+  });
+
+  test('keeps sample preview counts and launch units honest', () => {
+    const tour = source('src/components/public/ProductTour.tsx');
+    const sample = source('src/data/sample-procurement.ts');
+
+    expect(tour).toContain('items.slice(0, 4)');
+    expect(tour).toContain('items.slice(0, 2)');
+    expect(sample).toContain("name: 'Coriander', quantity: 3, unit: 'kg'");
+    expect(`${tour}\n${sample}`).not.toContain("'bunch'");
+  });
+
+  test('uses a coherent seven-day restaurant order instead of decorative demo numbers', () => {
+    expect(restaurantSampleRequest.context).toMatch(/Bengaluru/i);
+    expect(restaurantSampleRequest.context).toMatch(/100 covers/i);
+    expect(restaurantSampleRequest.cadence).toBe('7-day kitchen order');
+    expect(restaurantSampleRequest.delivery).toBe('Next morning');
+    expect(restaurantSampleRequest.items).toHaveLength(8);
+
+    const submittedQuote = restaurantSampleQuotes[0];
+    const calculatedSubtotal = restaurantSampleRequest.items.reduce(
+      (total: number, item: { quantity: number; sampleRatePaise: number }) => (
+        total + item.quantity * item.sampleRatePaise
+      ),
+      0,
+    );
+    expect(calculatedSubtotal).toBe(submittedQuote.subtotalPaise);
+
+    for (const quote of restaurantSampleQuotes) {
+      expect(quote.totalPaise).toBe(quote.subtotalPaise + quote.gstPaise + quote.freightPaise);
+      expect(quote.coverageCount).toBeLessThanOrEqual(restaurantSampleRequest.items.length);
+    }
+  });
+
+  test('stacks the supplier total cleanly on narrow screens', () => {
+    const tour = source('src/components/public/ProductTour.tsx');
+    const css = source('src/app/globals.css');
+
+    expect(tour).toContain('className="supplier-total__meta"');
+    expect(tour).toContain('className="supplier-total__amount"');
+    expect(css).toMatch(
+      /@media \(max-width: 620px\) \{[\s\S]*?\.supplier-sheet footer \{[\s\S]*?flex-direction: column;[\s\S]*?align-items: flex-start;/,
+    );
+  });
+
+  test('ships a static 1200 by 630 social card with complete sharing metadata', () => {
+    const layout = source('src/app/layout.tsx');
+    const siteUrl = source('src/config/site-url.ts');
+    const socialCardPath = path.join(root, 'public/brand/social-card.png');
+
+    expect(layout).toContain('twitter:');
+    expect(`${layout}\n${siteUrl}`).toContain('"/brand/social-card.png"');
+    expect(layout).toContain('siteUrls.socialImageUrl');
+    expect(layout).not.toContain('NEXT_PUBLIC_SITE_URL');
+    expect(layout).toContain('width: 1200');
+    expect(layout).toContain('height: 630');
+    expect(fs.existsSync(socialCardPath)).toBe(true);
+
+    const socialCard = fs.readFileSync(socialCardPath);
+    expect(socialCard.subarray(1, 4).toString('ascii')).toBe('PNG');
+    expect(socialCard.readUInt32BE(16)).toBe(1200);
+    expect(socialCard.readUInt32BE(20)).toBe(630);
+  });
+
+  test('keeps downloadable SVG assets synchronized with the canonical brand', () => {
+    const brand = source('src/config/brand.ts');
+    const mark = source('src/components/brand/BrandMark.tsx');
+    const browserIcon = source('src/app/icon.svg');
+    const canonicalPaths = [...mark.matchAll(/\n\s+d="([^"]+)"/g)].map((match) => match[1]);
+    const productName = brand.match(/productName: '([^']+)'/)?.[1];
+    const assets = [
+      'public/brand/mark-ink.svg',
+      'public/brand/mark-duotone.svg',
+      'public/brand/wordmark-horizontal.svg',
+      'public/brand/app-icon.svg',
+    ].map(source);
+
+    expect(canonicalPaths).toHaveLength(2);
+    expect(productName).toBe('QuotePlate');
+    for (const pathData of canonicalPaths) expect(browserIcon).toContain(`d="${pathData}"`);
+    for (const asset of assets) {
+      expect(asset).toContain('<svg');
+      expect(asset).toContain('<title');
+      expect(asset).toContain('<desc');
+      expect(asset).not.toMatch(/gradient/i);
+      for (const pathData of canonicalPaths) expect(asset).toContain(`d="${pathData}"`);
+    }
+    expect(assets[0]).toContain('#101817');
+    expect(assets[1]).toContain('#D8834F');
+    expect(assets[1]).toContain('#101817');
+    expect(assets[2]).not.toMatch(/<text\b|font-family=/i);
+    expect(assets[2].match(/<path\b/g)?.length).toBeGreaterThan(2);
+    expect(assets[3]).toContain('#F5F1E8');
+    expect(source('docs/brand/README.md')).toContain('Provisional identity');
+    expect(source('docs/brand/README.md')).toContain('OFL-1.1');
+  });
+});

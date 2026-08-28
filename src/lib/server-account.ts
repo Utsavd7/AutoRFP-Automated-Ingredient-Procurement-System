@@ -1,26 +1,43 @@
+import type { Prisma } from '@prisma/client';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
 
-export function tenantToAccount(tenant: Awaited<ReturnType<typeof prisma.tenant.findUnique>> extends infer T ? NonNullable<T> : never) {
+import { authOptions } from '@/lib/auth';
+import { loadCurrentUser } from '@/lib/auth/current-user';
+
+type TenantAccount = Prisma.TenantGetPayload<Record<string, never>>;
+
+export function tenantToAccount(tenant: TenantAccount, email: string) {
   return {
     tenantId: tenant.id,
-    name: tenant.restaurantName,
-    email: tenant.email,
-    location: tenant.location,
-    cuisineType: tenant.cuisineType || 'General restaurant',
-    preferredSuppliers: tenant.preferredSuppliers,
-    monthlyBudgetTarget: tenant.monthlyBudgetTarget,
-    savingsTargetPct: tenant.savingsTargetPct,
+    name: tenant.name,
+    email,
+    location: tenant.addressLine,
+    cuisineType: 'General restaurant',
+    preferredSuppliers: [],
+    monthlyBudgetTarget: null,
+    savingsTargetPct: null,
+    addressLine: tenant.addressLine,
+    city: tenant.city,
+    state: tenant.state,
+    pin: tenant.pin,
+    phone: tenant.phone,
+    timezone: tenant.timezone,
+    gstin: tenant.gstin,
     createdAt: tenant.createdAt.toISOString(),
   };
 }
 
-export async function requireTenant() {
+export async function requireAccountContext() {
   const session = await getServerSession(authOptions);
-  const tenantId = session?.user?.tenantId;
-  if (!tenantId) return null;
-  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
-  if (!tenant) return null;
-  return tenant;
+  const user = await loadCurrentUser({
+    userId: session?.user?.userId,
+    tenantId: session?.user?.tenantId,
+  });
+  if (!user) return null;
+  return { tenant: user.tenant, user };
+}
+
+export async function requireTenant() {
+  const context = await requireAccountContext();
+  return context?.tenant ?? null;
 }

@@ -1,18 +1,59 @@
+import { Prisma } from '@prisma/client';
 import type { NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
-import { Prisma } from '@prisma/client';
-import { makeTenantId, parseSuppliers } from '@/lib/tenant';
-import { prisma } from '@/lib/prisma';
+
 import { createPasswordRecord, verifyPassword } from '@/lib/password';
+import { prisma } from '@/lib/prisma';
+
+const REVIEW_REQUIRED = 'LEGACY_REVIEW_REQUIRED';
 
 type TenantAuthUser = {
   tenantId: string;
+  userId: string;
   location: string;
   cuisineType: string;
   preferredSuppliers: string[];
   monthlyBudgetTarget: number | null;
   savingsTargetPct: number | null;
 };
+
+function visibleLocation(tenant: {
+  addressLine: string;
+  city: string;
+  state: string;
+  pin: string;
+}) {
+  const parts = [tenant.addressLine, tenant.city, tenant.state, tenant.pin].filter(
+    (part) => part && part !== REVIEW_REQUIRED && part !== '000000',
+  );
+  return parts.join(', ') || tenant.addressLine;
+}
+
+function authUser(user: {
+  id: string;
+  tenantId: string;
+  name: string;
+  email: string;
+  tenant: {
+    addressLine: string;
+    city: string;
+    state: string;
+    pin: string;
+  };
+}) {
+  return {
+    id: user.id,
+    userId: user.id,
+    tenantId: user.tenantId,
+    name: user.name,
+    email: user.email,
+    location: visibleLocation(user.tenant),
+    cuisineType: 'General restaurant',
+    preferredSuppliers: [],
+    monthlyBudgetTarget: null,
+    savingsTargetPct: null,
+  };
+}
 
 export const authOptions: NextAuthOptions = {
   session: { strategy: 'jwt' },
@@ -36,64 +77,79 @@ export const authOptions: NextAuthOptions = {
         const email = credentials?.email?.trim().toLowerCase();
         const password = credentials?.password ?? '';
         const location = credentials?.location?.trim();
-        if (!email || !email.includes('@')) throw new Error('Enter a valid work email.');
-        if (password.length < 8) throw new Error('Password must be at least 8 characters.');
+
+        if (!email || !email.includes('@')) {
+          throw new Error('Enter a valid work email.');
+        }
+        if (password.length < 8) {
+          throw new Error('Password must be at least 8 characters.');
+        }
 
         if (mode === 'signin') {
-          const tenant = await prisma.tenant.findFirst({ where: { email } });
-          if (!tenant || !verifyPassword(password, tenant.passwordHash, tenant.passwordSalt)) throw new Error('Email or password is incorrect.');
-          return {
-            id: tenant.id,
-            tenantId: tenant.id,
-            name: tenant.restaurantName,
-            email: tenant.email,
-            location: tenant.location,
-            cuisineType: tenant.cuisineType || 'General restaurant',
-            preferredSuppliers: tenant.preferredSuppliers,
-            monthlyBudgetTarget: tenant.monthlyBudgetTarget,
-            savingsTargetPct: tenant.savingsTargetPct,
-          };
+          const user = await prisma.user.findUnique({
+            where: { email },
+            include: { tenant: true },
+          });
+          if (
+            !user ||
+            !user.isActive ||
+            !user.tenant.isActive ||
+            !verifyPassword(
+              password,
+              user.passwordHash,
+              user.legacyPasswordSalt,
+            )
+          ) {
+            throw new Error('Email or password is incorrect.');
+          }
+          return authUser(user);
         }
 
         if (!name) throw new Error('Restaurant name is required.');
         if (!location) throw new Error('Location is required.');
-        const existing = await prisma.tenant.findFirst({ where: { email } });
-        if (existing) throw new Error('A workspace already exists for that email. Use Sign in instead.');
-
-        const tenantId = makeTenantId(email, name);
-        const passwordRecord = createPasswordRecord(password);
-        let tenant;
-        try {
-          tenant = await prisma.tenant.create({
-            data: {
-              id: tenantId,
-              restaurantName: name,
-              email,
-              ...passwordRecord,
-              location,
-              cuisineType: credentials?.cuisineType?.trim() || 'General restaurant',
-              preferredSuppliers: parseSuppliers(credentials?.preferredSuppliers ?? ''),
-              monthlyBudgetTarget: credentials?.monthlyBudgetTarget ? Number(credentials.monthlyBudgetTarget) : null,
-              savingsTargetPct: credentials?.savingsTargetPct ? Number(credentials.savingsTargetPct) : null,
-            },
-          });
-        } catch (error) {
-          if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-            throw new Error('A workspace already exists for that email. Use Sign in instead.');
-          }
-          throw new Error('Unable to create workspace. Check the database connection and try again.');
+        if (await prisma.user.findUnique({ where: { email } })) {
+          throw new Error(
+            'A workspace already exists for that email. Use Sign in instead.',
+          );
         }
-        return {
-          id: tenant.id,
-          tenantId: tenant.id,
-          name: tenant.restaurantName,
-          email: tenant.email,
-          location: tenant.location,
-          cuisineType: tenant.cuisineType || 'General restaurant',
-          preferredSuppliers: tenant.preferredSuppliers,
-          monthlyBudgetTarget: tenant.monthlyBudgetTarget,
-          savingsTargetPct: tenant.savingsTargetPct,
-        };
+
+        const { passwordHash, passwordSalt } = createPasswordRecord(password);
+        try {
+          const tenant = await prisma.tenant.create({
+            data: {
+              name,
+              addressLine: location,
+              city: REVIEW_REQUIRED,
+              state: REVIEW_REQUIRED,
+              pin: '000000',
+              phone: REVIEW_REQUIRED,
+              users: {
+                create: {
+                  name: `${name} Owner`,
+                  email,
+                  passwordHash,
+                  legacyPasswordSalt: passwordSalt,
+                  role: 'OWNER',
+                },
+              },
+            },
+            include: { users: true },
+          });
+          const user = tenant.users[0];
+          return authUser({ ...user, tenant });
+        } catch (error) {
+          if (
+            error instanceof Prisma.PrismaClientKnownRequestError &&
+            error.code === 'P2002'
+          ) {
+            throw new Error(
+              'A workspace already exists for that email. Use Sign in instead.',
+            );
+          }
+          throw new Error(
+            'Unable to create workspace. Check the database connection and try again.',
+          );
+        }
       },
     }),
   ],
@@ -101,6 +157,7 @@ export const authOptions: NextAuthOptions = {
     async jwt({ token, user }) {
       if (user) {
         const tenantUser = user as typeof user & TenantAuthUser;
+        token.userId = tenantUser.userId;
         token.tenantId = tenantUser.tenantId;
         token.location = tenantUser.location;
         token.cuisineType = tenantUser.cuisineType;
@@ -113,6 +170,7 @@ export const authOptions: NextAuthOptions = {
     async session({ session, token }) {
       session.user = {
         ...session.user,
+        userId: token.userId,
         tenantId: token.tenantId,
         location: token.location,
         cuisineType: token.cuisineType,

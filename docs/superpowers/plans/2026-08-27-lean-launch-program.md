@@ -4,9 +4,9 @@
 
 **Goal:** Ship a hosted, India-first restaurant ingredient procurement product that a real 1-10 organization pilot can use today and that can reach 20+ organizations without an application rewrite.
 
-**Architecture:** One Next.js 16 application, PostgreSQL, Prisma, NextAuth Credentials, forced PostgreSQL RLS, and request-based Cloud Run. The product creates reviewed demand, sends supplier-specific no-login links, collects immutable quote revisions, compares landed cost, records whole or split awards, and generates exports on demand. No paid API, worker, queue, marketplace scraper, AI runtime, or stored generated file is part of launch.
+**Architecture:** One Next.js 16 application, PostgreSQL, NextAuth with Google OAuth and Credentials, Prisma, forced PostgreSQL RLS, and request-based Cloud Run. The product creates reviewed demand, sends supplier-specific no-login links, collects immutable quote revisions, compares landed cost, records whole or split awards, and generates exports on demand. No paid API, worker, queue, marketplace scraper, AI runtime, or stored generated file is part of launch.
 
-**Tech Stack:** Next.js 16, React 19, TypeScript, PostgreSQL, Prisma 5, NextAuth 4, `@node-rs/argon2`, Zod 4, `csv-parse`, `qrcode`, `@react-pdf/renderer`, Jest, Testcontainers, Playwright, axe-core, Docker, Cloud Run, Supabase Postgres Free, Cloudflare R2 backups.
+**Tech Stack:** Next.js 16, React 19, TypeScript, PostgreSQL, Prisma 5, NextAuth 4 with Google OAuth and Credentials, `@node-rs/argon2`, Zod 4, `csv-parse`, `qrcode`, `@react-pdf/renderer`, Jest, Testcontainers, Playwright, axe-core, Docker, Cloud Run, Supabase Postgres Free, Cloudflare R2 backups.
 
 **Authority:** `docs/superpowers/specs/2026-08-27-launch-product-experience-design.md` is the approved product and architecture specification. Earlier OCI, local-AI, worker, and simulated-product plans are superseded.
 
@@ -38,7 +38,7 @@
 - Create: `prisma/migrations/20260827000200_launch_schema/migration.sql`
 - Create: `__tests__/integration/schema-shape.test.ts`
 
-**RED:** Assert the schema contains only Tenant, User, Invitation, Menu, Recipe, Ingredient, Supplier, ProcurementRequest, RequestItem, SupplierRequest, SupplierQuote, SupplierQuoteItem, Award, AwardLine, AuditEvent, and RateLimitBucket, with direct non-null tenant identifiers on tenant-owned rows, integer paise, decimal quantities, and no legacy simulated analytics authority.
+**RED:** Assert the schema contains only Tenant, User, ExternalIdentity, Invitation, Menu, Recipe, Ingredient, Supplier, ProcurementRequest, RequestItem, SupplierRequest, SupplierQuote, SupplierQuoteItem, Award, AwardLine, AuditEvent, and RateLimitBucket, with direct non-null tenant identifiers on tenant-owned rows, integer paise, decimal quantities, and no legacy simulated analytics authority.
 
 **GREEN:** Implement the minimal models and enums. Do not store selected supplier/ingredient ID arrays, generated PDFs, QR images, dashboard aggregates, forecast rows, scraped prices, emails, or job state. Use compact validated JSON only for non-queryable immutable snapshots and metadata. Add only list, foreign-key, identity, deadline, and token lookup indexes.
 
@@ -56,10 +56,11 @@
 - Create: `src/app/api/auth/start/route.ts`
 - Create: `__tests__/auth/password.test.ts`
 - Create: `__tests__/api/auth-start.test.ts`
+- Create: `__tests__/auth/google-oauth.test.ts`
 
-**RED:** Test Argon2id hashes, legacy SHA-256 verification and immediate upgrade, unique lowercase email signup, inactive-user rejection, and a session whose JWT claims cannot preserve authorization after a database role/status change.
+**RED:** Test Argon2id hashes, legacy SHA-256 verification and immediate upgrade, unique lowercase email signup, verified Google signup/sign-in, stable provider-account matching, collision-safe refusal to silently link an existing password account, inactive-user rejection, logout, and a session whose JWT claims cannot preserve authorization after a database role/status change.
 
-**GREEN:** Use `@node-rs/argon2`. Signup creates Tenant and OWNER User atomically. NextAuth sign-in authenticates User, upgrades a legacy hash after success, and stores only stable identifiers in JWT. Every protected request reloads current User and Tenant.
+**GREEN:** Use `@node-rs/argon2`. Email signup creates Tenant and OWNER User atomically. Google signup creates Tenant, OWNER User, and ExternalIdentity atomically, requests only identity scopes, and persists no provider tokens. NextAuth sign-in authenticates User, upgrades a legacy hash after success, and stores only stable identifiers in JWT. Every protected request reloads current User and Tenant. Logout clears the application session.
 
 **VERIFY:** Run focused auth tests and build.
 
@@ -260,11 +261,13 @@
 - Create: `src/components/public/*`
 - Replace: `src/app/page.tsx`
 - Create: `src/app/product/page.tsx`
+- Create: `src/app/privacy/page.tsx`
+- Create: `src/app/terms/page.tsx`
 - Modify: `src/app/globals.css`
 - Modify: `src/app/layout.tsx`
 - Create: `__tests__/ui/public-copy.test.tsx`
 
-**RED:** Assert the home page renders without database or session access, uses one brand authority, has honest CTA/copy, labels sample data, exposes Product/How it works/Security/Sign in/Start, and contains none of the legacy autonomous-AI or fake-savings claims.
+**RED:** Assert the home page renders without database or session access, uses one brand authority, has honest CTA/copy, labels sample data, exposes Product/How it works/Security/Privacy/Terms/Sign in/Start, and contains none of the legacy autonomous-AI or fake-savings claims.
 
 **GREEN:** Build the approved stone/ink/copper editorial site with accessible open-source self-hosted fonts, a crisp request-to-quote mark, real product component previews, restrained transform/opacity motion, responsive layouts, metadata, favicon, and reduced-motion support.
 
@@ -281,9 +284,9 @@
 - Modify: `src/app/api/account/route.ts`
 - Create: `__tests__/e2e/auth.spec.ts`
 
-**RED:** Browser-test owner signup, duplicate email, wrong password, sign in, sign out, inactive account, redirect to intended protected page, and useful database-unavailable errors.
+**RED:** Browser-test owner email signup, verified Google signup, returning Google sign in, duplicate email, collision-safe provider linking, wrong password, sign in, sign out, inactive account, redirect to intended protected page, and useful database/provider-unavailable errors.
 
-**GREEN:** Keep marketing page server-rendered and authentication in focused forms. Remove localStorage identity fallback and all client-authoritative tenant state.
+**GREEN:** Keep marketing page server-rendered and authentication in focused forms. Use one accessible Google action plus email/password; never imitate Google's button with misleading branding. Remove localStorage identity fallback and all client-authoritative tenant state.
 
 **VERIFY:** Run auth E2E at mobile and desktop widths.
 

@@ -1,70 +1,10 @@
 import { NextResponse } from 'next/server';
+
 import { problemResponse } from '@/lib/api/problem';
 import { requireApiTenant } from '@/lib/api/require-api-tenant';
-import {
-  buildDeterministicMenuDraft,
-  type DeterministicDishDraft,
-} from '@/lib/menu/deterministic-draft';
+import { buildDeterministicMenuDraft } from '@/lib/menu/deterministic-draft';
 import { parseMenuInput } from '@/lib/menu/menu-input';
-import { callOllama, parseJSON } from '@/lib/llm';
 import { prisma } from '@/lib/prisma';
-
-type LocalMenuDraft = {
-  dishes?: Array<{ name?: unknown }>;
-};
-
-function selectUserProvidedDishes(
-  rawDraft: string,
-  allowedDishes: DeterministicDishDraft[],
-) {
-  const parsed = parseJSON<LocalMenuDraft>(rawDraft);
-  if (!Array.isArray(parsed?.dishes) || parsed.dishes.length === 0) return null;
-
-  const allowedByName = new Map(
-    allowedDishes.map((dish) => [dish.name.toLocaleLowerCase('en-US'), dish]),
-  );
-  const selected: DeterministicDishDraft[] = [];
-  const seen = new Set<string>();
-
-  for (const candidate of parsed.dishes) {
-    if (typeof candidate?.name !== 'string') return null;
-
-    const key = candidate.name.trim().toLocaleLowerCase('en-US');
-    const userDish = allowedByName.get(key);
-    if (!userDish) return null;
-    if (seen.has(key)) continue;
-
-    seen.add(key);
-    selected.push(userDish);
-  }
-
-  return selected.length > 0 ? selected : null;
-}
-
-async function makeLocalReviewDraft(
-  menuText: string,
-  deterministicDraft: DeterministicDishDraft[],
-) {
-  const response = await callOllama(
-    [
-      {
-        role: 'system',
-        content:
-          'Return JSON only. Select dish lines exactly as supplied. Never rewrite a line or add ingredients.',
-      },
-      {
-        role: 'user',
-        content: `Select only lines that are dishes from this menu. Copy each selected line exactly. Return {"dishes":[{"name":"exact user line"}]}.
-
-Menu:
-${menuText}`,
-      },
-    ],
-    true,
-  );
-
-  return selectUserProvidedDishes(response, deterministicDraft);
-}
 
 export async function POST(req: Request) {
   const access = await requireApiTenant();
@@ -88,32 +28,20 @@ export async function POST(req: Request) {
   }
 
   const { menuText } = input.value;
-  const deterministicDraft = buildDeterministicMenuDraft(menuText);
-  let dishes = deterministicDraft;
-  let modelSource = 'Deterministic review draft';
-
-  try {
-    const localDraft = await makeLocalReviewDraft(menuText, deterministicDraft);
-    if (localDraft) {
-      dishes = localDraft;
-      modelSource = 'Ollama local review draft';
-    }
-  } catch {
-    console.warn(
-      '[parse-menu] Local model unavailable; using deterministic review draft.',
-    );
-  }
+  const dishes = buildDeterministicMenuDraft(menuText);
 
   try {
     const menu = await prisma.menu.create({
       data: {
         tenantId: access.tenant.id,
-        text: menuText,
-        sourceUrl: null,
-        workflowStatus: 'DRAFT',
+        name: 'Menu draft',
+        sourceText: menuText,
+        status: 'DRAFT',
         recipes: {
-          create: dishes.map((dish) => ({
+          create: dishes.map((dish, position) => ({
             name: dish.name,
+            position,
+            tenant: { connect: { id: access.tenant.id } },
             ingredients: { create: [] },
           })),
         },
@@ -125,7 +53,7 @@ export async function POST(req: Request) {
       success: true,
       menuId: menu.id,
       recipes: menu.recipes,
-      modelSource,
+      modelSource: 'Deterministic review draft',
       requiresReview: true,
       menuInsight: null,
     });

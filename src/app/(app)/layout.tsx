@@ -9,7 +9,7 @@ import {
   ChefHat, LayoutDashboard, PlusCircle, Clock, Settings,
   Menu, X, LogOut, BrainCircuit, Command
 } from 'lucide-react';
-import { readAccount, saveAccount, ACCOUNT_KEY, type RestaurantAccount } from '@/lib/tenant';
+import type { RestaurantAccount } from '@/lib/tenant';
 import { PageSkeleton } from '@/components/Skeleton';
 import CommandPalette from '@/components/CommandPalette';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
@@ -42,7 +42,7 @@ function SidebarContent({
         </div>
         <div className="min-w-0">
           <div className="font-bold text-[13px] text-[#EEEEEE] tracking-wide leading-none">AutoRFP</div>
-          <div className="text-[9px] font-bold text-[#8A8F98] uppercase tracking-[0.14em] mt-0.5">Procurement AI</div>
+          <div className="text-[9px] font-bold text-[#8A8F98] uppercase tracking-[0.14em] mt-0.5">Launch workspace</div>
         </div>
       </div>
 
@@ -124,29 +124,28 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     fetch('/api/account')
       .then(async res => {
         if (!res.ok) {
-          if (res.status === 401) localStorage.removeItem(ACCOUNT_KEY);
-          return { account: null, allowLocalFallback: false };
+          router.replace('/');
+          return null;
         }
-        const data = await res.json();
-        return { account: data.account as RestaurantAccount, allowLocalFallback: true };
+        const data = await res.json() as { account?: RestaurantAccount };
+        if (!data.account) {
+          router.replace('/');
+          return null;
+        }
+        return data.account;
       })
-      .then(({ account, allowLocalFallback }) => {
-        const fallback = account ?? (allowLocalFallback ? readAccount() : null);
-        if (!fallback) { router.replace('/'); return; }
-        if (account) saveAccount(account);
-        setAccount(fallback);
+      .then(account => {
+        if (!account) return;
+        setAccount(account);
         setReady(true);
       })
       .catch(() => {
-        const fallback = readAccount();
-        if (!fallback) router.replace('/');
-        else { setAccount(fallback); setReady(true); }
+        router.replace('/');
       });
   }, [router]);
 
   const handleSignOut = async () => {
     await signOut({ redirect: false });
-    localStorage.removeItem(ACCOUNT_KEY);
     router.push('/');
   };
 
@@ -233,15 +232,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <div className="flex items-center gap-4 min-w-0">
               <span className="flex items-center gap-1.5 text-[10px] font-bold text-[#8A8F98]/50 uppercase tracking-wider shrink-0">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400/50" />
-                AutoRFP Engine
+                AutoRFP
               </span>
               <span className="hidden sm:flex items-center gap-2 text-[10px] text-[#8A8F98]/35 font-mono min-w-0 truncate">
-                LangGraph · Inngest · Groq · Sentry
+                Launch workflow in progress
               </span>
             </div>
             <div className="flex items-center gap-2 text-[10px] text-[#8A8F98]/35 shrink-0">
-              <span className="hidden sm:inline">Tenant-scoped RLS</span>
-              <span className="hidden sm:inline">·</span>
               <span>v0.1.0</span>
             </div>
           </div>

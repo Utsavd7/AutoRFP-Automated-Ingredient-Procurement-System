@@ -3,15 +3,23 @@ import { PrismaClient } from '@prisma/client';
 import { withMigratedPostgres } from './setup/postgres';
 
 const expectedTables = [
-  'Distributor',
+  'AuditEvent',
+  'Award',
+  'AwardLine',
+  'ExternalIdentity',
   'Ingredient',
+  'Invitation',
   'Menu',
-  'PricingTrend',
-  'ProcurementRun',
-  'Quote',
-  'RFP',
+  'ProcurementRequest',
+  'RateLimitBucket',
   'Recipe',
+  'RequestItem',
+  'Supplier',
+  'SupplierQuote',
+  'SupplierQuoteItem',
+  'SupplierRequest',
   'Tenant',
+  'User',
 ];
 
 test('deploys every migration to an empty PostgreSQL database without schema drift', async () => {
@@ -46,6 +54,11 @@ test('deploys every migration to an empty PostgreSQL database without schema dri
       expect(migrations).toEqual([
         expect.objectContaining({
           migration_name: '20260827000100_lean_baseline',
+          finished_at: expect.any(Date),
+          rolled_back_at: null,
+        }),
+        expect.objectContaining({
+          migration_name: '20260827000200_launch_schema',
           finished_at: expect.any(Date),
           rolled_back_at: null,
         }),

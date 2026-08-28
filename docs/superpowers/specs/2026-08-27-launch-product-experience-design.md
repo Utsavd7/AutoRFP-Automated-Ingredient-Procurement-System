@@ -144,7 +144,7 @@ Application boundaries:
 
 ## 6. Identity and tenant boundary
 
-Keep NextAuth Credentials for launch.
+Use NextAuth with Google OAuth and Credentials for launch. Google sign-in requests only the minimum OpenID Connect identity scopes. The application stores a provider identity link, not Google access tokens, refresh tokens, scopes, or profile payloads. A Google identity is linked by its stable provider account identifier; an existing password account is never silently linked only because an email address matches.
 
 Add a real `User` model. Every user belongs to one `Tenant` and has one of two roles:
 
@@ -152,6 +152,8 @@ Add a real `User` model. Every user belongs to one `Tenant` and has one of two r
 - `MEMBER`
 
 New passwords use Argon2id. Existing SHA-256 credentials are verified only for migration and are immediately upgraded after a successful sign in.
+
+The public start experience has explicit sign-up and sign-in modes. Both expose Google and email/password paths, and the authenticated shell provides a working logout action. Google registration creates the tenant, owner user, and external identity atomically. OAuth client credentials stay in deployment secrets and are never committed.
 
 Every protected request reloads the active user, tenant, status, and role from PostgreSQL. JWT contents are display hints, not current authorization.
 
@@ -166,6 +168,7 @@ Preserve and extend `Menu`, `Recipe`, and `Ingredient`.
 Add the real production core:
 
 - `User`
+- `ExternalIdentity`
 - `Invitation`
 - `Supplier`
 - `ProcurementRequest`
@@ -190,6 +193,7 @@ Specifically:
 
 - Remove legacy savings targets, simulated savings, predicted spend, market alerts, AI summaries, agent state, pricing trends, and preferred-supplier text fields from production authority.
 - Do not add analytics, forecast, vector, embedding, job, email-delivery, purchase-order, inventory, or government-price tables at launch.
+- `ExternalIdentity` contains only the tenant/user relation, provider name, stable provider account identifier, and creation timestamp; OAuth tokens and profile copies are not persisted.
 - Compute dashboard counts and comparison views from transactional records instead of storing duplicate reporting rows.
 - Keep `tenantId` directly on tenant-owned tables even when it is relationally redundant because forced RLS depends on it.
 - Keep immutable request and quote snapshots because issued commercial records must not change when a menu or supplier record changes.

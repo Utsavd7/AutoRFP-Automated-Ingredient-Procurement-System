@@ -1,15 +1,9 @@
 import { POST } from '@/app/api/parse-menu/route';
 import { requireApiTenant } from '@/lib/api/require-api-tenant';
-import { callOllama, parseJSON } from '@/lib/llm';
 import { prisma } from '@/lib/prisma';
 
 jest.mock('@/lib/api/require-api-tenant', () => ({
   requireApiTenant: jest.fn(),
-}));
-
-jest.mock('@/lib/llm', () => ({
-  callOllama: jest.fn(),
-  parseJSON: jest.fn(),
 }));
 
 jest.mock('@/lib/prisma', () => ({
@@ -38,8 +32,6 @@ describe('parse-menu persistence', () => {
       tenant: { id: 'session-tenant' },
       response: null,
     } as never);
-    jest.mocked(callOllama).mockResolvedValue('{}');
-    jest.mocked(parseJSON).mockReturnValue(null);
   });
 
   it('persists the menu and every recipe with one nested create', async () => {
@@ -59,13 +51,23 @@ describe('parse-menu persistence', () => {
     expect(menuCreate).toHaveBeenCalledWith({
       data: {
         tenantId: 'session-tenant',
-        text: 'Paneer Tikka\nMasala Dosa',
-        sourceUrl: null,
-        workflowStatus: 'DRAFT',
+        name: 'Menu draft',
+        sourceText: 'Paneer Tikka\nMasala Dosa',
+        status: 'DRAFT',
         recipes: {
           create: [
-            { name: 'Paneer Tikka', ingredients: { create: [] } },
-            { name: 'Masala Dosa', ingredients: { create: [] } },
+            {
+              name: 'Paneer Tikka',
+              position: 0,
+              tenant: { connect: { id: 'session-tenant' } },
+              ingredients: { create: [] },
+            },
+            {
+              name: 'Masala Dosa',
+              position: 1,
+              tenant: { connect: { id: 'session-tenant' } },
+              ingredients: { create: [] },
+            },
           ],
         },
       },
@@ -93,7 +95,14 @@ describe('parse-menu persistence', () => {
       expect.objectContaining({
         data: expect.objectContaining({
           recipes: {
-            create: [{ name: 'Dal Makhani', ingredients: { create: [] } }],
+            create: [
+              {
+                name: 'Dal Makhani',
+                position: 0,
+                tenant: { connect: { id: 'session-tenant' } },
+                ingredients: { create: [] },
+              },
+            ],
           },
         }),
       }),

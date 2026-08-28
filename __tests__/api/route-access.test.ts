@@ -1,15 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { prisma } from '@/lib/prisma';
 import { POST as checkWorkspace } from '@/app/api/auth/workspace-check/route';
-
-jest.mock('@/lib/prisma', () => ({
-  prisma: {
-    tenant: {
-      findFirst: jest.fn(),
-    },
-  },
-}));
 
 const sourcePath = (...segments: string[]) =>
   join(process.cwd(), 'src', ...segments);
@@ -17,42 +8,7 @@ const sourcePath = (...segments: string[]) =>
 const readSource = (...segments: string[]) =>
   readFileSync(sourcePath(...segments), 'utf8');
 
-const authenticatedRoutes = [
-  'parse-menu',
-  'quotes',
-  'pricing',
-  'distributors',
-  'risk-score',
-  'ml/forecast',
-  'send-rfp',
-  'simulate-conversation',
-  'recommend',
-  'agent/negotiate',
-  'webhooks/inbound-email',
-];
-
-const quarantinedAuthenticatedRoutes = [
-  'pricing',
-  'distributors',
-  'risk-score',
-  'ml/forecast',
-  'send-rfp',
-  'simulate-conversation',
-  'recommend',
-  'agent/negotiate',
-  'webhooks/inbound-email',
-];
-
-const legacyGateImport =
-  "import { isLegacyFeatureEnabled, legacyFeatureUnavailable } from '@/lib/features/legacy-features';";
-
-const authenticatedLegacyGate =
-  /export async function (?:GET|POST)\([^)]*\)\s*\{\s*const access = await requireApiTenant\(\);\s*if \(access\.response\) return access\.response;\s*if \(!isLegacyFeatureEnabled\(\)\)\s*\{\s*return legacyFeatureUnavailable\(\);\s*\}/;
-
-const publicLegacyGate = (method: 'GET' | 'POST') =>
-  new RegExp(
-    `export async function ${method}\\([\\s\\S]*?\\)\\s*\\{\\s*if \\(!isLegacyFeatureEnabled\\(\\)\\)\\s*\\{\\s*return legacyFeatureUnavailable\\(\\);\\s*\\}`,
-  );
+const authenticatedRoutes = ['parse-menu'];
 
 describe('public route surface', () => {
   test.each(authenticatedRoutes)(
@@ -84,55 +40,11 @@ describe('public route surface', () => {
     },
   );
 
-  test.each(quarantinedAuthenticatedRoutes)(
-    'gates the authenticated %s workflow immediately after authentication',
-    (route) => {
-      const source = readSource('app', 'api', ...route.split('/'), 'route.ts');
-
-      expect(source).toContain(legacyGateImport);
-      expect(source).toMatch(authenticatedLegacyGate);
-    },
-  );
-
-  test.each(['GET', 'POST'] as const)(
-    'gates the public quote %s handler before request or database work',
-    (method) => {
-      const source = readSource('app', 'api', 'quote', '[rfpId]', 'route.ts');
-
-      expect(source).toContain(legacyGateImport);
-      expect(source).toMatch(publicLegacyGate(method));
-    },
-  );
-
-  test.each(['GET', 'POST', 'PUT'] as const)(
-    'gates the Inngest %s handler before invoking Inngest',
-    (method) => {
-      const source = readSource('app', 'api', 'inngest', 'route.ts');
-      const handlerGate = new RegExp(
-        `export const ${method}[^=]*=\\s*\\([^)]*\\)\\s*=>\\s*\\{\\s*if \\(!isLegacyFeatureEnabled\\(\\)\\)\\s*\\{\\s*return legacyFeatureUnavailable\\(\\);\\s*\\}`,
-      );
-
-      expect(source).toContain(legacyGateImport);
-      expect(source).toMatch(handlerGate);
-    },
-  );
-
   it('does not expose a public LLM diagnostics route', () => {
     expect(existsSync(sourcePath('app', 'api', 'debug-llm', 'route.ts'))).toBe(
       false,
     );
   });
-
-  test.each(['seed-account', 'seed-rag'])(
-    'gates the %s demo endpoint before any work begins',
-    (route) => {
-      const source = readSource('app', 'api', 'demo', route, 'route.ts');
-
-      expect(source).toMatch(
-        /export async function POST\([^)]*\)\s*\{\s*if \(!isLegacyFeatureEnabled\(\)\)\s*\{\s*return legacyFeatureUnavailable\(\);\s*\}/,
-      );
-    },
-  );
 
   it('does not query account existence during workspace preflight', () => {
     const source = readSource(
@@ -149,9 +61,8 @@ describe('public route surface', () => {
   });
 
   test.each(['signin', 'signup'] as const)(
-    'returns the same %s preflight response for existing and absent emails',
+    'returns a neutral %s preflight response without account discovery',
     async (mode) => {
-      const findFirst = jest.mocked(prisma.tenant.findFirst);
       const payload = {
         mode,
         name: 'Test Restaurant',
@@ -161,39 +72,17 @@ describe('public route surface', () => {
         cuisineType: 'Indian',
       };
 
-      findFirst.mockResolvedValueOnce(null);
-      const absentResponse = await checkWorkspace(
+      const response = await checkWorkspace(
         new Request('http://localhost/api/auth/workspace-check', {
           method: 'POST',
           body: JSON.stringify(payload),
         }),
       );
 
-      findFirst.mockResolvedValueOnce({ id: 'existing' } as never);
-      const existingResponse = await checkWorkspace(
-        new Request('http://localhost/api/auth/workspace-check', {
-          method: 'POST',
-          body: JSON.stringify(payload),
-        }),
-      );
-
-      expect(existingResponse.status).toBe(absentResponse.status);
-      await expect(existingResponse.json()).resolves.toEqual(
-        await absentResponse.json(),
-      );
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual({ ok: true });
     },
   );
-
-  it('guards malformed analyst output before reading vendor analysis', () => {
-    const source = readSource('app', 'api', 'agent', 'negotiate', 'route.ts');
-    const guardStart = source.indexOf(
-      'Array.isArray(marketAnalysis.vendorAnalysis)',
-    );
-    const lookupStart = source.indexOf('marketAnalysis.vendorAnalysis.find');
-
-    expect(guardStart).toBeGreaterThanOrEqual(0);
-    expect(guardStart).toBeLessThan(lookupStart);
-  });
 
   it('closes the mobile drawer before opening command search', () => {
     const source = readSource('app', '(app)', 'layout.tsx');
@@ -205,74 +94,177 @@ describe('public route surface', () => {
 });
 
 describe('production-safe workflow presentation', () => {
-  const publicLegacyFlag =
-    "const legacyDemoEnabled = process.env.NEXT_PUBLIC_AUTORFP_ENABLE_LEGACY_DEMO === 'true';";
+  it('describes the public launch workflow without prototype promises or fake metrics', () => {
+    const landing = readSource('app', 'page.tsx');
+    const metadata = readSource('app', 'layout.tsx');
 
-  it('stops the procurement flow at a saved menu draft by default', () => {
-    const source = readSource('app', '(app)', 'procurement', 'page.tsx');
-    const applySizingStart = source.indexOf('const applyWholeMenuSizing');
-    const pricingHandlerStart = source.indexOf('const handleFetchPricing');
-    const applySizingSource = source.slice(applySizingStart, pricingHandlerStart);
+    expect(landing).toContain(
+      'reviewed menus into supplier links, comparable quotes, and a recorded award',
+    );
+    expect(landing).toContain('Available now');
+    expect(landing).toContain('Upcoming');
+    expect(metadata).toContain('reviewable menu drafts');
 
-    expect(source).toContain(publicLegacyFlag);
-    expect(source).toContain('Menu draft saved for review');
-    expect(source).toContain(
-      'Real supplier requests and market evidence are being enabled in the production workflow. Your menu and extracted dish names are saved; nothing has been sent.',
+    for (const staleClaim of [
+      'autonomous',
+      'Live commodity market pricing',
+      'Finds suppliers near your location',
+      'Negotiates prices on your behalf',
+      'Tracks savings across every run',
+      'get quotes in minutes',
+      'under 4 minutes',
+      'Fully automated',
+      'Zero manual work',
+      'Procurement AI',
+      'Tenant-isolated RLS',
+      'Local-first',
+      'Open-source stack',
+      'LangGraph',
+      'Inngest',
+      'Groq',
+      'Ollama',
+      'Sentry',
+    ]) {
+      expect(landing).not.toContain(staleClaim);
+    }
+    expect(metadata).not.toMatch(
+      /AI-powered|live pricing|supplier discovery|autonomous negotiation/i,
     );
-    expect(applySizingSource).toMatch(
-      /if \(!legacyDemoEnabled\)\s*\{[\s\S]*?setPipelineStatus\('Menu draft saved for review'\);[\s\S]*?return;[\s\S]*?\}/,
+  });
+
+  it('submits only persisted launch account fields and reports accepted saves', () => {
+    const source = readSource('app', '(app)', 'settings', 'page.tsx');
+    const bodyStart = source.indexOf('body: JSON.stringify({');
+    const bodyEnd = source.indexOf('}),', bodyStart);
+    const requestBody = source.slice(bodyStart, bodyEnd);
+    const responseGuard = source.indexOf('if (!res.ok)');
+    const savedState = source.indexOf('setSaved(true)');
+
+    expect(source).not.toContain('localStorage');
+    expect(source).not.toContain('readAccount');
+    expect(source).not.toContain('saveAccount');
+    expect(requestBody).toContain('name');
+    expect(requestBody).toContain('email');
+    expect(requestBody).toContain('addressLine');
+    expect(requestBody).toContain('city');
+    expect(requestBody).toContain('state');
+    expect(requestBody).toContain('pin');
+    expect(requestBody).toContain('phone');
+    expect(requestBody).not.toMatch(
+      /cuisineType|preferredSuppliers|monthlyBudgetTarget|savingsTargetPct/,
     );
-    expect(applySizingSource.indexOf('if (!legacyDemoEnabled)')).toBeLessThan(
-      applySizingSource.indexOf('handleFetchPricing(sized)'),
+    expect(source).not.toMatch(
+      /AI & Data Integrations|Ollama|Groq|Market Data|ChromaDB|LangGraph|Inngest|Sentry/,
     );
-    expect(source).toContain('{legacyDemoEnabled && (');
-    expect(source).not.toContain('Build demand draft');
-    expect(source).not.toContain('Scales quantities by guests');
-    expect(source).not.toContain('Drafts menu ingredients');
+    expect(source.slice(responseGuard, savedState)).toContain('throw new Error');
+    expect(responseGuard).toBeGreaterThanOrEqual(0);
+    expect(savedState).toBeGreaterThan(responseGuard);
+  });
+
+  it('offers only currently available actions in the command palette', () => {
+    const source = readSource('components', 'CommandPalette.tsx');
+
+    expect(source).toContain("label: 'Create menu draft'");
+    expect(source).not.toContain('Run AI Pipeline');
+    expect(source).not.toContain('View Quotes');
+  });
+
+  it('keeps removed workflow endpoints out of every live UI module', () => {
+    const uiSources = [
+      readSource('app', 'page.tsx'),
+      readSource('app', '(app)', 'dashboard', 'page.tsx'),
+      readSource('app', '(app)', 'history', 'page.tsx'),
+      readSource('app', '(app)', 'intelligence', 'page.tsx'),
+      readSource('app', '(app)', 'procurement', 'page.tsx'),
+      readSource('app', '(app)', 'settings', 'page.tsx'),
+      readSource('components', 'CommandPalette.tsx'),
+    ].join('\n');
+
+    for (const endpoint of [
+      '/api/dashboard',
+      '/api/history',
+      '/api/pricing',
+      '/api/distributors',
+      '/api/send-rfp',
+      '/api/risk-score',
+      '/api/simulate-conversation',
+      '/api/recommend',
+      '/api/agent/negotiate',
+    ]) {
+      expect(uiSources).not.toContain(endpoint);
+    }
+  });
+
+  it('uses the launch Prisma client without stale prototype scoping', () => {
+    const source = readSource('lib', 'prisma.ts');
+
+    expect(existsSync(sourcePath('lib', 'tenant-context.ts'))).toBe(false);
+    expect(source).not.toContain('TENANT_SCOPED');
+    expect(source).not.toContain("'RFP'");
+    expect(source).not.toContain("'ProcurementRun'");
+    expect(source).not.toContain('getCurrentTenantId');
+    expect(source).not.toContain('$extends');
   });
 
   test.each([
-    'handleFetchPricing',
-    'handleFindDistributors',
-    'handleSendRFPs',
-    'handleFetchRiskScores',
-    'handleAutoConversation',
-    'handleGetRecommendation',
-    'handleAgentNegotiation',
-  ])('guards %s before its legacy workflow can run', (handler) => {
-    const source = readSource('app', '(app)', 'procurement', 'page.tsx');
-    const handlerStart = source.indexOf(`const ${handler}`);
-    const nextHandlerStart = source.indexOf('\n  const handle', handlerStart + 1);
-    const handlerSource = source.slice(
-      handlerStart,
-      nextHandlerStart >= 0 ? nextHandlerStart : undefined,
-    );
+    ['dashboard', 'Dashboard'],
+    ['history', 'Procurement history'],
+    ['intelligence', 'Procurement intelligence'],
+  ] as const)('keeps %s as a truthful launch placeholder', (route, title) => {
+    const source = readSource('app', '(app)', route, 'page.tsx');
 
-    expect(handlerStart).toBeGreaterThanOrEqual(0);
-    expect(handlerSource).toMatch(
-      /=>\s*\{\s*if \(!legacyDemoEnabled\) return(?: \[\])?;/,
-    );
+    expect(source).toContain(title);
+    expect(source).toContain('Coming in the launch workflow');
+    expect(source).toContain('href="/procurement"');
+    expect(source).not.toContain('fetch(');
+    expect(source).not.toContain('localStorage');
+    expect(source).not.toContain('/api/dashboard');
+    expect(source).not.toContain('/api/history');
+    expect(source).not.toMatch(/savings|live pricing|AI negotiation|supplier scor/i);
   });
 
-  it('does not present quarantined workflows as live capabilities', () => {
-    const source = readSource('app', '(app)', 'procurement', 'page.tsx');
+  it('keeps shell account state server-backed and removes false platform claims', () => {
+    const source = readSource('app', '(app)', 'layout.tsx');
 
-    expect(source.toLowerCase()).not.toContain('live market');
-    expect(source.toLowerCase()).not.toContain('emails appear here in real time');
-    expect(source).not.toContain('Submit Official Quote');
+    expect(source).toContain("fetch('/api/account')");
+    expect(source).not.toContain('localStorage');
+    expect(source).not.toContain('readAccount');
+    expect(source).not.toContain('saveAccount');
+    expect(source).not.toContain('Procurement AI');
+    expect(source).not.toContain('AutoRFP Engine');
+    expect(source).not.toContain('LangGraph · Inngest · Groq · Sentry');
+    expect(source).not.toContain('Tenant-scoped RLS');
   });
 
-  it('keeps the public quote portal static when the legacy demo is disabled', () => {
+  it('limits procurement to a saved deterministic menu draft', () => {
+    const source = readSource('app', '(app)', 'procurement', 'page.tsx');
+
+    expect(source).toContain("fetch('/api/parse-menu'");
+    expect(source).toContain('Menu draft saved for review');
+    expect(source).toContain(
+      'Your menu and extracted dish names are saved; nothing has been sent to suppliers.',
+    );
+    for (const endpoint of [
+      '/api/pricing',
+      '/api/distributors',
+      '/api/send-rfp',
+      '/api/risk-score',
+      '/api/simulate-conversation',
+      '/api/recommend',
+      '/api/agent/negotiate',
+    ]) {
+      expect(source).not.toContain(endpoint);
+    }
+    expect(source).not.toContain('AUTORFP_ENABLE_LEGACY_DEMO');
+  });
+
+  it('keeps the public quote portal static until launch quote APIs exist', () => {
     const source = readSource('app', 'quote', '[rfpId]', 'page.tsx');
-    const pageStart = source.indexOf('export default function QuoteSubmissionPage');
-    const legacyPageStart = source.indexOf('function LegacyQuoteSubmissionPage');
-    const publicPageSource = source.slice(pageStart, legacyPageStart);
 
-    expect(source).toContain(publicLegacyFlag);
-    expect(publicPageSource).toMatch(
-      /if \(!legacyDemoEnabled\)\s*\{\s*return <QuotePortalUnavailable \/>;\s*\}/,
-    );
-    expect(publicPageSource).not.toContain('fetch(');
+    expect(source).toContain('Supplier quote portal unavailable');
+    expect(source).not.toContain('fetch(');
+    expect(source).not.toContain('LegacyQuoteSubmissionPage');
+    expect(source).not.toContain('AUTORFP_ENABLE_LEGACY_DEMO');
     expect(source).not.toContain('Submit Official Quote');
   });
 

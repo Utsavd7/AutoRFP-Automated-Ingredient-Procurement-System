@@ -2,17 +2,16 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Command } from 'cmdk';
-import { LayoutDashboard, PlusCircle, Clock, Settings, BrainCircuit, Zap, ChefHat } from 'lucide-react';
+import { LayoutDashboard, PlusCircle, Clock, Settings, BrainCircuit } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const ITEMS = [
   { label: 'Dashboard',        href: '/dashboard',    icon: LayoutDashboard, group: 'Navigate' },
-  { label: 'New Procurement',  href: '/procurement',  icon: PlusCircle,      group: 'Navigate' },
+  { label: 'Menu draft',       href: '/procurement',  icon: PlusCircle,      group: 'Navigate' },
   { label: 'Intelligence',     href: '/intelligence', icon: BrainCircuit,    group: 'Navigate' },
   { label: 'History',          href: '/history',      icon: Clock,           group: 'Navigate' },
   { label: 'Settings',         href: '/settings',     icon: Settings,        group: 'Navigate' },
-  { label: 'Run AI Pipeline',  href: '/procurement',  icon: Zap,             group: 'Actions'  },
-  { label: 'View Quotes',      href: '/history',      icon: ChefHat,         group: 'Actions'  },
+  { label: 'Create menu draft', href: '/procurement', icon: PlusCircle,      group: 'Actions'  },
 ];
 
 export default function CommandPalette() {

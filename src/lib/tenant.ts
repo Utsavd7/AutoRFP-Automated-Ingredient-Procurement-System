@@ -9,6 +9,13 @@ export type RestaurantAccount = {
   preferredSuppliers: string[];
   monthlyBudgetTarget: number | null;
   savingsTargetPct: number | null;
+  addressLine?: string;
+  city?: string;
+  state?: string;
+  pin?: string;
+  phone?: string;
+  timezone?: string;
+  gstin?: string | null;
   createdAt: string;
 };
 

@@ -3,8 +3,8 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { signIn } from 'next-auth/react';
 import {
-  ChefHat, ArrowRight, CheckCircle, TrendingUp,
-  Zap, Brain
+  ChefHat, ArrowRight, CheckCircle, ClipboardCheck,
+  Link2, Scale
 } from 'lucide-react';
 import {
   ACCOUNT_KEY,
@@ -130,7 +130,7 @@ export default function LandingPage() {
           </div>
           <div>
             <span className="font-bold text-[14px] text-[#EEEEEE] tracking-wide">AutoRFP</span>
-            <span className="ml-2 text-[10px] font-bold text-[#8A8F98] uppercase tracking-[0.12em]">Procurement AI</span>
+            <span className="ml-2 text-[10px] font-bold text-[#8A8F98] uppercase tracking-[0.12em]">Restaurant procurement</span>
           </div>
         </div>
         <button
@@ -145,21 +145,20 @@ export default function LandingPage() {
       <main className="relative z-10 max-w-5xl mx-auto px-6 pt-24 pb-20 text-center">
         <div className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-violet-500/10 border border-violet-500/20 rounded-full text-[11px] font-bold text-violet-300 tracking-widest uppercase mb-10">
           <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
-          For independent restaurants · No phone calls · No spreadsheets
+          Launch workflow · Owner review required
         </div>
 
         <h1 className="text-[52px] md:text-[72px] font-black tracking-tight leading-[0.92] mb-7">
-          <span className="gradient-text">Cut food costs</span>
+          <span className="gradient-text">Prepare your menu</span>
           <br />
-          <span className="text-white">with market-aware</span>
+          <span className="text-white">for a clear</span>
           <br />
-          <span className="text-[#5A5F6A]">autonomous</span>
-          <br />
-          <span className="gradient-text">price negotiation.</span>
+          <span className="gradient-text">procurement workflow.</span>
         </h1>
 
         <p className="text-[17px] text-[#8A8F98] leading-relaxed max-w-2xl mx-auto mb-12">
-          Paste your menu. AutoRFP figures out what you need, checks what it costs right now, finds local suppliers, and negotiates the best price — all without a single phone call.
+          Today, AutoRFP saves a deterministic menu draft for owner review. The
+          launch workflow will move reviewed menus into supplier links, comparable quotes, and a recorded award as each step becomes available.
         </p>
 
         {!showForm ? (
@@ -168,10 +167,10 @@ export default function LandingPage() {
               onClick={() => { setMode('signup'); setShowForm(true); setAuthError(''); }}
               className="inline-flex items-center gap-2.5 px-7 py-3.5 bg-violet-600 hover:bg-violet-500 text-white font-bold text-[14px] rounded-xl transition-all duration-200 shadow-[0_0_30px_rgba(139,92,246,0.4)] hover:shadow-[0_0_45px_rgba(139,92,246,0.55)]"
             >
-              Get started free
+              Create workspace
               <ArrowRight className="w-4 h-4" />
             </button>
-            <span className="text-[12px] text-[#8A8F98]">No credit card required · Setup in 30 seconds</span>
+            <span className="text-[12px] text-[#8A8F98]">Start with a reviewable menu draft</span>
           </div>
         ) : (
           <div className="max-w-sm mx-auto">
@@ -278,7 +277,7 @@ export default function LandingPage() {
               </button>
             </form>
             <p className="mt-4 text-center text-[11px] text-[#8A8F98]">
-              {mode === 'signin' ? 'Sign in with your work email and password.' : 'Password is stored as a salted hash for this local workspace.'}
+              {mode === 'signin' ? 'Sign in with your work email and password.' : 'Create credentials for this restaurant workspace.'}
             </p>
           </div>
         )}
@@ -286,12 +285,11 @@ export default function LandingPage() {
         {/* Trust badges */}
         <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-3 mt-14">
           {[
-            'Paste a menu, get quotes in minutes',
-            'Live commodity market pricing',
-            'Finds suppliers near your location',
-            'Negotiates prices on your behalf',
-            'Tracks savings across every run',
-            'No integrations or setup required',
+            'Available now · Save a deterministic menu draft',
+            'Available now · Review the saved dish list',
+            'Upcoming · Send secure supplier links',
+            'Upcoming · Collect comparable quotes',
+            'Upcoming · Record an award decision',
           ].map((feat, i) => (
             <span key={i} className="flex items-center gap-2 text-[12px] text-[#8A8F98]">
               <CheckCircle className="w-3.5 h-3.5 text-emerald-500/60 shrink-0" />
@@ -300,19 +298,6 @@ export default function LandingPage() {
           ))}
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-8 mt-24 max-w-lg mx-auto border-t border-white/[0.06] pt-16">
-          {[
-            { value: 'Live', label: 'market-aware sourcing', color: 'text-emerald-400' },
-            { value: 'Auto', label: 'negotiated, no calls', color: 'text-violet-400' },
-            { value: 'Fast', label: 'menu to first quote', color: 'text-blue-400' },
-          ].map((s, i) => (
-            <div key={i} className="text-center">
-              <p className={`text-4xl font-black tracking-tighter ${s.color}`}>{s.value}</p>
-              <p className="text-[11px] text-[#8A8F98] mt-2 font-medium leading-tight">{s.label}</p>
-            </div>
-          ))}
-        </div>
       </main>
 
       {/* Feature grid */}
@@ -321,25 +306,25 @@ export default function LandingPage() {
         <div className="grid md:grid-cols-3 gap-5">
           {[
             {
-              icon: Brain,
+              icon: ClipboardCheck,
               accent: 'violet',
               step: '01',
-              title: 'Menu to order list',
-              desc: 'Paste your menu or a URL. AutoRFP figures out every ingredient you need — including the ones nobody writes down, like the butter, stock, and oil used to actually cook the dish.',
+              title: 'Menu draft and review · Available now',
+              desc: 'Paste one dish per line. AutoRFP saves the source text and a deterministic dish list for owner review before any supplier outreach.',
             },
             {
-              icon: TrendingUp,
+              icon: Link2,
               accent: 'blue',
               step: '02',
-              title: 'Live market prices',
-              desc: 'Ingredients are matched to real commodity markets. Beef tracks cattle futures. Pasta tracks wheat. You see what things actually cost right now, not last quarter.',
+              title: 'Supplier quote links · Upcoming',
+              desc: 'A reviewed request will be shared through secure supplier links so structured quotes can be collected against the same items.',
             },
             {
-              icon: Zap,
+              icon: Scale,
               accent: 'emerald',
               step: '03',
-              title: 'Automated negotiation',
-              desc: 'AutoRFP emails local suppliers, collects quotes, and negotiates a better price — all without a phone call. You get a report showing who to buy from and what you saved.',
+              title: 'Compare and award · Upcoming',
+              desc: 'Comparable supplier quotes will support an owner-reviewed selection and a recorded award decision.',
             },
           ].map((feat) => (
             <div key={feat.step} className={`linear-panel rounded-xl p-6 border transition-all duration-300 hover:bg-white/[0.03] ${
@@ -376,14 +361,14 @@ export default function LandingPage() {
               ))}
             </div>
             <div className="text-center">
-              <p className="text-[15px] font-bold text-[#EEEEEE]">Fully automated. Zero manual work.</p>
-              <p className="text-[13px] text-[#8A8F98] mt-1">From menu to negotiated deal in under 4 minutes.</p>
+              <p className="text-[15px] font-bold text-[#EEEEEE]">Start with a reviewable menu draft.</p>
+              <p className="text-[13px] text-[#8A8F98] mt-1">Supplier links, quote comparison, and awards are upcoming launch steps.</p>
             </div>
             <button
               onClick={() => { window.scrollTo({ top: 0, behavior: 'smooth' }); setShowForm(true); }}
               className="inline-flex items-center gap-2 px-5 py-2.5 bg-white/[0.06] border border-white/10 hover:bg-white/[0.09] hover:border-white/20 text-[13px] font-bold text-[#EEEEEE] rounded-lg transition-all"
             >
-              Start for free <ArrowRight className="w-3.5 h-3.5" />
+              Create workspace <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
@@ -401,39 +386,29 @@ export default function LandingPage() {
                 </div>
                 <div>
                   <span className="font-bold text-[14px] text-[#EEEEEE] tracking-wide">AutoRFP</span>
-                  <span className="ml-2 text-[10px] font-bold text-[#8A8F98] uppercase tracking-[0.12em]">Procurement AI</span>
+                  <span className="ml-2 text-[10px] font-bold text-[#8A8F98] uppercase tracking-[0.12em]">Restaurant procurement</span>
                 </div>
               </div>
               <p className="text-[12px] text-[#8A8F98] leading-relaxed max-w-sm">
-                Automated ingredient procurement for restaurants. Paste your menu, get the best price.
+                A review-first launch workflow for restaurant ingredient procurement.
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-2 shrink-0">
-              {['LangGraph', 'Inngest', 'Groq', 'Ollama', 'Sentry'].map(tech => (
-                <span key={tech} className="text-[10px] font-bold text-[#8A8F98]/70 bg-white/[0.03] border border-white/[0.07] px-2 py-0.5 rounded-md">
-                  {tech}
-                </span>
-              ))}
-            </div>
+            <p className="text-[11px] text-[#8A8F98]/70">Menu drafts available · Remaining workflow upcoming</p>
           </div>
 
           {/* Bottom bar */}
           <div className="border-t border-white/[0.05] pt-6 flex flex-col sm:flex-row items-center justify-between gap-4">
             <p className="text-[11px] text-[#8A8F98]/70 text-center sm:text-left">
-              © 2026 AutoRFP · Built for restaurants that want to stop leaving money on the table.
+              © 2026 AutoRFP · Launch workflow in progress.
             </p>
             <div className="flex items-center gap-5 text-[11px] text-[#8A8F98]/60">
               <span className="flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400/60" />
-                Local-first
+                Menu drafts available
               </span>
               <span className="flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-violet-400/60" />
-                Tenant-isolated RLS
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-blue-400/60" />
-                Open-source stack
+                Supplier workflow upcoming
               </span>
             </div>
           </div>

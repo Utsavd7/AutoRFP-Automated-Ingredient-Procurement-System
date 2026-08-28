@@ -1,299 +1,208 @@
 'use client';
-import { useState, useEffect } from 'react';
+
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { signOut } from 'next-auth/react';
 import {
-  Settings, Building2, Mail, MapPin, LogOut, CheckCircle,
-  Cpu, Database, Zap, Globe, Target, Utensils, Users,
-  GitBranch, Activity, Shield
+  Building2,
+  CheckCircle,
+  Hash,
+  LogOut,
+  Mail,
+  MapPin,
+  Phone,
+  Settings,
 } from 'lucide-react';
-import {
-  ACCOUNT_KEY,
-  parseSuppliers,
-  readAccount,
-  saveAccount,
-  supplierListToText,
-  type RestaurantAccount,
-} from '@/lib/tenant';
+
+import type { RestaurantAccount } from '@/lib/tenant';
 
 export default function SettingsPage() {
   const router = useRouter();
   const [account, setAccount] = useState<RestaurantAccount | null>(null);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [location, setLocation] = useState('');
-  const [cuisineType, setCuisineType] = useState('');
-  const [preferredSuppliers, setPreferredSuppliers] = useState('');
-  const [monthlyBudgetTarget, setMonthlyBudgetTarget] = useState('');
-  const [savingsTargetPct, setSavingsTargetPct] = useState('');
+  const [addressLine, setAddressLine] = useState('');
+  const [city, setCity] = useState('');
+  const [state, setState] = useState('');
+  const [pin, setPin] = useState('');
+  const [phone, setPhone] = useState('');
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+
+  const loadAccount = (nextAccount: RestaurantAccount) => {
+    setAccount(nextAccount);
+    setName(nextAccount.name);
+    setEmail(nextAccount.email);
+    setAddressLine(nextAccount.addressLine ?? nextAccount.location);
+    setCity(nextAccount.city ?? '');
+    setState(nextAccount.state ?? '');
+    setPin(nextAccount.pin ?? '');
+    setPhone(nextAccount.phone ?? '');
+  };
 
   useEffect(() => {
+    let active = true;
+
     fetch('/api/account')
       .then(async res => {
-        if (!res.ok) {
-          if (res.status === 401) localStorage.removeItem(ACCOUNT_KEY);
-          return { account: null, allowLocalFallback: false };
-        }
-        return { account: (await res.json()).account as RestaurantAccount, allowLocalFallback: true };
+        if (!res.ok) throw new Error('Unable to load account settings.');
+        return await res.json() as { account?: RestaurantAccount };
       })
-      .then(({ account, allowLocalFallback }) => {
-        const acc = account ?? (allowLocalFallback ? readAccount() : null);
-        if (!acc) return;
-        if (account) saveAccount(account);
-        setAccount(acc);
-        setName(acc.name);
-        setEmail(acc.email);
-        setLocation(acc.location);
-        setCuisineType(acc.cuisineType);
-        setPreferredSuppliers(supplierListToText(acc.preferredSuppliers));
-        setMonthlyBudgetTarget(acc.monthlyBudgetTarget?.toString() ?? '');
-        setSavingsTargetPct(acc.savingsTargetPct?.toString() ?? '');
+      .then(({ account: loadedAccount }) => {
+        if (!active || !loadedAccount) return;
+        loadAccount(loadedAccount);
+      })
+      .catch(() => {
+        if (active) setSaveError('Unable to load account settings.');
       });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
-  const valid = name.trim() && email.includes('@') && location.trim() && cuisineType.trim();
+  const valid = Boolean(
+    name.trim() &&
+    email.includes('@') &&
+    addressLine.trim() &&
+    city.trim() &&
+    state.trim() &&
+    pin.trim() &&
+    phone.trim(),
+  );
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!valid) return;
-    const res = await fetch('/api/account', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name,
-        email,
-        location,
-        cuisineType,
-        preferredSuppliers: parseSuppliers(preferredSuppliers),
-        monthlyBudgetTarget: monthlyBudgetTarget ? Number(monthlyBudgetTarget) : null,
-        savingsTargetPct: savingsTargetPct ? Number(savingsTargetPct) : null,
-      }),
-    });
-    if (!res.ok) return;
-    const { account: updated } = await res.json();
-    saveAccount(updated);
-    setAccount(updated);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
+  const handleSave = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!valid || saving) return;
+
+    setSaving(true);
+    setSaved(false);
+    setSaveError('');
+    try {
+      const res = await fetch('/api/account', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          email,
+          addressLine,
+          city,
+          state,
+          pin,
+          phone,
+        }),
+      });
+      if (!res.ok) {
+        const problem = await res.json().catch(() => ({}));
+        throw new Error(problem.error || 'Unable to save account settings.');
+      }
+      const { account: updated } = await res.json() as {
+        account?: RestaurantAccount;
+      };
+      if (!updated) throw new Error('Account update was not accepted.');
+
+      loadAccount(updated);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (error) {
+      setSaveError(
+        error instanceof Error ? error.message : 'Unable to save account settings.',
+      );
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleSignOut = async () => {
-    if (!confirm('Sign out of this restaurant workspace? Tenant history stays isolated and available for the next sign-in.')) return;
+    if (!confirm('Sign out of this restaurant workspace?')) return;
     await signOut({ redirect: false });
-    localStorage.removeItem(ACCOUNT_KEY);
     router.push('/');
   };
 
-  const inputCls = 'w-full px-4 py-3 bg-white/[0.03] border border-white/[0.08] rounded-lg text-[14px] text-[#EEEEEE] placeholder:text-[#8A8F98]/40 focus:outline-none focus:ring-1 focus:ring-violet-500/40 focus:border-violet-500/40 transition-all';
+  const inputClass =
+    'w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-4 py-3 text-[14px] text-[#EEEEEE] placeholder:text-[#8A8F98]/40 focus:border-violet-500/40 focus:outline-none focus:ring-1 focus:ring-violet-500/40';
 
   return (
-    <div className="max-w-2xl mx-auto px-6 py-10 space-y-8">
-
+    <div className="mx-auto max-w-2xl space-y-8 px-6 py-10">
       <div>
-        <h1 className="text-[28px] font-black text-[#EEEEEE] tracking-tight">Settings</h1>
-        <p className="text-[13px] text-[#8A8F98] mt-1">Manage restaurant profile, tenant identity, and procurement targets</p>
+        <h1 className="text-[28px] font-black tracking-tight text-[#EEEEEE]">Settings</h1>
+        <p className="mt-1 text-[13px] text-[#8A8F98]">
+          Manage the restaurant and contact details saved to this workspace.
+        </p>
       </div>
 
-      {/* Account */}
-      <div className="linear-panel rounded-xl border border-white/[0.06] overflow-hidden">
-        <div className="flex items-center gap-2.5 px-6 py-4 border-b border-white/[0.06] bg-white/[0.01]">
-          <Settings className="w-4 h-4 text-[#8A8F98]" />
-          <span className="text-[12px] font-bold text-[#EEEEEE] uppercase tracking-wider">Account</span>
-          {account && <span className="ml-auto text-[10px] font-mono text-[#8A8F98]">{account.tenantId}</span>}
+      <div className="linear-panel overflow-hidden rounded-xl border border-white/[0.06]">
+        <div className="flex items-center gap-2.5 border-b border-white/[0.06] bg-white/[0.01] px-6 py-4">
+          <Settings className="h-4 w-4 text-[#8A8F98]" />
+          <span className="text-[12px] font-bold uppercase tracking-wider text-[#EEEEEE]">Account</span>
+          {account && (
+            <span className="ml-auto text-[10px] font-mono text-[#8A8F98]">
+              {account.tenantId}
+            </span>
+          )}
         </div>
-        <form onSubmit={handleSave} className="p-6 space-y-4">
-          <div>
-            <label className="block text-[11px] font-bold text-[#8A8F98] uppercase tracking-widest mb-1.5">
-              <Building2 className="inline w-3 h-3 mr-1.5" />Restaurant Name
+        <form onSubmit={handleSave} className="space-y-4 p-6">
+          <label className="block text-[11px] font-bold uppercase tracking-widest text-[#8A8F98]">
+            <Building2 className="mr-1.5 inline h-3 w-3" />Restaurant name
+            <input value={name} onChange={event => setName(event.target.value)} className={`${inputClass} mt-1.5`} />
+          </label>
+          <label className="block text-[11px] font-bold uppercase tracking-widest text-[#8A8F98]">
+            <Mail className="mr-1.5 inline h-3 w-3" />Work email
+            <input type="email" value={email} onChange={event => setEmail(event.target.value)} className={`${inputClass} mt-1.5`} />
+          </label>
+          <label className="block text-[11px] font-bold uppercase tracking-widest text-[#8A8F98]">
+            <MapPin className="mr-1.5 inline h-3 w-3" />Address
+            <input value={addressLine} onChange={event => setAddressLine(event.target.value)} className={`${inputClass} mt-1.5`} />
+          </label>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="block text-[11px] font-bold uppercase tracking-widest text-[#8A8F98]">
+              City
+              <input value={city} onChange={event => setCity(event.target.value)} className={`${inputClass} mt-1.5`} />
             </label>
-            <input
-              type="text"
-              value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder="e.g. The Oak Room"
-              className={inputCls}
-            />
-          </div>
-          <div>
-            <label className="block text-[11px] font-bold text-[#8A8F98] uppercase tracking-widest mb-1.5">
-              <Mail className="inline w-3 h-3 mr-1.5" />Work Email
+            <label className="block text-[11px] font-bold uppercase tracking-widest text-[#8A8F98]">
+              State
+              <input value={state} onChange={event => setState(event.target.value)} className={`${inputClass} mt-1.5`} />
             </label>
-            <input
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="you@restaurant.com"
-              className={inputCls}
-            />
-          </div>
-          <div>
-            <label className="block text-[11px] font-bold text-[#8A8F98] uppercase tracking-widest mb-1.5">
-              <MapPin className="inline w-3 h-3 mr-1.5" />Location
+            <label className="block text-[11px] font-bold uppercase tracking-widest text-[#8A8F98]">
+              <Hash className="mr-1.5 inline h-3 w-3" />PIN
+              <input inputMode="numeric" value={pin} onChange={event => setPin(event.target.value)} className={`${inputClass} mt-1.5`} />
             </label>
-            <input
-              type="text"
-              value={location}
-              onChange={e => setLocation(e.target.value)}
-              placeholder="e.g. New York, NY"
-              className={inputCls}
-            />
-          </div>
-          <div>
-            <label className="block text-[11px] font-bold text-[#8A8F98] uppercase tracking-widest mb-1.5">
-              <Utensils className="inline w-3 h-3 mr-1.5" />Cuisine Type
+            <label className="block text-[11px] font-bold uppercase tracking-widest text-[#8A8F98]">
+              <Phone className="mr-1.5 inline h-3 w-3" />Phone
+              <input type="tel" value={phone} onChange={event => setPhone(event.target.value)} className={`${inputClass} mt-1.5`} />
             </label>
-            <input
-              type="text"
-              value={cuisineType}
-              onChange={e => setCuisineType(e.target.value)}
-              placeholder="e.g. Modern American"
-              className={inputCls}
-            />
           </div>
-          <div>
-            <label className="block text-[11px] font-bold text-[#8A8F98] uppercase tracking-widest mb-1.5">
-              <Users className="inline w-3 h-3 mr-1.5" />Preferred Suppliers
-            </label>
-            <input
-              type="text"
-              value={preferredSuppliers}
-              onChange={e => setPreferredSuppliers(e.target.value)}
-              placeholder="US Foods, Sysco, Baldor"
-              className={inputCls}
-            />
-          </div>
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-[11px] font-bold text-[#8A8F98] uppercase tracking-widest mb-1.5">
-                <Database className="inline w-3 h-3 mr-1.5" />Monthly Budget Target
-              </label>
-              <input
-                type="number"
-                min="0"
-                value={monthlyBudgetTarget}
-                onChange={e => setMonthlyBudgetTarget(e.target.value)}
-                placeholder="45000"
-                className={inputCls}
-              />
-            </div>
-            <div>
-              <label className="block text-[11px] font-bold text-[#8A8F98] uppercase tracking-widest mb-1.5">
-                <Target className="inline w-3 h-3 mr-1.5" />Savings Target %
-              </label>
-              <input
-                type="number"
-                min="0"
-                max="80"
-                value={savingsTargetPct}
-                onChange={e => setSavingsTargetPct(e.target.value)}
-                placeholder="Target %"
-                className={inputCls}
-              />
-            </div>
-          </div>
-          <div className="pt-2 flex items-center gap-3">
+
+          {saveError && <p className="text-[12px] font-semibold text-red-300">{saveError}</p>}
+          <div className="flex items-center gap-3 pt-2">
             <button
               type="submit"
-              disabled={!valid}
-              className="inline-flex items-center gap-2 px-5 py-2.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-[13px] rounded-lg transition-all"
+              disabled={!valid || saving}
+              className="inline-flex items-center gap-2 rounded-lg bg-violet-600 px-5 py-2.5 text-[13px] font-bold text-white transition-colors hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {saved ? <><CheckCircle className="w-3.5 h-3.5" />Saved</> : 'Save Changes'}
+              {saving ? 'Saving…' : saved ? <><CheckCircle className="h-3.5 w-3.5" />Saved</> : 'Save changes'}
             </button>
             {saved && <span className="text-[12px] font-bold text-emerald-400">Changes saved successfully</span>}
           </div>
         </form>
       </div>
 
-      {/* Integrations */}
-      <div className="linear-panel rounded-xl border border-white/[0.06] overflow-hidden">
-        <div className="flex items-center gap-2.5 px-6 py-4 border-b border-white/[0.06] bg-white/[0.01]">
-          <Cpu className="w-4 h-4 text-[#8A8F98]" />
-          <span className="text-[12px] font-bold text-[#EEEEEE] uppercase tracking-wider">AI & Data Integrations</span>
+      <div className="linear-panel overflow-hidden rounded-xl border border-red-500/15">
+        <div className="flex items-center gap-2.5 border-b border-red-500/10 bg-red-500/[0.02] px-6 py-4">
+          <LogOut className="h-4 w-4 text-red-400/70" />
+          <span className="text-[12px] font-bold uppercase tracking-wider text-red-400/80">Session</span>
         </div>
-        <div className="divide-y divide-white/[0.04]">
-          {[
-            {
-              icon: Cpu,
-              name: 'Local AI',
-              desc: 'Optional Ollama inference · app falls back to Groq when unavailable',
-              status: 'local',
-            },
-            {
-              icon: Zap,
-              name: 'Groq',
-              desc: 'Cloud LLM · llama-3.3-70b-versatile · model fallback chain on rate-limit',
-              status: 'cloud',
-            },
-            {
-              icon: Globe,
-              name: 'Market Data',
-              desc: 'CME · CBOT · ICE futures · BLS retail price API',
-              status: 'live',
-            },
-            {
-              icon: Database,
-              name: 'ChromaDB',
-              desc: 'Local vector store · tenant-scoped RAG procurement memory',
-              status: 'local',
-            },
-            {
-              icon: GitBranch,
-              name: 'LangGraph',
-              desc: '5-node typed negotiation pipeline · orchestrate → analyze → negotiate → finalize',
-              status: 'active',
-            },
-            {
-              icon: Activity,
-              name: 'Inngest',
-              desc: 'Background job queue · daily pricing refresh · RFP sending with 3-retry',
-              status: 'active',
-            },
-            {
-              icon: Shield,
-              name: 'Sentry',
-              desc: 'Error tracking · React error boundaries · configure NEXT_PUBLIC_SENTRY_DSN to enable',
-              status: 'optional',
-            },
-          ].map((item) => (
-            <div key={item.name} className="flex items-center gap-4 px-6 py-4">
-              <div className="w-8 h-8 rounded-lg bg-white/[0.03] border border-white/[0.06] flex items-center justify-center shrink-0">
-                <item.icon className="w-4 h-4 text-[#8A8F98]" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-[13px] font-bold text-[#EEEEEE]">{item.name}</p>
-                <p className="text-[11px] text-[#8A8F98] mt-0.5">{item.desc}</p>
-              </div>
-              <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md border ${
-                item.status === 'live'     ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' :
-                item.status === 'cloud'   ? 'text-blue-400 bg-blue-500/10 border-blue-500/20' :
-                item.status === 'active'  ? 'text-violet-400 bg-violet-500/10 border-violet-500/20' :
-                item.status === 'optional'? 'text-amber-400 bg-amber-500/10 border-amber-500/20' :
-                'text-[#8A8F98] bg-white/[0.04] border-white/[0.08]'
-              }`}>
-                {item.status}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Danger zone */}
-      <div className="linear-panel rounded-xl border border-red-500/15 overflow-hidden">
-        <div className="flex items-center gap-2.5 px-6 py-4 border-b border-red-500/10 bg-red-500/[0.02]">
-          <LogOut className="w-4 h-4 text-red-400/70" />
-          <span className="text-[12px] font-bold text-red-400/80 uppercase tracking-wider">Danger Zone</span>
-        </div>
-        <div className="p-6 flex items-center justify-between gap-4">
+        <div className="flex items-center justify-between gap-4 p-6">
           <div>
             <p className="text-[13px] font-bold text-[#EEEEEE]">Sign out</p>
-            <p className="text-[12px] text-[#8A8F98] mt-0.5">Ends the current session. Tenant history remains isolated by workspace.</p>
+            <p className="mt-0.5 text-[12px] text-[#8A8F98]">Ends the current authenticated session.</p>
           </div>
           <button
             onClick={handleSignOut}
-            className="inline-flex items-center gap-2 px-4 py-2 border border-red-500/20 hover:border-red-500/40 hover:bg-red-500/10 text-red-400 hover:text-red-300 font-bold text-[12px] rounded-lg transition-all"
+            className="inline-flex items-center gap-2 rounded-lg border border-red-500/20 px-4 py-2 text-[12px] font-bold text-red-400 transition-colors hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-300"
           >
-            <LogOut className="w-3.5 h-3.5" />
+            <LogOut className="h-3.5 w-3.5" />
             Sign out
           </button>
         </div>

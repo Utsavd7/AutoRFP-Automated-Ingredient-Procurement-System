@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AutoRFP — Intelligent Procurement Platform",
-  description: "AI-powered restaurant ingredient procurement: menu parsing, live pricing, supplier discovery, and autonomous negotiation.",
+  title: "AutoRFP — Restaurant Procurement",
+  description: "Create reviewable menu drafts and prepare for the launch supplier quote and award workflow.",
 };
 
 export default function RootLayout({

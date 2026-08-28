@@ -32,12 +32,12 @@ export function BrandMark({
       {!decorative && <title>{title}</title>}
       <path
         className="brand-mark__request"
-        d="M3 3h14v17h-4v10L3 27V3Z"
+        d="M3 3h14v17h-5v10L3 26V3Z"
         fill="currentColor"
       />
       <path
         className="brand-mark__quote"
-        d="M20 9 30 12v23H20V23h-3v-3h3V9Z"
+        d="M20 9 30 13v22H16V23h4V9Z"
         fill="currentColor"
       />
     </svg>

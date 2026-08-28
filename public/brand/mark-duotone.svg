@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 34 40" role="img" aria-labelledby="title desc">
   <title id="title">QuotePlate ledger mark in copper and ink</title>
   <desc id="desc">A copper request form and ink quote form share negative space that points toward a decision.</desc>
-  <path d="M3 3h14v17h-4v10L3 27V3Z" fill="#D8834F"/>
-  <path d="M20 9 30 12v23H20V23h-3v-3h3V9Z" fill="#101817"/>
+  <path d="M3 3h14v17h-5v10L3 26V3Z" fill="#D8834F"/>
+  <path d="M20 9 30 13v22H16V23h4V9Z" fill="#101817"/>
 </svg>

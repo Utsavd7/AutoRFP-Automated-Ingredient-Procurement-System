@@ -5,8 +5,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { BrandMark } from '@/components/brand/BrandMark';
 
 const viewBox = '0 0 34 40';
-const requestPath = 'M3 3h14v17h-4v10L3 27V3Z';
-const quotePath = 'M20 9 30 12v23H20V23h-3v-3h3V9Z';
+const requestPath = 'M3 3h14v17h-5v10L3 26V3Z';
+const quotePath = 'M20 9 30 13v22H16V23h4V9Z';
 
 const assetPaths = [
   'public/brand/mark-duotone.svg',

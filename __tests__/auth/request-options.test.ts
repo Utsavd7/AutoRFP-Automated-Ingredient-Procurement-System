@@ -31,7 +31,7 @@ function onboardingCookie(restaurantName: string, email: string) {
       now: new Date('2026-08-28T00:00:00.000Z'),
       secure: false,
     },
-  ).value;
+  );
 }
 
 function repository(
@@ -79,6 +79,163 @@ async function runGoogleCallback(
 }
 
 describe('request-scoped NextAuth options', () => {
+  it('never applies an abandoned signup cookie to a normal Google sign-in callback', async () => {
+    const abandoned = createGoogleOnboardingCookie(
+      {
+        restaurantName: 'Abandoned Signup',
+        ownerName: 'Asha Rao',
+        email: 'asha@example.com',
+        addressLine: '12 Market Road',
+        city: 'Bengaluru',
+        state: 'Karnataka',
+        pin: '560001',
+        phone: '+919876543210',
+      },
+      {
+        secret: env.NEXTAUTH_SECRET,
+        now: new Date('2026-08-28T00:00:00.000Z'),
+        secure: false,
+      },
+    );
+    const abandonedRepo = repository({
+      userId: 'should-not-exist',
+      tenantId: 'should-not-exist',
+      email: 'asha@example.com',
+    });
+    const options = createRequestAuthOptions(
+      new Request(
+        'http://localhost/api/auth/callback/google?state=normal-signin-state',
+        { headers: { cookie: `${abandoned.name}=${abandoned.value}` } },
+      ),
+      {
+        env,
+        now: new Date('2026-08-28T00:01:00.000Z'),
+        googleIdentityRepository: abandonedRepo,
+      },
+    );
+
+    await expect(
+      runGoogleCallback(options, 'asha@example.com', 'normal-signin-google-id'),
+    ).rejects.toThrow('No workspace is connected');
+    expect(abandonedRepo.createOwnerIdentity).not.toHaveBeenCalled();
+  });
+
+  it('does not load a state-bound onboarding cookie outside the Google callback route', async () => {
+    const signup = onboardingCookie('Bound Kitchen', 'asha@example.com');
+    const signupRepo = repository({
+      userId: 'should-not-exist',
+      tenantId: 'should-not-exist',
+      email: 'asha@example.com',
+    });
+    const options = createRequestAuthOptions(
+      new Request(
+        'http://localhost/api/auth/signin/google?state=bound-route-state',
+        {
+          headers: {
+            cookie: `${GOOGLE_ONBOARDING_COOKIE}.oauth.bound-route-state=${signup.value}`,
+          },
+        },
+      ),
+      {
+        env,
+        now: new Date('2026-08-28T00:01:00.000Z'),
+        googleIdentityRepository: signupRepo,
+      },
+    );
+
+    await expect(
+      runGoogleCallback(options, 'asha@example.com', 'google-outside-callback'),
+    ).rejects.toThrow('No workspace is connected');
+    expect(signupRepo.createOwnerIdentity).not.toHaveBeenCalled();
+  });
+
+  it('selects only the OAuth-state-bound onboarding cookie when callbacks arrive out of order', async () => {
+    const firstCookie = createGoogleOnboardingCookie(
+      {
+        restaurantName: 'First Kitchen',
+        ownerName: 'Asha Rao',
+        email: 'asha@example.com',
+        addressLine: '12 Market Road',
+        city: 'Bengaluru',
+        state: 'Karnataka',
+        pin: '560001',
+        phone: '+919876543210',
+      },
+      {
+        secret: env.NEXTAUTH_SECRET,
+        now: new Date('2026-08-28T00:00:00.000Z'),
+        secure: false,
+      },
+    );
+    const secondCookie = createGoogleOnboardingCookie(
+      {
+        restaurantName: 'Second Kitchen',
+        ownerName: 'Bea Rao',
+        email: 'bea@example.com',
+        addressLine: '14 Market Road',
+        city: 'Bengaluru',
+        state: 'Karnataka',
+        pin: '560001',
+        phone: '+919876543211',
+      },
+      {
+        secret: env.NEXTAUTH_SECRET,
+        now: new Date('2026-08-28T00:00:00.000Z'),
+        secure: false,
+      },
+    );
+    const cookies = [
+      `${GOOGLE_ONBOARDING_COOKIE}.oauth.first-state=${firstCookie.value}`,
+      `${GOOGLE_ONBOARDING_COOKIE}.oauth.second-state=${secondCookie.value}`,
+    ].join('; ');
+    const firstRepo = repository({
+      userId: 'user-1',
+      tenantId: 'tenant-1',
+      email: 'asha@example.com',
+    });
+    const secondRepo = repository({
+      userId: 'user-2',
+      tenantId: 'tenant-2',
+      email: 'bea@example.com',
+    });
+
+    const second = createRequestAuthOptions(
+      new Request(
+        'http://localhost/api/auth/callback/google?state=second-state',
+        { headers: { cookie: cookies } },
+      ),
+      {
+        env,
+        now: new Date('2026-08-28T00:01:00.000Z'),
+        googleIdentityRepository: secondRepo,
+      },
+    );
+    const first = createRequestAuthOptions(
+      new Request(
+        'http://localhost/api/auth/callback/google?state=first-state',
+        { headers: { cookie: cookies } },
+      ),
+      {
+        env,
+        now: new Date('2026-08-28T00:01:00.000Z'),
+        googleIdentityRepository: firstRepo,
+      },
+    );
+
+    await expect(
+      runGoogleCallback(second, 'bea@example.com', 'google-2'),
+    ).resolves.toEqual({ userId: 'user-2', tenantId: 'tenant-2' });
+    await expect(
+      runGoogleCallback(first, 'asha@example.com', 'google-1'),
+    ).resolves.toEqual({ userId: 'user-1', tenantId: 'tenant-1' });
+    expect(secondRepo.createOwnerIdentity).toHaveBeenCalledWith(
+      expect.objectContaining({ restaurantName: 'Second Kitchen' }),
+    );
+    expect(firstRepo.createOwnerIdentity).toHaveBeenCalledWith(
+      expect.objectContaining({ restaurantName: 'First Kitchen' }),
+    );
+  });
+
   it('keeps Google signup state isolated between callback requests', async () => {
     const firstRepo = repository({
       userId: 'user-1',
@@ -90,13 +247,18 @@ describe('request-scoped NextAuth options', () => {
       tenantId: 'tenant-2',
       email: 'bea@example.com',
     });
+    const firstOnboarding = onboardingCookie(
+      'Tamarind Table',
+      'asha@example.com',
+    );
+    const secondOnboarding = onboardingCookie(
+      'Basil House',
+      'bea@example.com',
+    );
     const first = createRequestAuthOptions(
-      new Request('http://localhost/api/auth/callback/google', {
+      new Request('http://localhost/api/auth/callback/google?state=isolated-first', {
         headers: {
-          cookie: `${GOOGLE_ONBOARDING_COOKIE}=${onboardingCookie(
-            'Tamarind Table',
-            'asha@example.com',
-          )}`,
+          cookie: `${GOOGLE_ONBOARDING_COOKIE}.oauth.isolated-first=${firstOnboarding.value}`,
         },
       }),
       {
@@ -106,12 +268,9 @@ describe('request-scoped NextAuth options', () => {
       },
     );
     const second = createRequestAuthOptions(
-      new Request('http://localhost/api/auth/callback/google', {
+      new Request('http://localhost/api/auth/callback/google?state=isolated-second', {
         headers: {
-          cookie: `${GOOGLE_ONBOARDING_COOKIE}=${onboardingCookie(
-            'Basil House',
-            'bea@example.com',
-          )}`,
+          cookie: `${GOOGLE_ONBOARDING_COOKIE}.oauth.isolated-second=${secondOnboarding.value}`,
         },
       }),
       {

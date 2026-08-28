@@ -1,3 +1,8 @@
+import {
+  GOOGLE_SIGNUP_FLOW_FIELD,
+  validGoogleSignupFlowId,
+} from '@/lib/auth/google-flow';
+
 export type GoogleSignupFields = {
   restaurantName: string;
   ownerName: string;
@@ -22,12 +27,15 @@ type ClientFetcher = (
 ) => Promise<ClientResponse>;
 
 type GoogleAuthenticationRequest =
-  | { mode: 'signin' }
-  | { mode: 'signup'; signup: GoogleSignupFields };
+  | { mode: 'signin'; callbackUrl: string }
+  | { mode: 'signup'; signup: GoogleSignupFields; callbackUrl: string };
 
 type GoogleAuthenticationDependencies = {
   fetcher: ClientFetcher;
-  googleSignIn: (provider: 'google') => Promise<unknown>;
+  googleSignIn: (
+    provider: 'google',
+    options: { callbackUrl: string; autorfpSignupFlow?: string },
+  ) => Promise<unknown>;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -52,6 +60,7 @@ export async function beginGoogleAuthentication(
   request: GoogleAuthenticationRequest,
   dependencies: GoogleAuthenticationDependencies,
 ): Promise<void> {
+  let signupFlowId: string | null = null;
   if (request.mode === 'signup') {
     const response = await dependencies.fetcher('/api/auth/start', {
       method: 'POST',
@@ -59,19 +68,30 @@ export async function beginGoogleAuthentication(
       body: JSON.stringify({ method: 'google', ...request.signup }),
     });
 
-    if (!response.ok) {
-      let message = 'Unable to start Google sign up.';
-      try {
-        const data = await response.json();
-        if (isRecord(data) && typeof data.error === 'string') {
-          message = data.error;
-        }
-      } catch {
-        // Keep the safe fallback when the server does not return JSON.
-      }
-      throw new Error(message);
+    let data: unknown = null;
+    try {
+      data = await response.json();
+    } catch {
+      // The stable fallback below covers malformed server responses.
     }
+    if (!response.ok) {
+      throw new Error(
+        isRecord(data) && typeof data.error === 'string'
+          ? data.error
+          : 'Unable to start Google sign up.',
+      );
+    }
+    const flowId = isRecord(data) ? data.flowId : null;
+    if (!validGoogleSignupFlowId(flowId)) {
+      throw new Error('Unable to start Google sign up.');
+    }
+    signupFlowId = flowId;
   }
 
-  await dependencies.googleSignIn('google');
+  await dependencies.googleSignIn('google', {
+    callbackUrl: request.callbackUrl,
+    ...(signupFlowId
+      ? { [GOOGLE_SIGNUP_FLOW_FIELD]: signupFlowId }
+      : {}),
+  });
 }

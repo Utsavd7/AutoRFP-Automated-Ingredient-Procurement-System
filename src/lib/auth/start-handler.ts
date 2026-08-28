@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 
 import {
+  InvalidJsonBodyError,
+  readBoundedJson,
+  RequestBodyTooLargeError,
+} from '@/lib/api/read-bounded-json';
+import {
   googleAuthAvailable,
   type AuthEnvironment,
 } from '@/lib/auth';
@@ -13,11 +18,17 @@ import {
   createGoogleOnboardingCookie,
   GoogleOnboardingError,
 } from '@/lib/auth/oauth-start';
+import { consumeWorkspaceCreationRateLimit } from '@/lib/auth/rate-limit';
+
+const MAX_SIGNUP_BODY_BYTES = 16 * 1_024;
+const GENERIC_SIGNUP_ERROR =
+  'Unable to create the workspace right now. Try again shortly.';
 
 type AuthStartDependencies = {
   env: AuthEnvironment;
   emailSignup: typeof createEmailWorkspace;
   now: () => Date;
+  rateLimit: typeof consumeWorkspaceCreationRateLimit;
 };
 
 function errorResponse(error: unknown) {
@@ -28,21 +39,38 @@ function errorResponse(error: unknown) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
   return NextResponse.json(
-    { error: 'Unable to create the workspace right now. Try again shortly.' },
+    { error: GENERIC_SIGNUP_ERROR },
     { status: 503 },
   );
+}
+
+function invalidBodyResponse(error: unknown) {
+  if (error instanceof RequestBodyTooLargeError) {
+    return NextResponse.json(
+      { error: 'Signup details must be smaller than 16 KB.' },
+      { status: 413 },
+    );
+  }
+  if (error instanceof InvalidJsonBodyError) {
+    return NextResponse.json(
+      { error: 'Send valid signup details.' },
+      { status: 400 },
+    );
+  }
+  return null;
 }
 
 export function createAuthStartHandler(dependencies: AuthStartDependencies) {
   return async function authStart(request: Request) {
     let body: EmailSignupInput & { method?: string };
     try {
-      body = (await request.json()) as EmailSignupInput & { method?: string };
-    } catch {
-      return NextResponse.json(
-        { error: 'Send valid signup details.' },
-        { status: 400 },
-      );
+      const parsed = await readBoundedJson(request, MAX_SIGNUP_BODY_BYTES);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new InvalidJsonBodyError();
+      }
+      body = parsed as EmailSignupInput & { method?: string };
+    } catch (error) {
+      return invalidBodyResponse(error) ?? errorResponse(error);
     }
 
     if (body.method !== 'email' && body.method !== 'google') {
@@ -52,11 +80,37 @@ export function createAuthStartHandler(dependencies: AuthStartDependencies) {
       );
     }
 
+    const now = dependencies.now();
+    try {
+      const rateLimit = await dependencies.rateLimit({
+        email: body.email,
+        request,
+        now,
+      });
+      if (!rateLimit.allowed) {
+        return NextResponse.json(
+          { error: GENERIC_SIGNUP_ERROR },
+          {
+            status: 429,
+            headers: { 'Retry-After': String(rateLimit.retryAfterSeconds) },
+          },
+        );
+      }
+    } catch (error) {
+      return errorResponse(error);
+    }
+
     if (body.method === 'email') {
       try {
         await dependencies.emailSignup(body);
         return NextResponse.json({ ok: true }, { status: 201 });
       } catch (error) {
+        if (
+          error instanceof EmailSignupError &&
+          error.code === 'EMAIL_ALREADY_REGISTERED'
+        ) {
+          return NextResponse.json({ ok: true }, { status: 201 });
+        }
         return errorResponse(error);
       }
     }
@@ -91,11 +145,15 @@ export function createAuthStartHandler(dependencies: AuthStartDependencies) {
         },
         {
           secret,
-          now: dependencies.now(),
+          now,
           secure: dependencies.env.NODE_ENV === 'production',
         },
       );
-      const response = NextResponse.json({ ok: true, provider: 'google' });
+      const response = NextResponse.json({
+        ok: true,
+        provider: 'google',
+        flowId: cookie.flowId,
+      });
       response.cookies.set(cookie.name, cookie.value, cookie.options);
       return response;
     } catch (error) {

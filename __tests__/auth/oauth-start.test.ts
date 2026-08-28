@@ -26,7 +26,9 @@ describe('Google signup onboarding cookie', () => {
       secure: true,
     });
 
-    expect(cookie.name).toBe(GOOGLE_ONBOARDING_COOKIE);
+    const flowId = cookie.name.slice(`${GOOGLE_ONBOARDING_COOKIE}.`.length);
+    expect(flowId).toMatch(/^[A-Za-z0-9_-]{20,64}$/);
+    expect(cookie.name).toBe(`${GOOGLE_ONBOARDING_COOKIE}.${flowId}`);
     expect(cookie.options).toMatchObject({
       httpOnly: true,
       sameSite: 'lax',
@@ -53,6 +55,7 @@ describe('Google signup onboarding cookie', () => {
       timezone: 'Asia/Kolkata',
       gstin: '29ABCDE1234F1Z5',
       expiresAt: '2026-08-28T00:10:00.000Z',
+      flowId,
     });
   });
 
@@ -107,5 +110,27 @@ describe('Google signup onboarding cookie', () => {
         },
       ),
     ).toThrow('too long');
+  });
+
+  it('rejects aggregate maximum multibyte details before they can overflow a browser cookie', () => {
+    expect(() =>
+      createGoogleOnboardingCookie(
+        {
+          ...onboarding,
+          restaurantName: '店'.repeat(200),
+          ownerName: '厨'.repeat(200),
+          addressLine: '界'.repeat(500),
+          city: '市'.repeat(120),
+          state: '州'.repeat(120),
+        },
+        {
+          secret: 'test-secret-that-is-long-enough',
+          now: new Date('2026-08-28T00:00:00.000Z'),
+          secure: true,
+        },
+      ),
+    ).toThrow(
+      'Workspace details are too long for Google sign up. Shorten the restaurant name or address.',
+    );
   });
 });

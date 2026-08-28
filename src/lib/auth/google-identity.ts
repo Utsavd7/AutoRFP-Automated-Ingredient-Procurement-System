@@ -38,7 +38,8 @@ type GoogleIdentityErrorCode =
   | 'GOOGLE_EMAIL_MISMATCH'
   | 'GOOGLE_ACCOUNT_NOT_REGISTERED'
   | 'EMAIL_ALREADY_REGISTERED'
-  | 'ACCOUNT_INACTIVE';
+  | 'ACCOUNT_INACTIVE'
+  | 'GOOGLE_UNAVAILABLE';
 
 export class GoogleIdentityError extends Error {
   constructor(
@@ -122,60 +123,68 @@ export async function resolveGoogleIdentity(
     );
   }
 
-  const existingIdentity = await repository.findIdentity(
-    provider,
-    providerAccountId,
-  );
-  if (existingIdentity) {
-    const user = active(existingIdentity);
-    await repository.touchLogin(user.tenantId, user.userId);
-    return user;
-  }
-
-  if (!input.onboarding) {
-    throw new GoogleIdentityError(
-      'GOOGLE_ACCOUNT_NOT_REGISTERED',
-      'No workspace is connected to this Google account. Start a workspace first.',
-    );
-  }
-  if (input.onboarding.email !== email) {
-    throw new GoogleIdentityError(
-      'GOOGLE_EMAIL_MISMATCH',
-      'Continue with the same Google email used to start signup.',
-    );
-  }
-  if (await repository.findUserByEmail(email)) {
-    throw new GoogleIdentityError(
-      'EMAIL_ALREADY_REGISTERED',
-      'That email already has an account. Sign in with its existing method.',
-    );
-  }
-
   try {
-    return active(
-      await repository.createOwnerIdentity({
-        ...input.onboarding,
-        email,
-        provider,
-        providerAccountId,
-      }),
-    );
-  } catch (error) {
-    if (!uniqueConflict(error)) throw error;
-
-    const racedIdentity = await repository.findIdentity(
+    const existingIdentity = await repository.findIdentity(
       provider,
       providerAccountId,
     );
-    if (racedIdentity) return active(racedIdentity);
+    if (existingIdentity) {
+      const user = active(existingIdentity);
+      await repository.touchLogin(user.tenantId, user.userId);
+      return user;
+    }
 
+    if (!input.onboarding) {
+      throw new GoogleIdentityError(
+        'GOOGLE_ACCOUNT_NOT_REGISTERED',
+        'No workspace is connected to this Google account. Start a workspace first.',
+      );
+    }
+    if (input.onboarding.email !== email) {
+      throw new GoogleIdentityError(
+        'GOOGLE_EMAIL_MISMATCH',
+        'Continue with the same Google email used to start signup.',
+      );
+    }
     if (await repository.findUserByEmail(email)) {
       throw new GoogleIdentityError(
         'EMAIL_ALREADY_REGISTERED',
         'That email already has an account. Sign in with its existing method.',
       );
     }
-    throw error;
+
+    try {
+      return active(
+        await repository.createOwnerIdentity({
+          ...input.onboarding,
+          email,
+          provider,
+          providerAccountId,
+        }),
+      );
+    } catch (error) {
+      if (!uniqueConflict(error)) throw error;
+
+      const racedIdentity = await repository.findIdentity(
+        provider,
+        providerAccountId,
+      );
+      if (racedIdentity) return active(racedIdentity);
+
+      if (await repository.findUserByEmail(email)) {
+        throw new GoogleIdentityError(
+          'EMAIL_ALREADY_REGISTERED',
+          'That email already has an account. Sign in with its existing method.',
+        );
+      }
+      throw error;
+    }
+  } catch (error) {
+    if (error instanceof GoogleIdentityError) throw error;
+    throw new GoogleIdentityError(
+      'GOOGLE_UNAVAILABLE',
+      'Google sign-in is temporarily unavailable. Try again shortly.',
+    );
   }
 }
 

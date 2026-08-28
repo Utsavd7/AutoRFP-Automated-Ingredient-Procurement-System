@@ -2,20 +2,20 @@ import NextAuth from 'next-auth';
 
 import {
   createRequestAuthOptions,
-  expiredGoogleOnboardingHeader,
-  shouldClearGoogleOnboarding,
+  googleOnboardingHeaders,
 } from '@/lib/auth/request-options';
 
 async function handler(request: Request, context: unknown) {
+  const onboardingRequest = request.clone();
   const response = await NextAuth(createRequestAuthOptions(request))(
     request,
     context,
   );
-  if (shouldClearGoogleOnboarding(request)) {
-    response.headers.append(
-      'Set-Cookie',
-      expiredGoogleOnboardingHeader(process.env.NODE_ENV === 'production'),
-    );
+  for (const header of await googleOnboardingHeaders(
+    onboardingRequest,
+    response,
+  )) {
+    response.headers.append('Set-Cookie', header);
   }
   return response;
 }

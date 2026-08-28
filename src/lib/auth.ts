@@ -12,6 +12,7 @@ import {
   type GoogleIdentityUser,
 } from '@/lib/auth/google-identity';
 import type { GoogleOnboarding } from '@/lib/auth/oauth-start';
+import { consumeCredentialsRateLimit } from '@/lib/auth/rate-limit';
 
 export type AuthEnvironment = {
   GOOGLE_CLIENT_ID?: string;
@@ -24,6 +25,9 @@ type AuthOptionsInput = {
   env?: AuthEnvironment;
   googleOnboarding?: GoogleOnboarding | null;
   credentialsRepository?: CredentialsRepository;
+  credentialsClientIdentifier?: string | null;
+  credentialsRateLimit?: typeof consumeCredentialsRateLimit;
+  now?: () => Date;
   googleIdentityRepository?: GoogleIdentityRepository;
 };
 
@@ -51,6 +55,11 @@ export function createAuthOptions(
             password: credentials?.password,
           },
           input.credentialsRepository,
+          {
+            clientIdentifier: input.credentialsClientIdentifier,
+            now: input.now?.() ?? new Date(),
+            rateLimit: input.credentialsRateLimit,
+          },
         );
       },
     }),
@@ -71,6 +80,10 @@ export function createAuthOptions(
   return {
     secret: env.NEXTAUTH_SECRET,
     session: { strategy: 'jwt' },
+    pages: {
+      signIn: '/signin',
+      error: '/signin',
+    },
     providers,
     callbacks: {
       async signIn({ account, profile }) {

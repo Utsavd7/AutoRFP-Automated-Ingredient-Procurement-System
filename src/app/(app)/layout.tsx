@@ -2,17 +2,18 @@
 import { useState, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { signOut } from 'next-auth/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Toaster } from 'sonner';
 import {
   ChefHat, LayoutDashboard, PlusCircle, Clock, Settings,
-  Menu, X, LogOut, BrainCircuit, Command
+  Menu, X, BrainCircuit, Command
 } from 'lucide-react';
 import type { RestaurantAccount } from '@/lib/tenant';
 import { PageSkeleton } from '@/components/Skeleton';
 import CommandPalette from '@/components/CommandPalette';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { SignOutButton } from '@/components/auth/SignOutButton';
+import { createSignInRedirect } from '@/lib/auth/callback-url';
 
 const NAV = [
   { href: '/dashboard',    icon: LayoutDashboard, label: 'Dashboard' },
@@ -26,12 +27,10 @@ function SidebarContent({
   account,
   pathname,
   onNav,
-  onSignOut,
 }: {
   account: RestaurantAccount;
   pathname: string;
   onNav: () => void;
-  onSignOut: () => void;
 }) {
   return (
     <div className="flex flex-col h-full bg-[#060606] border-r border-white/[0.06]">
@@ -101,13 +100,9 @@ function SidebarContent({
             <p className="text-[10px] text-[#8A8F98] truncate">{account.cuisineType} · {account.location}</p>
           </div>
         </div>
-        <button
-          onClick={onSignOut}
+        <SignOutButton
           className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[12px] font-semibold text-[#8A8F98] hover:text-red-400 hover:bg-red-500/5 transition-all duration-150"
-        >
-          <LogOut className="w-3.5 h-3.5 shrink-0" />
-          Sign out
-        </button>
+        />
       </div>
     </div>
   );
@@ -119,35 +114,71 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [account, setAccount] = useState<RestaurantAccount | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [ready, setReady] = useState(false);
+  const [accountUnavailable, setAccountUnavailable] = useState(false);
+  const [accountRetry, setAccountRetry] = useState(0);
 
   useEffect(() => {
-    fetch('/api/account')
+    let active = true;
+    const redirectToSignIn = () => {
+      const currentLocation = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      router.replace(createSignInRedirect(currentLocation));
+    };
+
+    fetch('/api/account', { cache: 'no-store' })
       .then(async res => {
-        if (!res.ok) {
-          router.replace('/');
+        if (res.status === 401) {
+          redirectToSignIn();
           return null;
         }
+        if (!res.ok) throw new Error('Account request failed');
         const data = await res.json() as { account?: RestaurantAccount };
-        if (!data.account) {
-          router.replace('/');
-          return null;
-        }
+        if (!data.account) throw new Error('Account response was incomplete');
         return data.account;
       })
       .then(account => {
-        if (!account) return;
+        if (!active || !account) return;
         setAccount(account);
         setReady(true);
       })
       .catch(() => {
-        router.replace('/');
+        if (!active) return;
+        setReady(false);
+        setAccountUnavailable(true);
       });
-  }, [router]);
 
-  const handleSignOut = async () => {
-    await signOut({ redirect: false });
-    router.push('/');
-  };
+    return () => {
+      active = false;
+    };
+  }, [accountRetry, router]);
+
+  if (accountUnavailable) {
+    return (
+      <main className="min-h-screen bg-black flex items-center justify-center px-5">
+        <section
+          className="w-full max-w-md rounded-xl border border-white/10 bg-[#0A0A0A] p-6 text-[#EEEEEE] shadow-2xl"
+          role="alert"
+        >
+          <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-violet-300">
+            Workspace connection
+          </p>
+          <h1 className="mt-2 text-xl font-bold">Workspace is temporarily unavailable</h1>
+          <p className="mt-3 text-sm leading-6 text-[#A5A5A5]">
+            Your session is still active. We could not load the restaurant account right now.
+          </p>
+          <button
+            className="mt-5 rounded-lg bg-white px-4 py-2 text-sm font-bold text-black transition-colors hover:bg-[#E5E5E5]"
+            onClick={() => {
+              setAccountUnavailable(false);
+              setAccountRetry(value => value + 1);
+            }}
+            type="button"
+          >
+            Try again
+          </button>
+        </section>
+      </main>
+    );
+  }
 
   if (!ready || !account) {
     return <div className="min-h-screen bg-black"><PageSkeleton /></div>;
@@ -167,7 +198,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       {/* Desktop sidebar */}
       <div className="hidden lg:flex lg:w-56 lg:shrink-0 lg:flex-col">
         <div className="fixed top-0 left-0 w-56 h-full z-40">
-          <SidebarContent account={account} pathname={pathname} onNav={() => {}} onSignOut={handleSignOut} />
+          <SidebarContent account={account} pathname={pathname} onNav={() => {}} />
         </div>
       </div>
 
@@ -189,8 +220,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               exit={{ x: -256 }}
               transition={{ type: 'spring', stiffness: 400, damping: 40 }}
             >
-              <SidebarContent account={account} pathname={pathname} onNav={() => setMobileOpen(false)} onSignOut={handleSignOut} />
-              <button onClick={() => setMobileOpen(false)} className="absolute top-4 right-4 text-[#8A8F98] hover:text-white transition-colors">
+              <SidebarContent account={account} pathname={pathname} onNav={() => setMobileOpen(false)} />
+              <button aria-label="Close navigation" onClick={() => setMobileOpen(false)} className="absolute top-4 right-4 text-[#8A8F98] hover:text-white transition-colors">
                 <X className="w-4 h-4" />
               </button>
             </motion.div>
@@ -202,7 +233,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <div className="flex-1 flex flex-col min-w-0 min-h-screen">
         {/* Mobile top bar */}
         <div className="lg:hidden flex items-center gap-3 px-4 h-14 border-b border-white/[0.06] bg-[#060606] shrink-0 sticky top-0 z-30">
-          <button onClick={() => setMobileOpen(true)} className="text-[#8A8F98] hover:text-white transition-colors p-1">
+          <button aria-label="Open navigation" onClick={() => setMobileOpen(true)} className="text-[#8A8F98] hover:text-white transition-colors p-1">
             <Menu className="w-5 h-5" />
           </button>
           <div className="flex items-center gap-2">

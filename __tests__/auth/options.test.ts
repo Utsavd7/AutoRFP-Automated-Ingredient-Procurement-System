@@ -30,6 +30,15 @@ describe('NextAuth production options', () => {
     );
   });
 
+  it('uses the dedicated account pages for sign-in and safe callback errors', () => {
+    const options = createAuthOptions({ env: {} });
+
+    expect(options.pages).toEqual({
+      signIn: '/signin',
+      error: '/signin',
+    });
+  });
+
   it('stores only userId and tenantId in the application JWT', async () => {
     const options = createAuthOptions({ env: {} });
     const jwt = options.callbacks?.jwt;

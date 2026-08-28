@@ -4,5 +4,6 @@ module.exports = {
   roots: ['<rootDir>/__tests__'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
+    '\\.module\\.css$': '<rootDir>/test-support/style-mock.cjs',
   },
 };

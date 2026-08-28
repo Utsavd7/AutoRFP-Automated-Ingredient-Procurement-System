@@ -6,6 +6,10 @@ import { assertRuntimeDatabaseRole } from '@/lib/db/runtime-role';
 import { prisma } from '@/lib/prisma';
 
 export type RateLimitScope =
+  | 'auth-credentials-client'
+  | 'auth-credentials-email'
+  | 'auth-workspace-create-client'
+  | 'auth-workspace-create-email'
   | 'member-invitation-accept'
   | 'supplier-request';
 
@@ -55,6 +59,20 @@ export async function consumeDigestRateLimit(
   const [bucket] = await client.$queryRaw<
     Array<{ count: number; resetAt: Date }>
   >(Prisma.sql`
+    WITH stale AS (
+      SELECT "keyDigest"
+      FROM "RateLimitBucket"
+      WHERE "resetAt" <= ${input.now}
+        AND "keyDigest" <> ${keyDigest}
+      ORDER BY "resetAt", "keyDigest"
+      LIMIT 25
+      FOR UPDATE SKIP LOCKED
+    ), removed AS (
+      DELETE FROM "RateLimitBucket" AS expired
+      USING stale
+      WHERE expired."keyDigest" = stale."keyDigest"
+      RETURNING expired."keyDigest"
+    )
     INSERT INTO "RateLimitBucket" AS bucket (
       "keyDigest", "count", "resetAt", "updatedAt"
     )

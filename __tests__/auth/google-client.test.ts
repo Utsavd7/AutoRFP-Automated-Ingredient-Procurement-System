@@ -23,12 +23,14 @@ describe('Google authentication client flow', () => {
     const googleSignIn = jest.fn().mockResolvedValue(undefined);
 
     await beginGoogleAuthentication(
-      { mode: 'signin' },
+      { mode: 'signin', callbackUrl: '/settings' },
       { fetcher, googleSignIn },
     );
 
     expect(fetcher).not.toHaveBeenCalled();
-    expect(googleSignIn).toHaveBeenCalledWith('google');
+    expect(googleSignIn).toHaveBeenCalledWith('google', {
+      callbackUrl: '/settings',
+    });
   });
 
   it('stores every real workspace field before starting Google signup', async () => {
@@ -45,7 +47,11 @@ describe('Google authentication client flow', () => {
       return {
         ok: true,
         status: 200,
-        json: async () => ({ ok: true, provider: 'google' }),
+        json: async () => ({
+          ok: true,
+          provider: 'google',
+          flowId: 'A23456789012345678901234',
+        }),
       };
     });
     const googleSignIn = jest.fn(async () => {
@@ -53,12 +59,15 @@ describe('Google authentication client flow', () => {
     });
 
     await beginGoogleAuthentication(
-      { mode: 'signup', signup },
+      { mode: 'signup', signup, callbackUrl: '/procurement' },
       { fetcher, googleSignIn },
     );
 
     expect(events).toEqual(['onboarding', 'google']);
-    expect(googleSignIn).toHaveBeenCalledWith('google');
+    expect(googleSignIn).toHaveBeenCalledWith('google', {
+      callbackUrl: '/procurement',
+      autorfpSignupFlow: 'A23456789012345678901234',
+    });
   });
 
   it('keeps the Google action unavailable when the providers endpoint omits it', async () => {

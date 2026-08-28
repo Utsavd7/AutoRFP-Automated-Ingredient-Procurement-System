@@ -13,6 +13,9 @@
     "lint": "eslint",
     "test": "jest --runInBand --testPathIgnorePatterns=/__tests__/integration/",
     "test:integration": "jest --config jest.integration.config.cjs --runInBand",
+    "test:e2e": "playwright test",
+    "test:e2e:auth": "playwright test tests/e2e/auth.spec.ts",
+    "test:e2e:google-live": "AUTH_E2E_LIVE_GOOGLE=1 playwright test tests/e2e/google-live.spec.ts --project=desktop-chromium",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -27,6 +30,7 @@
     "chromadb": "^3.4.3",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
+    "csv-parse": "^7.0.2",
     "date-fns": "^4.1.0",
     "dotenv": "^17.3.1",
     "framer-motion": "^12.38.0",
@@ -44,11 +48,13 @@
     "tailwind-merge": "^3.5.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.56.0",
     "@tailwindcss/postcss": "^4",
     "@types/jest": "^30.0.0",
     "@types/node": "^20.19.37",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "esbuild": "^0.28.2",
     "eslint": "^9",
     "eslint-config-next": "16.3.3",
     "jest": "^30.3.0",

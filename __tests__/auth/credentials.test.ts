@@ -38,12 +38,105 @@ function repository(
   };
 }
 
+function allowRateLimit() {
+  return jest.fn().mockResolvedValue({
+    allowed: true,
+    retryAfterSeconds: 900,
+  });
+}
+
+function authenticate(
+  credentials: { email?: string | null; password?: string | null },
+  repo: CredentialsRepository,
+  dependencies: Parameters<typeof authenticateCredentials>[2] = {},
+) {
+  return authenticateCredentials(credentials, repo, {
+    clientIdentifier: null,
+    now: new Date('2026-08-28T00:00:00.000Z'),
+    rateLimit: allowRateLimit(),
+    ...dependencies,
+  });
+}
+
 describe('credentials authentication', () => {
+  it('rejects a throttled attempt with the same generic credential failure', async () => {
+    const repo = repository();
+    const rateLimit = jest.fn().mockResolvedValue({
+      allowed: false,
+      retryAfterSeconds: 300,
+    });
+    await expect(
+      authenticate(
+        { email: ' ASHA@EXAMPLE.COM ', password: 'valid password' },
+        repo,
+        {
+          clientIdentifier: '203.0.113.9',
+          now: new Date('2026-08-28T00:00:00.000Z'),
+          rateLimit,
+        },
+      ),
+    ).rejects.toMatchObject({
+      code: 'INVALID_CREDENTIALS',
+      message: 'Email or password is incorrect.',
+    });
+    expect(rateLimit).toHaveBeenCalledWith({
+      clientIdentifier: '203.0.113.9',
+      email: 'asha@example.com',
+      now: new Date('2026-08-28T00:00:00.000Z'),
+    });
+    expect(repo.findByEmail).not.toHaveBeenCalled();
+  });
+
+  it('performs Argon2-shaped verification for absent and unusable accounts', async () => {
+    const verify = jest.fn().mockResolvedValue({
+      valid: false,
+      needsUpgrade: false,
+    });
+    const allow = jest.fn().mockResolvedValue({
+      allowed: true,
+      retryAfterSeconds: 300,
+    });
+    const cases = [
+      repository({ findByEmail: jest.fn().mockResolvedValue(null) }),
+      repository({
+        findByEmail: jest.fn().mockResolvedValue({ ...user, isActive: false }),
+      }),
+      repository({
+        findByEmail: jest.fn().mockResolvedValue({
+          ...user,
+          passwordHash: null,
+          legacyPasswordSalt: null,
+        }),
+      }),
+    ];
+
+    for (const repo of cases) {
+      verify.mockClear();
+      await expect(
+        authenticate(
+          { email: user.email, password: 'wrong password' },
+          repo,
+          {
+            clientIdentifier: null,
+            now: new Date('2026-08-28T00:00:00.000Z'),
+            rateLimit: allow,
+            verifyPassword: verify,
+          },
+        ),
+      ).rejects.toMatchObject({ code: 'INVALID_CREDENTIALS' });
+      expect(verify).toHaveBeenCalledWith(
+        'wrong password',
+        expect.stringMatching(/^\$argon2id\$/),
+        null,
+      );
+    }
+  });
+
   it('lowercases email and immediately replaces a verified legacy hash', async () => {
     const repo = repository();
 
     await expect(
-      authenticateCredentials(
+      authenticate(
         { email: ' ASHA@EXAMPLE.COM ', password: 'valid password' },
         repo,
       ),
@@ -67,7 +160,7 @@ describe('credentials authentication', () => {
 
   it('records login without replacing a current Argon2id hash', async () => {
     const firstRepo = repository();
-    await authenticateCredentials(
+    await authenticate(
       { email: user.email, password: 'valid password' },
       firstRepo,
     );
@@ -80,7 +173,7 @@ describe('credentials authentication', () => {
       }),
     });
 
-    await authenticateCredentials(
+    await authenticate(
       { email: user.email, password: 'valid password' },
       repo,
     );
@@ -117,7 +210,7 @@ describe('credentials authentication', () => {
 
     for (const repo of cases) {
       await expect(
-        authenticateCredentials(
+        authenticate(
           { email: user.email, password: 'wrong password' },
           repo,
         ),
@@ -133,11 +226,29 @@ describe('credentials authentication', () => {
     const repo = repository();
 
     await expect(
-      authenticateCredentials(
+      authenticate(
         { email: user.email, password: 'x'.repeat(1_025) },
         repo,
       ),
     ).rejects.toMatchObject({ code: 'INVALID_CREDENTIALS' });
     expect(repo.findByEmail).not.toHaveBeenCalled();
+  });
+
+  it('replaces database details with a safe temporary-unavailability error', async () => {
+    const repo = repository({
+      findByEmail: jest
+        .fn()
+        .mockRejectedValue(new Error('postgres://admin:secret@internal/db')),
+    });
+
+    await expect(
+      authenticate(
+        { email: user.email, password: 'valid password' },
+        repo,
+      ),
+    ).rejects.toMatchObject({
+      code: 'AUTH_UNAVAILABLE',
+      message: 'Sign in is temporarily unavailable. Try again shortly.',
+    });
   });
 });

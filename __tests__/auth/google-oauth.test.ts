@@ -218,4 +218,19 @@ describe('Google OAuth identity resolution', () => {
       resolveGoogleIdentity({ account, profile, onboarding }, repo),
     ).rejects.toMatchObject({ code: 'EMAIL_ALREADY_REGISTERED' });
   });
+
+  it('replaces Google database details with a safe provider error', async () => {
+    const repo = repository({
+      findIdentity: jest
+        .fn()
+        .mockRejectedValue(new Error('postgres://admin:secret@internal/db')),
+    });
+
+    await expect(
+      resolveGoogleIdentity({ account, profile, onboarding: null }, repo),
+    ).rejects.toMatchObject<Partial<GoogleIdentityError>>({
+      code: 'GOOGLE_UNAVAILABLE',
+      message: 'Google sign-in is temporarily unavailable. Try again shortly.',
+    });
+  });
 });

@@ -22,6 +22,7 @@ const prismaSchema = path.join(projectRoot, 'prisma/schema.prisma');
 const migrationOrder = [
   '20260827000100_lean_baseline',
   '20260827000200_launch_schema',
+  '20260827000300_forced_rls',
 ] as const;
 
 export type PostgresHarness = {
@@ -36,6 +37,7 @@ function runPrisma(args: string[], databaseUrl: string): Promise<void> {
       env: {
         ...process.env,
         DATABASE_URL: databaseUrl,
+        DIRECT_URL: databaseUrl,
         NO_COLOR: '1',
       },
       shell: false,

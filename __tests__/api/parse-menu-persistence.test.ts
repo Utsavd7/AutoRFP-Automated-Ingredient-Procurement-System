@@ -1,16 +1,13 @@
 import { POST } from '@/app/api/parse-menu/route';
 import { requireApiTenant } from '@/lib/api/require-api-tenant';
-import { prisma } from '@/lib/prisma';
+import { createMenuDraft } from '@/lib/menu/create-menu-draft';
 
 jest.mock('@/lib/api/require-api-tenant', () => ({
   requireApiTenant: jest.fn(),
 }));
 
-jest.mock('@/lib/prisma', () => ({
-  prisma: {
-    menu: { create: jest.fn() },
-    recipe: { create: jest.fn() },
-  },
+jest.mock('@/lib/menu/create-menu-draft', () => ({
+  createMenuDraft: jest.fn(),
 }));
 
 const postMenu = (menuText: string) =>
@@ -23,8 +20,7 @@ const postMenu = (menuText: string) =>
   );
 
 describe('parse-menu persistence', () => {
-  const menuCreate = jest.mocked(prisma.menu.create);
-  const recipeCreate = jest.mocked(prisma.recipe.create);
+  const menuCreate = jest.mocked(createMenuDraft);
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -40,40 +36,15 @@ describe('parse-menu persistence', () => {
       { id: 'recipe-2', name: 'Masala Dosa', ingredients: [] },
     ];
     menuCreate.mockResolvedValue({ id: 'menu-1', recipes } as never);
-    recipeCreate
-      .mockResolvedValueOnce(recipes[0] as never)
-      .mockResolvedValueOnce(recipes[1] as never);
 
     const response = await postMenu('Paneer Tikka\nMasala Dosa');
 
     expect(response.status).toBe(200);
     expect(menuCreate).toHaveBeenCalledTimes(1);
     expect(menuCreate).toHaveBeenCalledWith({
-      data: {
-        tenantId: 'session-tenant',
-        name: 'Menu draft',
-        sourceText: 'Paneer Tikka\nMasala Dosa',
-        status: 'DRAFT',
-        recipes: {
-          create: [
-            {
-              name: 'Paneer Tikka',
-              position: 0,
-              tenant: { connect: { id: 'session-tenant' } },
-              ingredients: { create: [] },
-            },
-            {
-              name: 'Masala Dosa',
-              position: 1,
-              tenant: { connect: { id: 'session-tenant' } },
-              ingredients: { create: [] },
-            },
-          ],
-        },
-      },
-      include: { recipes: { include: { ingredients: true } } },
+      tenantId: 'session-tenant',
+      menuText: 'Paneer Tikka\nMasala Dosa',
     });
-    expect(recipeCreate).not.toHaveBeenCalled();
     await expect(response.json()).resolves.toMatchObject({
       success: true,
       menuId: 'menu-1',
@@ -91,23 +62,10 @@ describe('parse-menu persistence', () => {
     const response = await postMenu('Dal Makhani');
     const problem = await response.json();
 
-    expect(menuCreate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          recipes: {
-            create: [
-              {
-                name: 'Dal Makhani',
-                position: 0,
-                tenant: { connect: { id: 'session-tenant' } },
-                ingredients: { create: [] },
-              },
-            ],
-          },
-        }),
-      }),
-    );
-    expect(recipeCreate).not.toHaveBeenCalled();
+    expect(menuCreate).toHaveBeenCalledWith({
+      tenantId: 'session-tenant',
+      menuText: 'Dal Makhani',
+    });
     expect(response.status).toBe(500);
     expect(response.headers.get('content-type')).toContain(
       'application/problem+json',

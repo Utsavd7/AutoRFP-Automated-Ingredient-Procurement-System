@@ -1,8 +1,10 @@
 import { randomUUID } from 'crypto';
 
-import type { UserRole } from '@prisma/client';
+import { Prisma, type PrismaClient, type UserRole } from '@prisma/client';
 
 import type { GoogleOnboarding } from '@/lib/auth/oauth-start';
+import { assertRuntimeDatabaseRole } from '@/lib/db/runtime-role';
+import { withTenant } from '@/lib/db/tenant-transaction';
 import { prisma } from '@/lib/prisma';
 
 export type GoogleIdentityUser = {
@@ -27,7 +29,7 @@ export type GoogleIdentityRepository = {
       providerAccountId: string;
     },
   ): Promise<GoogleIdentityUser>;
-  touchLogin(userId: string): Promise<void>;
+  touchLogin(tenantId: string, userId: string): Promise<void>;
 };
 
 type GoogleIdentityErrorCode =
@@ -79,6 +81,18 @@ function uniqueConflict(error: unknown) {
   );
 }
 
+function canonicalProviderAccountId(
+  value: string | null | undefined,
+): value is string {
+  return Boolean(
+    typeof value === 'string' &&
+      value.length > 0 &&
+      value === value.trim() &&
+      Buffer.byteLength(value, 'utf8') <= 512 &&
+      !/[\u0000-\u001f\u007f]/.test(value),
+  );
+}
+
 export async function resolveGoogleIdentity(
   input: {
     account: GoogleAccount;
@@ -93,8 +107,8 @@ export async function resolveGoogleIdentity(
 
   if (
     provider !== 'google' ||
-    !providerAccountId ||
-    (input.profile.sub && input.profile.sub !== providerAccountId)
+    !canonicalProviderAccountId(providerAccountId) ||
+    input.profile.sub !== providerAccountId
   ) {
     throw new GoogleIdentityError(
       'INVALID_GOOGLE_IDENTITY',
@@ -114,7 +128,7 @@ export async function resolveGoogleIdentity(
   );
   if (existingIdentity) {
     const user = active(existingIdentity);
-    await repository.touchLogin(user.userId);
+    await repository.touchLogin(user.tenantId, user.userId);
     return user;
   }
 
@@ -185,68 +199,97 @@ function identityUser(input: {
   };
 }
 
-export const prismaGoogleIdentityRepository: GoogleIdentityRepository = {
-  async findIdentity(provider, providerAccountId) {
-    const identity = await prisma.externalIdentity.findUnique({
-      where: {
-        provider_providerAccountId: { provider, providerAccountId },
-      },
-      include: { user: { include: { tenant: true } } },
-    });
-    return identity ? identityUser(identity.user) : null;
-  },
+type GoogleIdentityClient = Pick<PrismaClient, '$queryRaw' | '$transaction'>;
 
-  async findUserByEmail(email) {
-    const user = await prisma.user.findUnique({
-      where: { email },
-      include: { tenant: true },
-    });
-    return user ? identityUser(user) : null;
-  },
-
-  async createOwnerIdentity(input) {
-    const tenantId = randomUUID();
-    const userId = randomUUID();
-    return prisma.$transaction(async (transaction) => {
-      await transaction.tenant.create({
-        data: {
-          id: tenantId,
-          name: input.restaurantName,
-          addressLine: input.addressLine,
-          city: input.city,
-          state: input.state,
-          pin: input.pin,
-          phone: input.phone,
-          timezone: input.timezone,
-          gstin: input.gstin,
-        },
-      });
-      const user = await transaction.user.create({
-        data: {
-          id: userId,
-          tenantId,
-          name: input.ownerName,
-          email: input.email,
-          role: 'OWNER',
-        },
-        include: { tenant: true },
-      });
-      await transaction.externalIdentity.create({
-        data: {
-          tenantId,
-          userId,
-          provider: input.provider,
-          providerAccountId: input.providerAccountId,
-        },
-      });
-      return identityUser(user);
-    });
-  },
-
-  async touchLogin(userId) {
-    await prisma.user.update({
-      where: { id: userId },
-      data: { lastLoginAt: new Date() },
-    });
-  },
+type GoogleIdentityRow = {
+  userId: string;
+  tenantId: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  userIsActive: boolean;
+  tenantIsActive: boolean;
 };
+
+export function createPrismaGoogleIdentityRepository(
+  client: GoogleIdentityClient,
+): GoogleIdentityRepository {
+  return {
+    async findIdentity(provider, providerAccountId) {
+      await assertRuntimeDatabaseRole(client);
+      const [identity] = await client.$queryRaw<GoogleIdentityRow[]>(Prisma.sql`
+        SELECT *
+        FROM autorfp_private.autorfp_auth_identity_by_provider(
+          ${provider},
+          ${providerAccountId}
+        )
+      `);
+      return identity ?? null;
+    },
+
+    async findUserByEmail(email) {
+      await assertRuntimeDatabaseRole(client);
+      const [user] = await client.$queryRaw<GoogleIdentityRow[]>(Prisma.sql`
+        SELECT * FROM autorfp_private.autorfp_auth_identity_by_email(${email})
+      `);
+      return user ?? null;
+    },
+
+    async createOwnerIdentity(input) {
+      const tenantId = randomUUID();
+      const userId = randomUUID();
+      return withTenant(
+        tenantId,
+        async (transaction) => {
+          const tenant = await transaction.tenant.create({
+            data: {
+              id: tenantId,
+              name: input.restaurantName,
+              addressLine: input.addressLine,
+              city: input.city,
+              state: input.state,
+              pin: input.pin,
+              phone: input.phone,
+              timezone: input.timezone,
+              gstin: input.gstin,
+            },
+          });
+          const user = await transaction.user.create({
+            data: {
+              id: userId,
+              tenantId,
+              name: input.ownerName,
+              email: input.email,
+              role: 'OWNER',
+            },
+          });
+          await transaction.externalIdentity.create({
+            data: {
+              tenantId,
+              userId,
+              provider: input.provider,
+              providerAccountId: input.providerAccountId,
+            },
+          });
+          return identityUser({ ...user, tenant });
+        },
+        client,
+      );
+    },
+
+    async touchLogin(tenantId, userId) {
+      await withTenant(
+        tenantId,
+        (transaction) =>
+          transaction.user.update({
+            where: { id: userId },
+            data: { lastLoginAt: new Date() },
+          }).then(() => undefined),
+        client,
+      );
+    },
+  };
+}
+
+export const prismaGoogleIdentityRepository =
+  createPrismaGoogleIdentityRepository(prisma);

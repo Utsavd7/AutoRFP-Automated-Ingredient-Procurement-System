@@ -1,3 +1,7 @@
+import { Prisma, type PrismaClient } from '@prisma/client';
+
+import { withTenant } from '@/lib/db/tenant-transaction';
+import { assertRuntimeDatabaseRole } from '@/lib/db/runtime-role';
 import { createPasswordRecord, verifyPassword } from '@/lib/password';
 import { prisma } from '@/lib/prisma';
 
@@ -15,6 +19,7 @@ type CredentialsUser = {
 export type CredentialsRepository = {
   findByEmail(email: string): Promise<CredentialsUser | null>;
   recordSuccessfulLogin(
+    tenantId: string,
     userId: string,
     passwordUpgrade: {
       passwordHash?: string;
@@ -67,7 +72,11 @@ export async function authenticateCredentials(
   const passwordUpgrade = verification.needsUpgrade
     ? await createPasswordRecord(password)
     : {};
-  await repository.recordSuccessfulLogin(user.id, passwordUpgrade);
+  await repository.recordSuccessfulLogin(
+    user.tenantId,
+    user.id,
+    passwordUpgrade,
+  );
 
   return {
     id: user.id,
@@ -78,21 +87,53 @@ export async function authenticateCredentials(
   };
 }
 
-export const prismaCredentialsRepository: CredentialsRepository = {
-  async findByEmail(email) {
-    return prisma.user.findUnique({
-      where: { email },
-      include: { tenant: true },
-    });
-  },
+type CredentialsClient = Pick<PrismaClient, '$queryRaw' | '$transaction'>;
 
-  async recordSuccessfulLogin(userId, passwordUpgrade) {
-    await prisma.user.update({
-      where: { id: userId },
-      data: {
-        lastLoginAt: new Date(),
-        ...passwordUpgrade,
-      },
-    });
-  },
+type CredentialsLookupRow = Omit<CredentialsUser, 'isActive' | 'tenant'> & {
+  userIsActive: boolean;
+  tenantIsActive: boolean;
 };
+
+export function createPrismaCredentialsRepository(
+  client: CredentialsClient,
+): CredentialsRepository {
+  return {
+    async findByEmail(email) {
+      await assertRuntimeDatabaseRole(client);
+      const [user] = await client.$queryRaw<CredentialsLookupRow[]>(Prisma.sql`
+        SELECT *
+        FROM autorfp_private.autorfp_auth_credentials_by_email(${email})
+      `);
+      return user
+        ? {
+            id: user.id,
+            tenantId: user.tenantId,
+            name: user.name,
+            email: user.email,
+            passwordHash: user.passwordHash,
+            legacyPasswordSalt: user.legacyPasswordSalt,
+            isActive: user.userIsActive,
+            tenant: { isActive: user.tenantIsActive },
+          }
+        : null;
+    },
+
+    async recordSuccessfulLogin(tenantId, userId, passwordUpgrade) {
+      await withTenant(
+        tenantId,
+        (transaction) =>
+          transaction.user.update({
+            where: { id: userId },
+            data: {
+              lastLoginAt: new Date(),
+              ...passwordUpgrade,
+            },
+          }).then(() => undefined),
+        client,
+      );
+    },
+  };
+}
+
+export const prismaCredentialsRepository =
+  createPrismaCredentialsRepository(prisma);

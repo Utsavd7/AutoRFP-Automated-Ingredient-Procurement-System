@@ -2,9 +2,8 @@ import { NextResponse } from 'next/server';
 
 import { problemResponse } from '@/lib/api/problem';
 import { requireApiTenant } from '@/lib/api/require-api-tenant';
-import { buildDeterministicMenuDraft } from '@/lib/menu/deterministic-draft';
+import { createMenuDraft } from '@/lib/menu/create-menu-draft';
 import { parseMenuInput } from '@/lib/menu/menu-input';
-import { prisma } from '@/lib/prisma';
 
 export async function POST(req: Request) {
   const access = await requireApiTenant();
@@ -28,25 +27,11 @@ export async function POST(req: Request) {
   }
 
   const { menuText } = input.value;
-  const dishes = buildDeterministicMenuDraft(menuText);
 
   try {
-    const menu = await prisma.menu.create({
-      data: {
-        tenantId: access.tenant.id,
-        name: 'Menu draft',
-        sourceText: menuText,
-        status: 'DRAFT',
-        recipes: {
-          create: dishes.map((dish, position) => ({
-            name: dish.name,
-            position,
-            tenant: { connect: { id: access.tenant.id } },
-            ingredients: { create: [] },
-          })),
-        },
-      },
-      include: { recipes: { include: { ingredients: true } } },
+    const menu = await createMenuDraft({
+      tenantId: access.tenant.id,
+      menuText,
     });
 
     return NextResponse.json({

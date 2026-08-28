@@ -1,3 +1,11 @@
+import { randomUUID } from 'node:crypto';
+
+import type { PrismaClient } from '@prisma/client';
+
+import {
+  withTenant,
+  type TenantTransactionHost,
+} from '@/lib/db/tenant-transaction';
 import { createPasswordRecord } from '@/lib/password';
 import { prisma } from '@/lib/prisma';
 
@@ -123,30 +131,50 @@ export async function createEmailWorkspace(
   }
 }
 
-export const prismaEmailSignupRepository: EmailSignupRepository = {
-  async createOwnerWorkspace(input) {
-    const tenant = await prisma.tenant.create({
-      data: {
-        name: input.restaurantName,
-        addressLine: input.addressLine,
-        city: input.city,
-        state: input.state,
-        pin: input.pin,
-        phone: input.phone,
-        timezone: input.timezone,
-        gstin: input.gstin,
-        users: {
-          create: {
-            name: input.ownerName,
-            email: input.email,
-            passwordHash: input.passwordHash,
-            legacyPasswordSalt: null,
-            role: 'OWNER',
-          },
+type SignupClient = Pick<PrismaClient, '$queryRaw' | '$transaction'> &
+  TenantTransactionHost;
+
+export function createPrismaEmailSignupRepository(
+  client: SignupClient,
+): EmailSignupRepository {
+  return {
+    async createOwnerWorkspace(input) {
+      const tenantId = randomUUID();
+      const userId = randomUUID();
+      return withTenant(
+        tenantId,
+        async (transaction) => {
+          await transaction.tenant.create({
+            data: {
+              id: tenantId,
+              name: input.restaurantName,
+              addressLine: input.addressLine,
+              city: input.city,
+              state: input.state,
+              pin: input.pin,
+              phone: input.phone,
+              timezone: input.timezone,
+              gstin: input.gstin,
+            },
+          });
+          await transaction.user.create({
+            data: {
+              id: userId,
+              tenantId,
+              name: input.ownerName,
+              email: input.email,
+              passwordHash: input.passwordHash,
+              legacyPasswordSalt: null,
+              role: 'OWNER',
+            },
+          });
+          return { tenantId, userId };
         },
-      },
-      include: { users: true },
-    });
-    return { tenantId: tenant.id, userId: tenant.users[0].id };
-  },
-};
+        client,
+      );
+    },
+  };
+}
+
+export const prismaEmailSignupRepository =
+  createPrismaEmailSignupRepository(prisma);

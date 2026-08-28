@@ -56,6 +56,7 @@ describe('credentials authentication', () => {
     });
     expect(repo.findByEmail).toHaveBeenCalledWith('asha@example.com');
     expect(repo.recordSuccessfulLogin).toHaveBeenCalledWith(
+      'tenant-1',
       'user-1',
       expect.objectContaining({
         passwordHash: expect.stringMatching(/^\$argon2id\$/),
@@ -70,7 +71,7 @@ describe('credentials authentication', () => {
       { email: user.email, password: 'valid password' },
       firstRepo,
     );
-    const upgrade = jest.mocked(firstRepo.recordSuccessfulLogin).mock.calls[0][1];
+    const upgrade = jest.mocked(firstRepo.recordSuccessfulLogin).mock.calls[0][2];
     const repo = repository({
       findByEmail: jest.fn().mockResolvedValue({
         ...user,
@@ -84,7 +85,11 @@ describe('credentials authentication', () => {
       repo,
     );
 
-    expect(repo.recordSuccessfulLogin).toHaveBeenCalledWith('user-1', {});
+    expect(repo.recordSuccessfulLogin).toHaveBeenCalledWith(
+      'tenant-1',
+      'user-1',
+      {},
+    );
   });
 
   it('uses one generic failure for wrong, inactive, or OAuth-only accounts', async () => {

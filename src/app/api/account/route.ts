@@ -4,7 +4,8 @@ import {
   requireAccountContext,
   tenantToAccount,
 } from '@/lib/server-account';
-import { prisma } from '@/lib/prisma';
+import { updateWorkspaceAccount } from '@/lib/account/update-workspace';
+import { AuthorizationError, requireOwner } from '@/lib/auth/guards';
 
 export async function GET() {
   const context = await requireAccountContext();
@@ -21,10 +22,11 @@ export async function PUT(req: Request) {
   if (!context) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  if (context.user.role !== 'OWNER') {
+  try {
+    requireOwner(context.user, 'manage-settings');
+  } catch {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
-
   const body = await req.json();
   const name = String(body.name ?? '').trim();
   const email = String(body.email ?? '').trim().toLowerCase();
@@ -51,16 +53,26 @@ export async function PUT(req: Request) {
     );
   }
 
-  const [tenant, user] = await prisma.$transaction([
-    prisma.tenant.update({
-      where: { id: context.tenant.id },
-      data: { name, addressLine, city, state, pin, phone },
-    }),
-    prisma.user.update({
-      where: { id: context.user.id },
-      data: { name: `${name} Owner`, email },
-    }),
-  ]);
+  let updated;
+  try {
+    updated = await updateWorkspaceAccount({
+      actor: { userId: context.user.id, tenantId: context.tenant.id },
+      name,
+      email,
+      addressLine,
+      city,
+      state,
+      pin,
+      phone,
+    });
+  } catch (error) {
+    if (error instanceof AuthorizationError) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+    throw error;
+  }
 
-  return NextResponse.json({ account: tenantToAccount(tenant, user.email) });
+  return NextResponse.json({
+    account: tenantToAccount(updated.tenant, updated.user.email),
+  });
 }

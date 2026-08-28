@@ -96,6 +96,42 @@ describe('Google OAuth identity resolution', () => {
     expect(repo.findIdentity).not.toHaveBeenCalled();
   });
 
+  it('rejects a provider account ID over 512 UTF-8 bytes before database access', async () => {
+    const repo = repository();
+    const oversizedId = 'é'.repeat(257);
+
+    await expect(
+      resolveGoogleIdentity(
+        {
+          account: { provider: 'google', providerAccountId: oversizedId },
+          profile: { ...profile, sub: oversizedId },
+          onboarding,
+        },
+        repo,
+      ),
+    ).rejects.toMatchObject({ code: 'INVALID_GOOGLE_IDENTITY' });
+    expect(repo.findIdentity).not.toHaveBeenCalled();
+  });
+
+  it('requires the canonical Google subject before database access', async () => {
+    const repo = repository();
+
+    await expect(
+      resolveGoogleIdentity(
+        {
+          account: {
+            provider: 'google',
+            providerAccountId: ' google-sub-123 ',
+          },
+          profile: { ...profile, sub: ' google-sub-123 ' },
+          onboarding,
+        },
+        repo,
+      ),
+    ).rejects.toMatchObject({ code: 'INVALID_GOOGLE_IDENTITY' });
+    expect(repo.findIdentity).not.toHaveBeenCalled();
+  });
+
   it('never silently links an existing password user by email', async () => {
     const repo = repository({
       findUserByEmail: jest.fn().mockResolvedValue(activeOwner),

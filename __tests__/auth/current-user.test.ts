@@ -2,7 +2,7 @@ import { loadCurrentUser } from '@/lib/auth/current-user';
 
 describe('current authorization', () => {
   it('reloads the current role and active flags instead of trusting JWT claims', async () => {
-    const findFirst = jest.fn().mockResolvedValue({
+    const findCurrent = jest.fn().mockResolvedValue({
       id: 'user-1',
       tenantId: 'tenant-1',
       name: 'Asha',
@@ -18,30 +18,21 @@ describe('current authorization', () => {
         tenantId: string;
         role: string;
       },
-      { user: { findFirst } },
+      { findCurrent },
     );
 
     expect(current?.role).toBe('MEMBER');
-    expect(findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          id: 'user-1',
-          tenantId: 'tenant-1',
-          isActive: true,
-          tenant: { isActive: true },
-        },
-      }),
-    );
+    expect(findCurrent).toHaveBeenCalledWith('user-1', 'tenant-1');
   });
 
   it('rejects missing identifiers and inactive database records', async () => {
-    const findFirst = jest.fn().mockResolvedValue(null);
-    const store = { user: { findFirst } };
+    const findCurrent = jest.fn().mockResolvedValue(null);
+    const store = { findCurrent };
 
     await expect(loadCurrentUser({}, store)).resolves.toBeNull();
     await expect(
       loadCurrentUser({ userId: 'user-1', tenantId: 'tenant-1' }, store),
     ).resolves.toBeNull();
-    expect(findFirst).toHaveBeenCalledTimes(1);
+    expect(findCurrent).toHaveBeenCalledTimes(1);
   });
 });

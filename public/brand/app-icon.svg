@@ -2,8 +2,8 @@
   <title id="title">QuotePlate square application icon</title>
   <desc id="desc">The request-to-quote ledger mark in copper and stone on an ink square.</desc>
   <rect width="64" height="64" rx="14" fill="#101817"/>
-  <g transform="translate(8 8) scale(1.5)">
-    <path d="M3 4h13v10h-4v6H8v8L3 25V4Z" fill="#D8834F"/>
-    <path d="M17 8 29 13v15H14v-9h4v-6h-1V8Z" fill="#F5F1E8"/>
+  <g transform="translate(11.375 8.25) scale(1.25)">
+    <path d="M3 3h14v17h-4v10L3 27V3Z" fill="#D8834F"/>
+    <path d="M20 9 30 12v23H20V23h-3v-3h3V9Z" fill="#F5F1E8"/>
   </g>
 </svg>

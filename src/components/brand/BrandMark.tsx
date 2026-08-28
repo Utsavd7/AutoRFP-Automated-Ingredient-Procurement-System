@@ -26,18 +26,18 @@ export function BrandMark({
       aria-label={decorative ? undefined : title}
       className={`brand-mark ${toneClass[tone]} ${className}`.trim()}
       role={decorative ? undefined : 'img'}
-      viewBox="0 0 32 32"
+      viewBox="0 0 34 40"
       xmlns="http://www.w3.org/2000/svg"
     >
       {!decorative && <title>{title}</title>}
       <path
         className="brand-mark__request"
-        d="M3 4h13v10h-4v6H8v8L3 25V4Z"
+        d="M3 3h14v17h-4v10L3 27V3Z"
         fill="currentColor"
       />
       <path
         className="brand-mark__quote"
-        d="M17 8 29 13v15H14v-9h4v-6h-1V8Z"
+        d="M20 9 30 12v23H20V23h-3v-3h3V9Z"
         fill="currentColor"
       />
     </svg>

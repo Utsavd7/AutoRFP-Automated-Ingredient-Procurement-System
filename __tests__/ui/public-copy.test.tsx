@@ -132,7 +132,7 @@ describe('public website contract', () => {
 
     expect(mark).toContain('<svg');
     expect(mark).toContain('<title>');
-    expect(mark).toContain('viewBox="0 0 32 32"');
+    expect(mark).toContain('viewBox="0 0 34 40"');
     expect(mark).not.toMatch(/gradient|ChefHat|MessageCircle|speech/i);
     expect(allPublicSource).toContain('Skip to main content');
     expect(layout).toContain('metadataBase');

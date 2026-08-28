@@ -4,11 +4,11 @@
 
 **Goal:** Ship a hosted, India-first restaurant ingredient procurement product that a real 1-10 organization pilot can use today and that can reach 20+ organizations without an application rewrite.
 
-**Architecture:** One Next.js 16 application, PostgreSQL, NextAuth with Google OAuth and Credentials, Prisma, forced PostgreSQL RLS, and request-based Cloud Run. The product creates reviewed demand, sends supplier-specific no-login links, collects immutable quote revisions, compares landed cost, records whole or split awards, and generates exports on demand. No paid API, worker, queue, marketplace scraper, AI runtime, or stored generated file is part of launch.
+**Architecture:** One Next.js 16 application on Netlify Free and one Neon Free PostgreSQL database, with NextAuth Google OAuth and Credentials, Prisma, and forced PostgreSQL RLS. The product creates reviewed demand, sends supplier-specific no-login links, collects immutable quote revisions, compares landed cost, records whole or split awards, and generates exports on demand. No paid API, payment method, billing-linked project, worker, queue, marketplace scraper, AI runtime, or stored generated file is part of launch.
 
-**Tech Stack:** Next.js 16, React 19, TypeScript, PostgreSQL, Prisma 5, NextAuth 4 with Google OAuth and Credentials, `@node-rs/argon2`, Zod 4, `csv-parse`, `qrcode`, `@react-pdf/renderer`, Jest, Testcontainers, Playwright, axe-core, Docker, Cloud Run, Supabase Postgres Free, Cloudflare R2 backups.
+**Tech Stack:** Next.js 16, React 19, TypeScript, PostgreSQL, Prisma 5, NextAuth 4 with Google OAuth and Credentials, `@node-rs/argon2`, Zod 4, `csv-parse`, `qrcode`, `@react-pdf/renderer`, Jest, Testcontainers, Playwright, axe-core, Docker, Netlify Free with its open-source OpenNext adapter, Neon Free Postgres, and cardless Backblaze B2 backups.
 
-**Authority:** `docs/superpowers/specs/2026-08-27-launch-product-experience-design.md` is the approved product and architecture specification. Earlier OCI, local-AI, worker, and simulated-product plans are superseded.
+**Authority:** `docs/superpowers/specs/2026-08-27-launch-product-experience-design.md` is the approved product and architecture specification. Earlier OCI, Cloud Run, local-AI, worker, and simulated-product plans are superseded.
 
 ---
 
@@ -413,17 +413,17 @@
 
 **Files:**
 - Create: `.github/workflows/ci.yml`
-- Create: `.github/workflows/deploy-cloud-run.yml`
+- Create: `.github/workflows/deploy-netlify.yml`
 - Create: `.github/workflows/backup-postgres.yml`
 - Create: `scripts/backup-postgres.sh`
 - Create: `scripts/restore-verify.sh`
 - Create: `scripts/canary.sh`
-- Create: `infra/cloud-run/service.yaml`
+- Create: `netlify.toml`
 - Create: `docs/runbooks/{deployment,rollback,incident,backup-restore,cost-boundaries}.md`
 
-**RED:** Add shell/static tests that fail when Cloud Run is not min 0/max 2/concurrency 20/512 MiB, secrets appear in workflow literals, backup encryption is skipped, retention exceeds 30 daily + 4 monthly, or CI schedules duplicate test work.
+**RED:** Add shell/static tests that fail when production can enable paid auto-recharge, secrets appear in workflow literals, backup encryption is skipped, retention exceeds seven daily + four monthly copies, backup storage can cross 8 GB without stopping, production deploys bypass the release gate, or CI schedules duplicate test work.
 
-**GREEN:** Use GitHub OIDC, Artifact Registry two-image retention, Cloud Run asia-south1 request billing, encrypted `pg_dump` to R2, explicit 8 GB safety stop, monthly disposable restore verification, and post-deploy canary. Budget alerts are documented as warnings, not hard caps.
+**GREEN:** Use free deploy previews for review and publish only an approved release to Netlify Free. Connect through the pooled Neon Free endpoint, keep the compute at its smallest launch size with five-minute scale-to-zero, encrypt `pg_dump` backups into a cardless Backblaze B2 bucket, stop before 8 GB, verify a disposable restore monthly, and run a post-deploy canary. Provider settings and the runbook forbid payment methods, paid overages, auto-recharge, and automatic upgrades; a free-limit breach fails closed.
 
 **VERIFY:** Workflow validation, local backup/restore against disposable Postgres, and canary against local container.
 
@@ -450,9 +450,9 @@
 
 **RED:** Audit README claims against the finished routes, environment, schema, tests, deployment, and known limits. Any undocumented required step or inaccurate feature claim fails the task.
 
-**GREEN:** Rewrite README with the real product, local setup, environment table, architecture, data/security boundaries, workflow, tests, Cloud Run/Supabase/R2 deployment, cost ceilings and upgrade triggers, backup/restore, troubleshooting, and deferred scope.
+**GREEN:** Rewrite README with the real product, local setup, environment table, architecture, data/security boundaries, workflow, tests, Netlify Free/Neon Free deployment, the hard no-billing boundary and approval gate, backup/restore, troubleshooting, and deferred scope.
 
-**VERIFY:** Run every documented setup/check command from a clean install where practical. Push the branch, open a PR, wait for required checks and preview, perform review, merge, deploy production Cloud Run, run canary, and monitor initial health. If credentials or external project creation need user action, provide the exact minimum handoff while completing every repository-side step.
+**VERIFY:** Run every documented setup/check command from a clean install where practical. Push the branch, open a PR, wait for required checks and preview, perform review, merge, deploy only to verified cardless Free plans, run canary, and monitor initial health. If a provider requires billing linkage, a paid plan, a payment method, or an external confirmation, stop before that action and provide the exact minimum handoff.
 
 **COMMIT:** `docs: publish production launch guide`
 

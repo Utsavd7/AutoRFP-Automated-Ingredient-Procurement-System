@@ -6,7 +6,7 @@
 
 **Launch target:** A real hosted procurement product for 1-10 Indian restaurant organizations, validated for 20 or more without an application rewrite
 
-**Supersedes:** The OCI, Better Auth, local-AI, worker, and multi-service direction in `2026-08-27-india-first-zero-cost-production-design.md` and its phase plans
+**Supersedes:** The OCI, Cloud Run, Better Auth, local-AI, worker, and multi-service direction in `2026-08-27-india-first-zero-cost-production-design.md` and its phase plans.
 
 ## 1. Product decision
 
@@ -112,26 +112,28 @@ Use one Next.js 16 application and one PostgreSQL database.
 
 Deployment:
 
-- Google Cloud Run in `asia-south1`, request-based billing, min 0, max 2, concurrency 20.
-- Supabase Postgres Free in `ap-south-1` for the controlled pilot.
-- Vercel remains a preview environment only.
+- Netlify Free hosts the Next.js application through Netlify's open-source OpenNext adapter. Its 300-credit monthly hard limit pauses the site instead of creating an overage, and its official Free plan permits commercial projects without a card.
+- Neon Free hosts one PostgreSQL database in AWS Ohio beside Netlify Free's fixed default function region. The application uses its pooled endpoint; migrations use the direct endpoint. Keeping compute and data together avoids adding a cross-region database round trip to every India-to-US request.
+- Backblaze B2 holds encrypted database backups with no payment method attached and conservative account caps. The backup job also stops before 8 GB of the 10 GB free allocation.
+- Vercel remains a non-commercial preview only until the existing project is retired; it is not the production host.
 
-This is a near-zero-cost launch target, not a promise of a permanent zero bill. Cloud billing must be enabled, cross-cloud egress can cost money, Supabase Free can pause, and independent backups may have a small storage cost.
+The launch has a hard no-billing boundary. No QuotePlate project may be linked to a billing account, upgraded to a paid plan, given an automatic overage path, or supplied with a payment method without the operator's fresh explicit approval. Reaching a free limit pauses the affected operation or service; it never authorizes a charge.
 
 ### 5.1 Free-first operating limits
 
-The pilot starts inside free allocations and upgrades only after real usage reaches a documented trigger:
+The pilot starts inside free-only allocations and can serve the first four restaurants without a paid dependency:
 
-- Cloud Run uses request-based billing, 512 MiB memory, min 0, max 2, concurrency 20, and no always-on worker.
-- Supabase Free is limited to a 500 MB database. Files, PDFs, QR codes, raw imports, and exports are not stored in PostgreSQL.
-- Database warnings trigger at 350 MB and 425 MB. New tenant onboarding pauses at 450 MB until the operator chooses an upgrade or archives eligible raw input.
-- Encrypted `pg_dump` backups use Cloudflare R2 Standard with a 30-day rolling retention and four monthly restore points. The job fails closed before projected storage exceeds 8 GB of the 10 GB monthly free allocation.
-- Artifact Registry retains only the two newest deployable images and must remain below its free storage allowance.
-- GitHub Actions runs required checks on pull requests and protected-branch pushes, cancels superseded runs, and avoids scheduled duplicate test runs.
-- Cloud budget alerts are warnings, not hard spending caps. The service configuration itself provides the primary guard through min 0, max 2, small memory, bounded request size, and no background compute.
-- No infrastructure plan automatically upgrades a paid tier. Scaling requires an explicit operator decision documented in the cost-boundary runbook.
+- Netlify Free has 300 credits per month with a hard limit. Deploy previews are free; a production deploy costs 15 credits, so only an approved release may publish. Usage warnings trigger at 60%, 75%, and 85%; new onboarding pauses at 85%.
+- Neon Free is capped at 0.5 GB storage, 100 CU-hours, and 5 GB public transfer per month. Database warnings trigger at 350 MB and 425 MB, and new tenant onboarding pauses at 450 MB. The compute uses the smallest launch size and five-minute scale-to-zero.
+- PostgreSQL stores structured commercial records only. Files, PDFs, QR images, source imports, and generated exports are not retained in the database.
+- Encrypted `pg_dump` backups retain seven daily and four monthly restore points in cardless Backblaze B2. The job fails closed before projected storage exceeds 8 GB.
+- GitHub Actions uses only included free minutes, cancels superseded work, and never enables paid overages.
+- Google sign-in requests only the free `openid`, `email`, and `profile` identity scopes. Credentials sign-in remains available if Google cannot be configured without billing.
+- No infrastructure plan, workflow, provider setting, or application feature automatically upgrades a tier. A future paid change requires a separately recorded operator approval.
 
-Upgrade triggers are product evidence, not calendar dates: sustained database size above 70%, pool saturation, p95 authenticated latency above 800 ms at normal query load, backup size beyond the safe retention envelope, or repeated Cloud Run usage beyond its free allowance.
+Upgrade triggers are product evidence, not calendar dates: sustained database or backup storage above 70%, Netlify credit use above 75%, Neon compute or transfer above 75%, pool saturation, p95 authenticated latency above 800 ms under normal load, or demand beyond the documented Free-plan envelope. Until approval is given, crossing a trigger limits onboarding or availability rather than spending money.
+
+The free-plan evidence was rechecked on 2026-08-28 against primary sources: [Netlify's current Free-plan hard-stop policy](https://www.netlify.com/pricing/), [Netlify's commercial-project and no-card statement](https://www.netlify.com/blog/introducing-netlify-free-plan/), [Netlify's current credit meters](https://docs.netlify.com/manage/accounts-and-billing/billing/billing-for-credit-based-plans/how-credits-work/), [Netlify's maintained open-source Next.js adapter](https://docs.netlify.com/build/frameworks/framework-setup-guides/nextjs/overview/), [Neon's cardless Free limits](https://neon.com/pricing), [Neon's free network-transfer suspension behavior](https://neon.com/docs/introduction/network-transfer), [Backblaze B2 pricing and free storage](https://www.backblaze.com/cloud-storage/pricing), and [Backblaze data caps](https://www.backblaze.com/docs/en/cloud-storage-data-caps-and-alerts). OCI is excluded because [Oracle's official Free Tier FAQ](https://www.oracle.com/cloud/free/faq/) requires a credit or debit card and may place temporary authorization holds.
 
 Application boundaries:
 
@@ -286,7 +288,7 @@ Zero-cost operational utilities are included where they improve the real workflo
 - Public tokens contain at least 256 bits of randomness.
 - Raw tokens are never persisted or logged.
 - Public quote pages use `noindex`, `no-referrer`, a restrictive content security policy, and same-origin form submissions.
-- Rate limiting is stored in PostgreSQL so it works across Cloud Run instances.
+- Rate limiting is stored in PostgreSQL so it works across stateless serverless instances.
 - Public and authenticated writes use schema validation and explicit server totals.
 - Audit metadata excludes passwords, tokens, quote bodies, and unnecessary contact data.
 - Production logs never include database URLs, authorization headers, cookies, or supplier token paths.
@@ -321,8 +323,8 @@ No tenant-isolation claim is accepted based only on mocks or source-text asserti
 
 The repository will include:
 
-- A multi-stage production `Dockerfile`.
-- Cloud Run service configuration.
+- A multi-stage production `Dockerfile` for local parity and a portable self-hosted fallback.
+- Netlify Free and Neon Free deployment configuration with an explicit no-billing gate.
 - Environment validation at startup.
 - Liveness and readiness routes.
 - CI and controlled deployment workflows.

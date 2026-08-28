@@ -1,0 +1,31 @@
+import Link from 'next/link';
+import { brand } from '@/config/brand';
+import { Wordmark } from '@/components/brand/Wordmark';
+
+export function PublicFooter() {
+  return (
+    <footer className="public-footer">
+      <div className="public-container public-footer__main">
+        <div>
+          <Link className="public-brand-link" href="/" aria-label="Home">
+            <Wordmark inverse />
+          </Link>
+          <p>{brand.tagline}</p>
+        </div>
+        <nav aria-label="Footer navigation" className="public-footer__links">
+          <Link href="/product">Product</Link>
+          <Link href="/#how-it-works">How it works</Link>
+          <Link href="/#security">Security</Link>
+          <Link href="/privacy">Privacy</Link>
+          <Link href="/terms">Terms</Link>
+          <Link href="/signin">Sign in</Link>
+          <Link href="/start">Start a pilot</Link>
+        </nav>
+      </div>
+      <div className="public-container public-footer__legal">
+        <span>© {new Date().getFullYear()} {brand.companyName}</span>
+        <span>Built for accountable restaurant procurement in India.</span>
+      </div>
+    </footer>
+  );
+}

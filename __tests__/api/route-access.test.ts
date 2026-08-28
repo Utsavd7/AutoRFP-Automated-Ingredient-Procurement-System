@@ -45,27 +45,23 @@ describe('public route surface', () => {
     );
   });
 
-  it('uses the real start endpoint for signup and signs in credentials afterward', () => {
+  it('keeps the public root static while preserving the real authentication endpoints', () => {
     const source = readSource('app', 'page.tsx');
 
-    expect(source).toContain("fetch('/api/auth/start'");
-    expect(source).toContain("method: 'email'");
-    expect(source).toContain("signIn('credentials'");
-    expect(source).not.toContain('/api/auth/workspace-check');
-    for (const field of [
-      'ownerName',
-      'addressLine',
-      'city',
-      'state',
-      'pin',
-      'phone',
-    ]) {
-      expect(source).toContain(`const [${field}, set${field[0].toUpperCase()}${field.slice(1)}]`);
-      expect(source).toContain(`${field},`);
-    }
+    expect(source).toContain('<PublicLandingPage');
+    expect(source).not.toContain("'use client'");
+    expect(source).not.toContain('fetch(');
+    expect(source).not.toContain('signIn(');
+    expect(source).not.toContain('/api/');
     expect(source).not.toMatch(
       /cuisineType|preferredSuppliers|monthlyBudgetTarget|savingsTargetPct|LEGACY_REVIEW_REQUIRED|pin: '000000'/,
     );
+    expect(
+      existsSync(sourcePath('app', 'api', 'auth', 'start', 'route.ts')),
+    ).toBe(true);
+    expect(
+      existsSync(sourcePath('app', 'api', 'auth', '[...nextauth]', 'route.ts')),
+    ).toBe(true);
     expect(
       existsSync(sourcePath('app', 'api', 'auth', 'workspace-check', 'route.ts')),
     ).toBe(false);
@@ -82,15 +78,21 @@ describe('public route surface', () => {
 
 describe('production-safe workflow presentation', () => {
   it('describes the public launch workflow without prototype promises or fake metrics', () => {
-    const landing = readSource('app', 'page.tsx');
-    const metadata = readSource('app', 'layout.tsx');
+    const landing = [
+      readSource('app', 'page.tsx'),
+      readSource('components', 'public', 'PublicLandingPage.tsx'),
+      readSource('components', 'public', 'SampleQuoteComparison.tsx'),
+    ].join('\n');
+    const metadata = [
+      readSource('app', 'layout.tsx'),
+      readSource('config', 'brand.ts'),
+    ].join('\n');
 
-    expect(landing).toContain(
-      'reviewed menus into supplier links, comparable quotes, and a recorded award',
-    );
-    expect(landing).toContain('Available now');
-    expect(landing).toContain('Upcoming');
-    expect(metadata).toContain('reviewable menu drafts');
+    expect(landing).toContain('ingredient requests, supplier responses, landed costs, and award decisions');
+    expect(landing).toContain('Sample data');
+    expect(landing).toContain('No marketplace or paid messaging service required');
+    expect(landing).toContain('Human award required');
+    expect(metadata).toContain('review-first procurement workspace');
 
     for (const staleClaim of [
       'autonomous',

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-labelledby="title desc">
+  <title id="title">QuotePlate ledger mark in ink</title>
+  <desc id="desc">Two offset document forms create a forward path from a request to a supplier quote.</desc>
+  <path d="M3 4h13v10h-4v6H8v8L3 25V4Z" fill="#101817"/>
+  <path d="M17 8 29 13v15H14v-9h4v-6h-1V8Z" fill="#101817"/>
+</svg>

@@ -2,13 +2,18 @@
   "name": "autorfp",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20.18.1 <25"
+  },
   "scripts": {
     "dev": "next dev --webpack",
     "build": "next build",
     "postinstall": "prisma generate",
     "start": "next start",
     "lint": "eslint",
-    "test": "jest --runInBand"
+    "test": "jest --runInBand --testPathIgnorePatterns=/__tests__/integration/",
+    "test:integration": "jest --config jest.integration.config.cjs --runInBand",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@langchain/core": "^1.1.43",
@@ -46,6 +51,7 @@
     "jest": "^30.3.0",
     "jest-environment-node": "^30.3.0",
     "tailwindcss": "^4",
+    "testcontainers": "11.14.0",
     "ts-jest": "^29.4.6",
     "typescript": "^5"
   }

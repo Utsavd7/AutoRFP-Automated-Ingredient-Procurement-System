@@ -9,11 +9,6 @@ declare module 'next-auth' {
       image?: string | null;
       userId?: string;
       tenantId?: string;
-      location?: string;
-      cuisineType?: string;
-      preferredSuppliers?: string[];
-      monthlyBudgetTarget?: number | null;
-      savingsTargetPct?: number | null;
     };
   }
 }
@@ -22,10 +17,5 @@ declare module 'next-auth/jwt' {
   interface JWT {
     userId?: string;
     tenantId?: string;
-    location?: string;
-    cuisineType?: string;
-    preferredSuppliers?: string[];
-    monthlyBudgetTarget?: number | null;
-    savingsTargetPct?: number | null;
   }
 }

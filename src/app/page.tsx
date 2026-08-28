@@ -7,11 +7,9 @@ import {
   Link2, Scale
 } from 'lucide-react';
 import {
-  ACCOUNT_KEY,
-  readAccount,
-  saveAccount,
-  type RestaurantAccount,
-} from '@/lib/tenant';
+  beginGoogleAuthentication,
+  loadGoogleProviderAvailability,
+} from '@/lib/auth/google-client';
 import { toastApiError } from '@/lib/toast';
 
 export default function LandingPage() {
@@ -19,32 +17,28 @@ export default function LandingPage() {
   const [showForm, setShowForm] = useState(false);
   const [mode, setMode] = useState<'signin' | 'signup'>('signup');
   const [name, setName] = useState('');
+  const [ownerName, setOwnerName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [location, setLocation] = useState('');
-  const [cuisineType, setCuisineType] = useState('');
-  const [preferredSuppliers, setPreferredSuppliers] = useState('');
-  const [monthlyBudgetTarget, setMonthlyBudgetTarget] = useState('');
-  const [savingsTargetPct, setSavingsTargetPct] = useState('');
+  const [addressLine, setAddressLine] = useState('');
+  const [city, setCity] = useState('');
+  const [state, setState] = useState('');
+  const [pin, setPin] = useState('');
+  const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(true);
+  const [googleAvailable, setGoogleAvailable] = useState(false);
   const [authError, setAuthError] = useState('');
 
   useEffect(() => {
     fetch('/api/account')
       .then(async res => {
-        if (!res.ok) {
-          if (res.status === 401) localStorage.removeItem(ACCOUNT_KEY);
-          return { account: null, allowLocalFallback: false };
-        }
-        const data = await res.json();
-        return { account: data.account as RestaurantAccount, allowLocalFallback: true };
+        if (!res.ok) return false;
+        const data = await res.json() as { account?: unknown };
+        return Boolean(data.account);
       })
-      .then(({ account, allowLocalFallback }) => {
-        if (account) {
-          saveAccount(account);
-          router.replace('/dashboard');
-        } else if (allowLocalFallback && readAccount()) {
+      .then(authenticated => {
+        if (authenticated) {
           router.replace('/dashboard');
         } else {
           setChecking(false);
@@ -53,9 +47,25 @@ export default function LandingPage() {
       .catch(() => setChecking(false));
   }, [router]);
 
+  useEffect(() => {
+    let active = true;
+    loadGoogleProviderAvailability(fetch).then(available => {
+      if (active) setGoogleAvailable(available);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const valid = mode === 'signin'
     ? email.includes('@') && password.length >= 8
-    : name.trim() && email.includes('@') && password.length >= 8 && location.trim() && cuisineType.trim();
+    : name.trim() && ownerName.trim() && email.includes('@') &&
+      password.length >= 8 && addressLine.trim() && city.trim() &&
+      state.trim() && /^\d{6}$/.test(pin) && phone.trim();
+
+  const googleSignupValid = name.trim() && ownerName.trim() &&
+    email.includes('@') && addressLine.trim() && city.trim() &&
+    state.trim() && /^\d{6}$/.test(pin) && phone.trim();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,33 +73,34 @@ export default function LandingPage() {
     setLoading(true);
     setAuthError('');
     try {
-      const checkRes = await fetch('/api/auth/workspace-check', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          mode,
-          name,
-          email,
-          password,
-          location,
-          cuisineType,
-        }),
-      });
-      if (!checkRes.ok) {
-        const data = await checkRes.json().catch(() => ({}));
-        throw new Error(data.error || 'Unable to validate restaurant workspace.');
+      if (mode === 'signup') {
+        const startRes = await fetch('/api/auth/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            method: 'email',
+            restaurantName: name,
+            ownerName,
+            email,
+            password,
+            addressLine,
+            city,
+            state,
+            pin,
+            phone,
+            timezone: 'Asia/Kolkata',
+            gstin: '',
+          }),
+        });
+        if (!startRes.ok) {
+          const data = await startRes.json().catch(() => ({}));
+          throw new Error(data.error || 'Unable to create restaurant workspace.');
+        }
       }
       const result = await signIn('credentials', {
         redirect: false,
-        mode,
-        name,
         email,
         password,
-        location,
-        cuisineType,
-        preferredSuppliers,
-        monthlyBudgetTarget,
-        savingsTargetPct,
       });
       if (result?.error) throw new Error(
         result.error === 'CredentialsSignin'
@@ -98,11 +109,48 @@ export default function LandingPage() {
       );
       const accountRes = await fetch('/api/account');
       if (!accountRes.ok) throw new Error('Unable to load restaurant workspace.');
-      const { account } = await accountRes.json();
-      saveAccount(account);
       router.push('/dashboard');
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unable to create restaurant session.';
+      setAuthError(message);
+      toastApiError(error, mode === 'signin' ? 'Sign in failed' : 'Sign up failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogle = async () => {
+    if (!googleAvailable || (mode === 'signup' && !googleSignupValid)) return;
+    setLoading(true);
+    setAuthError('');
+    try {
+      await beginGoogleAuthentication(
+        mode === 'signin'
+          ? { mode: 'signin' }
+          : {
+              mode: 'signup',
+              signup: {
+                restaurantName: name,
+                ownerName,
+                email,
+                addressLine,
+                city,
+                state,
+                pin,
+                phone,
+                timezone: 'Asia/Kolkata',
+                gstin: '',
+              },
+            },
+        {
+          fetcher: fetch,
+          googleSignIn: provider => signIn(provider),
+        },
+      );
+    } catch (error: unknown) {
+      const message = error instanceof Error
+        ? error.message
+        : 'Unable to continue with Google.';
       setAuthError(message);
       toastApiError(error, mode === 'signin' ? 'Sign in failed' : 'Sign up failed');
     } finally {
@@ -200,14 +248,23 @@ export default function LandingPage() {
                 </div>
               )}
               {mode === 'signup' && (
-                <input
-                  type="text"
-                  value={name}
-                  onChange={e => setName(e.target.value)}
-                  placeholder="Restaurant name (e.g. The Oak Room)"
-                  autoFocus
-                  className="w-full px-4 py-3 bg-white/[0.04] border border-white/10 rounded-xl text-[14px] text-[#EEEEEE] placeholder:text-[#8A8F98]/40 focus:outline-none focus:ring-1 focus:ring-violet-500/50 focus:border-violet-500/40 transition-all"
-                />
+                <>
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={e => setName(e.target.value)}
+                    placeholder="Restaurant name"
+                    autoFocus
+                    className="w-full px-4 py-3 bg-white/[0.04] border border-white/10 rounded-xl text-[14px] text-[#EEEEEE] placeholder:text-[#8A8F98]/40 focus:outline-none focus:ring-1 focus:ring-violet-500/50 focus:border-violet-500/40 transition-all"
+                  />
+                  <input
+                    type="text"
+                    value={ownerName}
+                    onChange={e => setOwnerName(e.target.value)}
+                    placeholder="Your name"
+                    className="w-full px-4 py-3 bg-white/[0.04] border border-white/10 rounded-xl text-[14px] text-[#EEEEEE] placeholder:text-[#8A8F98]/40 focus:outline-none focus:ring-1 focus:ring-violet-500/50 focus:border-violet-500/40 transition-all"
+                  />
+                </>
               )}
               <input
                 type="email"
@@ -221,52 +278,61 @@ export default function LandingPage() {
                 type="password"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                placeholder={mode === 'signin' ? 'Password' : 'Create password (min 8 characters)'}
+                placeholder={mode === 'signin' ? 'Password' : (googleAvailable ? 'Password for email signup (min 8 characters)' : 'Create password (min 8 characters)')}
                 className="w-full px-4 py-3 bg-white/[0.04] border border-white/10 rounded-xl text-[14px] text-[#EEEEEE] placeholder:text-[#8A8F98]/40 focus:outline-none focus:ring-1 focus:ring-violet-500/50 focus:border-violet-500/40 transition-all"
               />
               {mode === 'signup' && (
                 <>
                   <input
                     type="text"
-                    value={location}
-                    onChange={e => setLocation(e.target.value)}
-                    placeholder="City, State (e.g. New York, NY)"
-                    className="w-full px-4 py-3 bg-white/[0.04] border border-white/10 rounded-xl text-[14px] text-[#EEEEEE] placeholder:text-[#8A8F98]/40 focus:outline-none focus:ring-1 focus:ring-violet-500/50 focus:border-violet-500/40 transition-all"
-                  />
-                  <input
-                    type="text"
-                    value={cuisineType}
-                    onChange={e => setCuisineType(e.target.value)}
-                    placeholder="Cuisine type (e.g. Modern American)"
-                    className="w-full px-4 py-3 bg-white/[0.04] border border-white/10 rounded-xl text-[14px] text-[#EEEEEE] placeholder:text-[#8A8F98]/40 focus:outline-none focus:ring-1 focus:ring-violet-500/50 focus:border-violet-500/40 transition-all"
-                  />
-                  <input
-                    type="text"
-                    value={preferredSuppliers}
-                    onChange={e => setPreferredSuppliers(e.target.value)}
-                    placeholder="Preferred suppliers, comma separated"
+                    value={addressLine}
+                    onChange={e => setAddressLine(e.target.value)}
+                    placeholder="Street address"
                     className="w-full px-4 py-3 bg-white/[0.04] border border-white/10 rounded-xl text-[14px] text-[#EEEEEE] placeholder:text-[#8A8F98]/40 focus:outline-none focus:ring-1 focus:ring-violet-500/50 focus:border-violet-500/40 transition-all"
                   />
                   <div className="grid grid-cols-2 gap-3">
-                <input
-                  type="number"
-                  min="0"
-                  value={monthlyBudgetTarget}
-                  onChange={e => setMonthlyBudgetTarget(e.target.value)}
-                  placeholder="Monthly budget"
-                  className="w-full px-4 py-3 bg-white/[0.04] border border-white/10 rounded-xl text-[14px] text-[#EEEEEE] placeholder:text-[#8A8F98]/40 focus:outline-none focus:ring-1 focus:ring-violet-500/50 focus:border-violet-500/40 transition-all"
-                />
-                <input
-                  type="number"
-                  min="0"
-                  max="80"
-                  value={savingsTargetPct}
-                  onChange={e => setSavingsTargetPct(e.target.value)}
-                  placeholder="Savings target"
-                  className="w-full px-4 py-3 bg-white/[0.04] border border-white/10 rounded-xl text-[14px] text-[#EEEEEE] placeholder:text-[#8A8F98]/40 focus:outline-none focus:ring-1 focus:ring-violet-500/50 focus:border-violet-500/40 transition-all"
-                />
+                    <input
+                      type="text"
+                      value={city}
+                      onChange={e => setCity(e.target.value)}
+                      placeholder="City"
+                      className="w-full px-4 py-3 bg-white/[0.04] border border-white/10 rounded-xl text-[14px] text-[#EEEEEE] placeholder:text-[#8A8F98]/40 focus:outline-none focus:ring-1 focus:ring-violet-500/50 focus:border-violet-500/40 transition-all"
+                    />
+                    <input
+                      type="text"
+                      value={state}
+                      onChange={e => setState(e.target.value)}
+                      placeholder="State"
+                      className="w-full px-4 py-3 bg-white/[0.04] border border-white/10 rounded-xl text-[14px] text-[#EEEEEE] placeholder:text-[#8A8F98]/40 focus:outline-none focus:ring-1 focus:ring-violet-500/50 focus:border-violet-500/40 transition-all"
+                    />
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={6}
+                      value={pin}
+                      onChange={e => setPin(e.target.value)}
+                      placeholder="6-digit PIN"
+                      className="w-full px-4 py-3 bg-white/[0.04] border border-white/10 rounded-xl text-[14px] text-[#EEEEEE] placeholder:text-[#8A8F98]/40 focus:outline-none focus:ring-1 focus:ring-violet-500/50 focus:border-violet-500/40 transition-all"
+                    />
+                    <input
+                      type="tel"
+                      value={phone}
+                      onChange={e => setPhone(e.target.value)}
+                      placeholder="Phone"
+                      className="w-full px-4 py-3 bg-white/[0.04] border border-white/10 rounded-xl text-[14px] text-[#EEEEEE] placeholder:text-[#8A8F98]/40 focus:outline-none focus:ring-1 focus:ring-violet-500/50 focus:border-violet-500/40 transition-all"
+                    />
                   </div>
                 </>
+              )}
+              {googleAvailable && (
+                <button
+                  type="button"
+                  onClick={handleGoogle}
+                  disabled={loading || (mode === 'signup' && !googleSignupValid)}
+                  className="w-full py-3.5 bg-white hover:bg-[#EEEEEE] disabled:opacity-40 disabled:cursor-not-allowed text-black font-bold text-[14px] rounded-xl transition-all duration-200 flex items-center justify-center gap-2"
+                >
+                  {loading ? 'Opening Google…' : (mode === 'signin' ? 'Continue with Google' : 'Create workspace with Google')}
+                </button>
               )}
               <button
                 type="submit"

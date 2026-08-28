@@ -1,6 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { POST as checkWorkspace } from '@/app/api/auth/workspace-check/route';
 
 const sourcePath = (...segments: string[]) =>
   join(process.cwd(), 'src', ...segments);
@@ -46,43 +45,31 @@ describe('public route surface', () => {
     );
   });
 
-  it('does not query account existence during workspace preflight', () => {
-    const source = readSource(
-      'app',
-      'api',
-      'auth',
-      'workspace-check',
-      'route.ts',
+  it('uses the real start endpoint for signup and signs in credentials afterward', () => {
+    const source = readSource('app', 'page.tsx');
+
+    expect(source).toContain("fetch('/api/auth/start'");
+    expect(source).toContain("method: 'email'");
+    expect(source).toContain("signIn('credentials'");
+    expect(source).not.toContain('/api/auth/workspace-check');
+    for (const field of [
+      'ownerName',
+      'addressLine',
+      'city',
+      'state',
+      'pin',
+      'phone',
+    ]) {
+      expect(source).toContain(`const [${field}, set${field[0].toUpperCase()}${field.slice(1)}]`);
+      expect(source).toContain(`${field},`);
+    }
+    expect(source).not.toMatch(
+      /cuisineType|preferredSuppliers|monthlyBudgetTarget|savingsTargetPct|LEGACY_REVIEW_REQUIRED|pin: '000000'/,
     );
-
-    expect(source).not.toContain('No workspace exists');
-    expect(source).not.toContain('A workspace already exists');
-    expect(source).not.toContain('prisma');
+    expect(
+      existsSync(sourcePath('app', 'api', 'auth', 'workspace-check', 'route.ts')),
+    ).toBe(false);
   });
-
-  test.each(['signin', 'signup'] as const)(
-    'returns a neutral %s preflight response without account discovery',
-    async (mode) => {
-      const payload = {
-        mode,
-        name: 'Test Restaurant',
-        email: 'owner@example.com',
-        password: 'valid-password',
-        location: 'Mumbai',
-        cuisineType: 'Indian',
-      };
-
-      const response = await checkWorkspace(
-        new Request('http://localhost/api/auth/workspace-check', {
-          method: 'POST',
-          body: JSON.stringify(payload),
-        }),
-      );
-
-      expect(response.status).toBe(200);
-      await expect(response.json()).resolves.toEqual({ ok: true });
-    },
-  );
 
   it('closes the mobile drawer before opening command search', () => {
     const source = readSource('app', '(app)', 'layout.tsx');
@@ -234,6 +221,16 @@ describe('production-safe workflow presentation', () => {
     expect(source).not.toContain('AutoRFP Engine');
     expect(source).not.toContain('LangGraph · Inngest · Groq · Sentry');
     expect(source).not.toContain('Tenant-scoped RLS');
+  });
+
+  it('removes the legacy browser identity and SHA password authority', () => {
+    const source = readSource('lib', 'tenant.ts');
+
+    expect(source).not.toContain('localStorage');
+    expect(source).not.toContain('passwordHash');
+    expect(source).not.toContain('passwordSalt');
+    expect(source).not.toContain('createPasswordRecord');
+    expect(source).not.toContain('verifyPassword');
   });
 
   it('limits procurement to a saved deterministic menu draft', () => {

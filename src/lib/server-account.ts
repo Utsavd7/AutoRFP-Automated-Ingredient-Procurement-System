@@ -2,7 +2,7 @@ import type { Prisma } from '@prisma/client';
 import { getServerSession } from 'next-auth';
 
 import { authOptions } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
+import { loadCurrentUser } from '@/lib/auth/current-user';
 
 type TenantAccount = Prisma.TenantGetPayload<Record<string, never>>;
 
@@ -29,22 +29,11 @@ export function tenantToAccount(tenant: TenantAccount, email: string) {
 
 export async function requireAccountContext() {
   const session = await getServerSession(authOptions);
-  const tenantId = session?.user?.tenantId;
-  if (!tenantId) return null;
-
-  const user = await prisma.user.findFirst({
-    where: {
-      tenantId,
-      isActive: true,
-      ...(session.user?.userId
-        ? { id: session.user.userId }
-        : session.user?.email
-          ? { email: session.user.email.toLowerCase() }
-          : { id: '__missing_authenticated_user__' }),
-    },
-    include: { tenant: true },
+  const user = await loadCurrentUser({
+    userId: session?.user?.userId,
+    tenantId: session?.user?.tenantId,
   });
-  if (!user?.tenant.isActive) return null;
+  if (!user) return null;
   return { tenant: user.tenant, user };
 }
 

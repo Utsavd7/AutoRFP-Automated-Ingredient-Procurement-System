@@ -1,13 +1,18 @@
 import { POST } from '@/app/api/parse-menu/route';
-import { requireApiTenant } from '@/lib/api/require-api-tenant';
-import { createMenuDraft } from '@/lib/menu/create-menu-draft';
+import {
+  createDeterministicMenuDraft,
+  MenuValidationError,
+} from '@/lib/menu/menu-service';
+import { requireAccountContext } from '@/lib/server-account';
 
-jest.mock('@/lib/api/require-api-tenant', () => ({
-  requireApiTenant: jest.fn(),
+jest.mock('@/lib/server-account', () => ({
+  requireAccountContext: jest.fn(),
 }));
 
-jest.mock('@/lib/menu/create-menu-draft', () => ({
-  createMenuDraft: jest.fn(),
+jest.mock('@/lib/menu/menu-service', () => ({
+  createDeterministicMenuDraft: jest.fn(),
+  MenuValidationError: jest.requireActual('@/lib/menu/menu-service')
+    .MenuValidationError,
 }));
 
 const postMenu = (menuText: string) =>
@@ -20,13 +25,13 @@ const postMenu = (menuText: string) =>
   );
 
 describe('parse-menu persistence', () => {
-  const menuCreate = jest.mocked(createMenuDraft);
+  const menuCreate = jest.mocked(createDeterministicMenuDraft);
 
   beforeEach(() => {
     jest.clearAllMocks();
-    jest.mocked(requireApiTenant).mockResolvedValue({
+    jest.mocked(requireAccountContext).mockResolvedValue({
       tenant: { id: 'session-tenant' },
-      response: null,
+      user: { id: 'member-a' },
     } as never);
   });
 
@@ -42,7 +47,8 @@ describe('parse-menu persistence', () => {
     expect(response.status).toBe(200);
     expect(menuCreate).toHaveBeenCalledTimes(1);
     expect(menuCreate).toHaveBeenCalledWith({
-      tenantId: 'session-tenant',
+      actor: { tenantId: 'session-tenant', userId: 'member-a' },
+      name: 'Menu draft',
       menuText: 'Paneer Tikka\nMasala Dosa',
     });
     await expect(response.json()).resolves.toMatchObject({
@@ -63,7 +69,8 @@ describe('parse-menu persistence', () => {
     const problem = await response.json();
 
     expect(menuCreate).toHaveBeenCalledWith({
-      tenantId: 'session-tenant',
+      actor: { tenantId: 'session-tenant', userId: 'member-a' },
+      name: 'Menu draft',
       menuText: 'Dal Makhani',
     });
     expect(response.status).toBe(500);
@@ -77,5 +84,39 @@ describe('parse-menu persistence', () => {
       detail: 'The menu draft could not be saved. Try again.',
     });
     expect(JSON.stringify(problem)).not.toContain('database URL');
+  });
+
+  it('returns 422 when a deterministic dish exceeds the review boundary', async () => {
+    menuCreate.mockRejectedValue(
+      new MenuValidationError({
+        menuText: ['Dish names must be 160 UTF-8 bytes or fewer.'],
+      }),
+    );
+
+    const response = await postMenu('₹'.repeat(54));
+
+    expect(response.status).toBe(422);
+    await expect(response.json()).resolves.toMatchObject({
+      title: 'Invalid menu',
+      errors: {
+        menuText: ['Dish names must be 160 UTF-8 bytes or fewer.'],
+      },
+    });
+  });
+
+  it('rejects a huge ignored field before deterministic parsing', async () => {
+    const response = await POST(
+      new Request('http://localhost/api/parse-menu', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          menuText: 'Dal Makhani',
+          ignored: 'x'.repeat(525_000),
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(413);
+    expect(menuCreate).not.toHaveBeenCalled();
   });
 });

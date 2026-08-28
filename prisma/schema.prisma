@@ -153,6 +153,7 @@ model Recipe {
   menuId      String
   name        String
   position    Int
+  retiredAt   DateTime?
   tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   menu        Menu         @relation(fields: [tenantId, menuId], references: [tenantId, id], onDelete: Cascade)
   ingredients Ingredient[]

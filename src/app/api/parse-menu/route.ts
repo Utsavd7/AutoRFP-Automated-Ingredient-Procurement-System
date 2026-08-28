@@ -1,18 +1,33 @@
 import { NextResponse } from 'next/server';
 
 import { problemResponse } from '@/lib/api/problem';
-import { requireApiTenant } from '@/lib/api/require-api-tenant';
-import { createMenuDraft } from '@/lib/menu/create-menu-draft';
+import {
+  InvalidJsonBodyError,
+  MENU_REQUEST_BODY_BYTES,
+  readBoundedJson,
+  RequestBodyTooLargeError,
+} from '@/lib/api/read-bounded-json';
 import { parseMenuInput } from '@/lib/menu/menu-input';
+import {
+  createDeterministicMenuDraft,
+  MenuValidationError,
+} from '@/lib/menu/menu-service';
+import { requireAccountContext } from '@/lib/server-account';
 
 export async function POST(req: Request) {
-  const access = await requireApiTenant();
-  if (access.response) return access.response;
+  const account = await requireAccountContext();
+  if (!account) {
+    return problemResponse(401, 'Unauthorized', 'Authentication is required.');
+  }
 
   let body: unknown;
   try {
-    body = await req.json();
-  } catch {
+    body = await readBoundedJson(req, MENU_REQUEST_BODY_BYTES);
+  } catch (error) {
+    if (error instanceof RequestBodyTooLargeError) {
+      return problemResponse(413, 'Request too large', error.message);
+    }
+    if (!(error instanceof InvalidJsonBodyError)) throw error;
     return problemResponse(400, 'Invalid request', 'Provide a valid JSON body.');
   }
 
@@ -29,8 +44,9 @@ export async function POST(req: Request) {
   const { menuText } = input.value;
 
   try {
-    const menu = await createMenuDraft({
-      tenantId: access.tenant.id,
+    const menu = await createDeterministicMenuDraft({
+      actor: { tenantId: account.tenant.id, userId: account.user.id },
+      name: 'Menu draft',
       menuText,
     });
 
@@ -42,7 +58,12 @@ export async function POST(req: Request) {
       requiresReview: true,
       menuInsight: null,
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof MenuValidationError) {
+      return problemResponse(422, 'Invalid menu', error.message, {
+        errors: error.errors,
+      });
+    }
     return problemResponse(
       500,
       'Unable to save menu',

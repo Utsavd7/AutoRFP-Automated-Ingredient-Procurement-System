@@ -27,13 +27,19 @@ describe('buildDeterministicMenuDraft', () => {
     ).toEqual(['Paneer Tikka', 'Masala Dosa']);
   });
 
-  it('accepts at most the first 250 unique non-empty user lines', () => {
-    const dishes = buildDeterministicMenuDraft(
-      Array.from({ length: 300 }, (_, index) => `Dish ${index + 1}`).join('\n'),
-    );
+  it('rejects more than 250 unique dishes instead of silently dropping demand', () => {
+    expect(() =>
+      buildDeterministicMenuDraft(
+        Array.from({ length: 251 }, (_, index) => `Dish ${index + 1}`).join(
+          '\n',
+        ),
+      ),
+    ).toThrow(/at most 250 unique dishes/);
+  });
 
-    expect(dishes).toHaveLength(250);
-    expect(dishes[0]?.name).toBe('Dish 1');
-    expect(dishes[249]?.name).toBe('Dish 250');
+  it('rejects a dish line that exceeds the persisted fact boundary', () => {
+    expect(() => buildDeterministicMenuDraft('₹'.repeat(54))).toThrow(
+      /160 UTF-8 bytes or fewer/,
+    );
   });
 });

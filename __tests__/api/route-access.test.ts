@@ -17,17 +17,19 @@ describe('public route surface', () => {
       const handlerStart = source.search(/export async function (?:GET|POST)/);
       const handlerSource = source.slice(handlerStart);
       const guardStart = handlerSource.indexOf(
-        'const access = await requireApiTenant();',
+        'const account = await requireAccountContext();',
       );
       const requestBodyStart = handlerSource.indexOf('await req.json()');
       const streamStart = handlerSource.indexOf('new ReadableStream');
 
       expect(source).toContain(
-        "import { requireApiTenant } from '@/lib/api/require-api-tenant';",
+        "import { requireAccountContext } from '@/lib/server-account';",
       );
       expect(handlerStart).toBeGreaterThanOrEqual(0);
       expect(guardStart).toBeGreaterThanOrEqual(0);
-      expect(handlerSource).toContain('if (access.response) return access.response;');
+      expect(handlerSource).toContain('if (!account)');
+      expect(handlerSource).toContain('account.user.id');
+      expect(handlerSource).toContain('account.tenant.id');
       if (requestBodyStart >= 0) expect(guardStart).toBeLessThan(requestBodyStart);
       if (streamStart >= 0) expect(guardStart).toBeLessThan(streamStart);
       expect(handlerSource).not.toMatch(
@@ -215,7 +217,7 @@ describe('production-safe workflow presentation', () => {
   it('keeps shell account state server-backed and removes false platform claims', () => {
     const source = readSource('app', '(app)', 'layout.tsx');
 
-    expect(source).toContain("fetch('/api/account')");
+    expect(source).toMatch(/fetch\(\s*['"]\/api\/account['"](?:\s*,|\s*\))/);
     expect(source).not.toContain('localStorage');
     expect(source).not.toContain('readAccount');
     expect(source).not.toContain('saveAccount');

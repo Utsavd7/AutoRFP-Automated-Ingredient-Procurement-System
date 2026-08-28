@@ -2,6 +2,8 @@ import type { Prisma } from '@prisma/client';
 
 const auditRules = {
   'member.invited': { entityType: 'Invitation', metadata: ['role'] },
+  'member.invitation-revoked': { entityType: 'Invitation', metadata: [] },
+  'member.joined': { entityType: 'User', metadata: ['role'] },
   'member.deactivated': { entityType: 'User', metadata: ['previousRole'] },
   'workspace.updated': { entityType: 'Tenant', metadata: ['fields'] },
   'menu.approved': { entityType: 'Menu', metadata: ['version'] },

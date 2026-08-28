@@ -203,6 +203,12 @@ test('database catalog exposes only the tenant-safe launch authority', async () 
       }
       expect(columnsByKey.has('Tenant.tenantId')).toBe(false);
       expect(columnsByKey.has('RateLimitBucket.tenantId')).toBe(false);
+      expect(columnsByKey.get('Recipe.retiredAt')).toEqual(
+        expect.objectContaining({
+          data_type: 'timestamp without time zone',
+          is_nullable: 'YES',
+        }),
+      );
       expect(
         columns
           .filter(({ table_name }) => table_name === 'ExternalIdentity')

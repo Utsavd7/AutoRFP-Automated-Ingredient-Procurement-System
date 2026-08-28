@@ -29,7 +29,7 @@ const appTables = [
   'User',
 ] as const;
 
-test('forced RLS migration removes simulated Supabase grants and default ACLs', async () => {
+test('security migrations remove simulated Supabase grants and default ACLs', async () => {
   await withPostgres(async (harness) => {
     await harness.migrateTo('20260827000200_launch_schema');
     const admin = new PrismaClient({
@@ -54,6 +54,7 @@ test('forced RLS migration removes simulated Supabase grants and default ACLs', 
       }
 
       await harness.migrateTo('20260827000300_forced_rls');
+      await harness.migrateTo('20260827000400_member_invitations');
 
       const tablePrivileges = await admin.$queryRaw<
         Array<{
@@ -153,7 +154,7 @@ test('forced RLS migration removes simulated Supabase grants and default ACLs', 
         WHERE namespace.nspname = 'autorfp_private'
         ORDER BY role_name, procedure.proname
       `;
-      expect(functionPrivileges).toHaveLength(supabaseRoles.length * 3);
+      expect(functionPrivileges).toHaveLength(supabaseRoles.length * 5);
       expect(functionPrivileges.every(({ can_execute }) => !can_execute)).toBe(
         true,
       );
@@ -251,6 +252,7 @@ test('forced RLS migration removes simulated Supabase grants and default ACLs', 
         Array<{
           private_usage: boolean;
           can_execute: boolean;
+          can_execute_invitation_bootstrap: boolean;
           can_update_rate_limit: boolean;
         }>
       >`
@@ -262,6 +264,11 @@ test('forced RLS migration removes simulated Supabase grants and default ACLs', 
             'autorfp_private.autorfp_auth_credentials_by_email(text)',
             'EXECUTE'
           ) AS can_execute,
+          has_function_privilege(
+            'autorfp_app',
+            'autorfp_private.autorfp_invitation_tenant_by_digest(text)',
+            'EXECUTE'
+          ) AS can_execute_invitation_bootstrap,
           has_table_privilege(
             'autorfp_app',
             'public."RateLimitBucket"',
@@ -271,6 +278,7 @@ test('forced RLS migration removes simulated Supabase grants and default ACLs', 
       expect(appAccess).toEqual({
         private_usage: true,
         can_execute: true,
+        can_execute_invitation_bootstrap: true,
         can_update_rate_limit: true,
       });
     } finally {

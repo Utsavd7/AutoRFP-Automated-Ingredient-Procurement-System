@@ -23,6 +23,8 @@ const migrationOrder = [
   '20260827000100_lean_baseline',
   '20260827000200_launch_schema',
   '20260827000300_forced_rls',
+  '20260827000400_member_invitations',
+  '20260827000500_menu_recipe_retirement',
 ] as const;
 
 export type PostgresHarness = {

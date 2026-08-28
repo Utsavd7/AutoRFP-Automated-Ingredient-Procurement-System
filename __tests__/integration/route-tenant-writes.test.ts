@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 
 import { updateWorkspaceAccount } from '@/lib/account/update-workspace';
-import { createMenuDraft } from '@/lib/menu/create-menu-draft';
+import { createDeterministicMenuDraft } from '@/lib/menu/menu-service';
 
 import { withMigratedPostgres } from './setup/postgres';
 
@@ -181,8 +181,11 @@ test('restricted route services scope account and menu writes to the current ten
       expect(await admin.tenant.findUnique({ where: { id: 'tenant-b' } }))
         .toEqual(expect.objectContaining({ name: 'tenant-b Kitchen' }));
 
-      const menu = await createMenuDraft(
-        { tenantId: 'tenant-a', menuText: 'Paneer Tikka\nMasala Dosa' },
+      const menu = await createDeterministicMenuDraft(
+        {
+          actor: { tenantId: 'tenant-a', userId: 'member-a' },
+          menuText: 'Paneer Tikka\nMasala Dosa',
+        },
         app,
       );
       expect(menu.recipes.map(({ name }) => name)).toEqual([
@@ -190,7 +193,11 @@ test('restricted route services scope account and menu writes to the current ten
         'Masala Dosa',
       ]);
       expect(await admin.menu.findUnique({ where: { id: menu.id } })).toEqual(
-        expect.objectContaining({ tenantId: 'tenant-a', status: 'DRAFT' }),
+        expect.objectContaining({
+          tenantId: 'tenant-a',
+          status: 'DRAFT',
+          createdByUserId: 'member-a',
+        }),
       );
       await expect(
         app.menu.create({

@@ -149,6 +149,8 @@ npm run build
 
 Recorded release evidence:
 
+The pull-request workflow repeats lint, type checks, unit tests, real PostgreSQL integration, the production build, responsive browser journeys, and the production dependency audit on a clean Ubuntu runner.
+
 | Gate | Result |
 | --- | --- |
 | Unit and API tests | 83 suites, 559 tests passed |

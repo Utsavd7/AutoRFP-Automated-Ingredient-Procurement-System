@@ -35,16 +35,23 @@ function appDatabaseUrl(databaseUrl: string, password: string) {
   return url.toString();
 }
 
-async function provisionAppClient(admin: PrismaClient, databaseUrl: string) {
-  const password = randomBytes(24).toString('hex');
-  await admin.$executeRawUnsafe(
-    `ALTER ROLE autorfp_app PASSWORD '${password}'`,
-  );
+async function connectAppClient(databaseUrl: string, password: string) {
   const client = new PrismaClient({
     datasources: { db: { url: appDatabaseUrl(databaseUrl, password) } },
   });
   await client.$connect();
   return client;
+}
+
+async function provisionAppClient(
+  admin: PrismaClient,
+  databaseUrl: string,
+  password: string,
+) {
+  await admin.$executeRawUnsafe(
+    `ALTER ROLE autorfp_app PASSWORD '${password}'`,
+  );
+  return connectAppClient(databaseUrl, password);
 }
 
 async function seedTenant(admin: PrismaClient, id: string, suffix: string) {
@@ -80,12 +87,16 @@ test('forced RLS isolates every tenant transaction under the restricted runtime 
     const admin = new PrismaClient({
       datasources: { db: { url: databaseUrl } },
     });
+    const runtimePassword = randomBytes(24).toString('hex');
     let app: PrismaClient | undefined;
 
     try {
       await seedTenant(admin, 'tenant-a', 'A');
       await seedTenant(admin, 'tenant-b', 'B');
-      app = await provisionAppClient(admin, databaseUrl);
+      app = await provisionAppClient(admin, databaseUrl, runtimePassword);
+      const [initialRuntimeCredential] = await admin.$queryRaw<
+        Array<{ rolpassword: string }>
+      >`SELECT rolpassword FROM pg_authid WHERE rolname = 'autorfp_app'`;
 
       await expect(assertRuntimeDatabaseRole(app)).resolves.toBeUndefined();
       await expect(assertRuntimeDatabaseRole(admin)).rejects.toMatchObject({
@@ -127,7 +138,11 @@ test('forced RLS isolates every tenant transaction under the restricted runtime 
       await admin.$executeRawUnsafe(
         'GRANT inherited_runtime_bypass TO autorfp_app',
       );
-      const inheritedClient = await provisionAppClient(admin, databaseUrl);
+      const inheritedClient = await connectAppClient(databaseUrl, runtimePassword);
+      const [credentialAfterSecondClient] = await admin.$queryRaw<
+        Array<{ rolpassword: string }>
+      >`SELECT rolpassword FROM pg_authid WHERE rolname = 'autorfp_app'`;
+      expect(credentialAfterSecondClient).toEqual(initialRuntimeCredential);
       await expect(
         assertRuntimeDatabaseRole(inheritedClient),
       ).rejects.toMatchObject({ code: 'UNSAFE_DATABASE_ROLE' });

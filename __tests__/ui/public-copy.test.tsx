@@ -153,11 +153,18 @@ describe('public website contract', () => {
   test('keeps repeated wordmark symbols decorative without duplicate title ids', () => {
     const mark = source('src/components/brand/BrandMark.tsx');
     const wordmark = source('src/components/brand/Wordmark.tsx');
+    const css = source('src/app/globals.css');
+    const brandGuide = source('docs/brand/README.md');
 
     expect(mark).not.toContain('aria-labelledby=');
     expect(mark).toContain('decorative?: boolean');
     expect(mark).toContain('aria-hidden={decorative');
     expect(wordmark).toContain('<BrandMark decorative');
+    expect(css).toMatch(
+      /\.wordmark__name \{[^}]*font-family: var\(--font-display\);[^}]*font-weight: 520;/,
+    );
+    expect(brandGuide).toContain('Newsreader Variable**: display headings and the QuotePlate wordmark');
+    expect(brandGuide).not.toContain('Manrope lettering');
   });
 
   test('uses contrast-safe text tokens on every light public surface', () => {

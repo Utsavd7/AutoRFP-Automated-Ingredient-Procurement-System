@@ -18,11 +18,11 @@ The React component in `src/components/brand/BrandMark.tsx` is the canonical geo
 | --- | --- |
 | `public/brand/mark-ink.svg` | One-colour print, document, and light-surface mark |
 | `public/brand/mark-duotone.svg` | Primary copper-and-ink mark on light surfaces |
-| `public/brand/wordmark-horizontal.svg` | Navigation, documents, presentations, and partner listings; Manrope lettering is converted to real vector outlines |
+| `public/brand/wordmark-horizontal.svg` | Navigation, documents, presentations, and partner listings; Newsreader lettering is converted to real vector outlines |
 | `public/brand/app-icon.svg` | Square application, social, and shortcut icon |
 | `public/brand/social-card.png` | 1200 × 630 Open Graph and large Twitter/X link preview |
 
-The logo assets are scalable SVGs with clean view boxes and no gradients or embedded raster images. The outlined wordmark is self-contained and does not require Manrope to be installed. The social card is a static PNG so sharing crawlers do not need JavaScript, a font service, or a paid image API.
+The logo assets are scalable SVGs with clean view boxes and no gradients or embedded raster images. The outlined wordmark is self-contained and does not require Newsreader to be installed. The social card is a static PNG so sharing crawlers do not need JavaScript, a font service, or a paid image API.
 
 ## Colour
 
@@ -40,8 +40,8 @@ Copper is the only brand accent. Do not replace it with purple, blue, a glow, or
 
 ## Typography and licence
 
-- **Newsreader Variable**: editorial display headings only.
-- **Manrope Variable**: wordmark, navigation, body copy, controls, and product UI.
+- **Newsreader Variable**: display headings and the QuotePlate wordmark.
+- **Manrope Variable**: navigation, body copy, controls, and product UI.
 - Use tabular numerals for INR values, quantities, and dates.
 
 Both typefaces are open-source and distributed under the SIL Open Font License 1.1. The bundled notice and licence are in `public/fonts/OFL-1.1.txt`.

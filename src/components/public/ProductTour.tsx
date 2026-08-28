@@ -1,11 +1,9 @@
 import { SampleQuoteComparison } from './SampleQuoteComparison';
-
-const requestItems = [
-  ['Tomato, red', '38', 'kg'],
-  ['Onion, red', '24', 'kg'],
-  ['Paneer', '16', 'kg'],
-  ['Coriander', '3', 'kg'],
-];
+import {
+  formatSampleInr,
+  restaurantSampleQuotes,
+  restaurantSampleRequest,
+} from '@/data/sample-procurement';
 
 export function ProductTour() {
   return (
@@ -18,15 +16,15 @@ export function ProductTour() {
         </div>
         <article className="tour-record" aria-label="Sample request">
           <header>
-            <div><span>Sample request</span><strong>QP-1042</strong></div>
+            <div><span>Sample request</span><strong>{restaurantSampleRequest.id}</strong></div>
             <span className="record-state">Ready for review</span>
           </header>
-          <div className="tour-record__meta"><span>Weekly produce</span><span>Delivery · 12 Sep 2026</span></div>
+          <div className="tour-record__meta"><span>Sample restaurant · {restaurantSampleRequest.context}</span><span>Delivery · {restaurantSampleRequest.delivery}</span></div>
           <table>
             <thead><tr><th>Item</th><th>Qty</th><th>Unit</th></tr></thead>
-            <tbody>{requestItems.map(([item, quantity, unit]) => <tr key={item}><td>{item}</td><td>{quantity}</td><td>{unit}</td></tr>)}</tbody>
+            <tbody>{restaurantSampleRequest.items.slice(0, 4).map((item) => <tr key={item.name}><td>{item.name}</td><td>{item.quantity}</td><td>{item.unit}</td></tr>)}</tbody>
           </table>
-          <footer>4 of 8 shown · 3 selected suppliers</footer>
+          <footer>4 of {restaurantSampleRequest.items.length} shown · {restaurantSampleQuotes.length} selected suppliers</footer>
         </article>
       </section>
 
@@ -37,13 +35,17 @@ export function ProductTour() {
           <p>Each supplier receives an expiring link to a focused mobile form. There is no supplier account to create and no separate spreadsheet to reconcile.</p>
         </div>
         <article className="supplier-sheet" aria-label="Sample supplier view">
-          <header><span>Sample supplier view</span><strong>Quote for QP-1042</strong></header>
-          <div className="supplier-line"><div><strong>Tomato, red</strong><span>38 kg requested</span></div><span>₹42.00 / kg</span></div>
-          <div className="supplier-line"><div><strong>Onion, red</strong><span>24 kg requested</span></div><span>₹36.50 / kg</span></div>
+          <header><span>Sample supplier view · {restaurantSampleQuotes[0].supplierName}</span><strong>Quote for {restaurantSampleRequest.id}</strong></header>
+          {restaurantSampleRequest.items.slice(0, 2).map((item) => (
+            <div className="supplier-line" key={item.name}>
+              <div><strong>{item.name}</strong><span>{item.quantity} {item.unit} requested</span></div>
+              <span>{formatSampleInr(item.sampleRatePaise)} / {item.unit}</span>
+            </div>
+          ))}
           <div className="supplier-fields"><span>GST captured</span><span>Freight captured</span><span>Delivery confirmed</span></div>
           <footer>
-            <span className="supplier-total__meta">Calculated total · all 8 items · 2 of 8 shown</span>
-            <strong className="supplier-total__amount">₹31,460.00</strong>
+            <span className="supplier-total__meta">Calculated landed total · all {restaurantSampleRequest.items.length} items · 2 of {restaurantSampleRequest.items.length} shown</span>
+            <strong className="supplier-total__amount">{formatSampleInr(restaurantSampleQuotes[0].totalPaise)}</strong>
           </footer>
         </article>
       </section>

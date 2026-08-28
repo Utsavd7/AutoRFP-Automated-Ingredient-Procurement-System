@@ -1,32 +1,8 @@
-const sampleSuppliers = [
-  {
-    name: 'Supplier A',
-    total: '₹31,460.00',
-    gst: 'Included line by line',
-    delivery: '12 Sep 2026',
-    coverage: '8 of 8 items',
-    terms: '15 days',
-    status: 'Submitted',
-  },
-  {
-    name: 'Supplier B',
-    total: '₹30,884.50',
-    gst: 'Included line by line',
-    delivery: '13 Sep 2026',
-    coverage: '7 of 8 items',
-    terms: '7 days',
-    status: 'Submitted',
-  },
-  {
-    name: 'Supplier C',
-    total: '₹32,196.00',
-    gst: 'Included line by line',
-    delivery: '12 Sep 2026',
-    coverage: '8 of 8 items',
-    terms: '30 days',
-    status: 'Submitted',
-  },
-];
+import {
+  formatSampleInr,
+  restaurantSampleQuotes,
+  restaurantSampleRequest,
+} from '@/data/sample-procurement';
 
 export function SampleQuoteComparison({ compact = false }: { compact?: boolean }) {
   return (
@@ -37,8 +13,8 @@ export function SampleQuoteComparison({ compact = false }: { compact?: boolean }
           <h2>Compare what suppliers actually submitted.</h2>
         </div>
         <div className="sample-request">
-          <span>Sample request</span>
-          <strong>QP-1042 · Weekly produce</strong>
+          <span>Sample request · {restaurantSampleRequest.context}</span>
+          <strong>{restaurantSampleRequest.id} · {restaurantSampleRequest.cadence}</strong>
         </div>
       </figcaption>
 
@@ -48,37 +24,45 @@ export function SampleQuoteComparison({ compact = false }: { compact?: boolean }
           <thead>
             <tr>
               <th scope="col">Commercial fact</th>
-              {sampleSuppliers.map((supplier) => <th key={supplier.name} scope="col">{supplier.name}</th>)}
+              {restaurantSampleQuotes.map((quote) => <th key={quote.supplierName} scope="col">{quote.supplierName}</th>)}
             </tr>
           </thead>
           <tbody>
             <tr>
               <th scope="row">Landed total (INR)</th>
-              {sampleSuppliers.map((supplier) => <td className="ledger-money" key={supplier.name}>{supplier.total}</td>)}
+              {restaurantSampleQuotes.map((quote) => <td className="ledger-money" key={quote.supplierName}>{formatSampleInr(quote.totalPaise)}</td>)}
             </tr>
             <tr>
-              <th scope="row">GST</th>
-              {sampleSuppliers.map((supplier) => <td key={supplier.name}>{supplier.gst}</td>)}
+              <th scope="row">Subtotal</th>
+              {restaurantSampleQuotes.map((quote) => <td key={quote.supplierName}>{formatSampleInr(quote.subtotalPaise)}</td>)}
+            </tr>
+            <tr>
+              <th scope="row">GST declared</th>
+              {restaurantSampleQuotes.map((quote) => <td key={quote.supplierName}>{formatSampleInr(quote.gstPaise)}</td>)}
+            </tr>
+            <tr>
+              <th scope="row">Freight</th>
+              {restaurantSampleQuotes.map((quote) => <td key={quote.supplierName}>{formatSampleInr(quote.freightPaise)}</td>)}
             </tr>
             <tr>
               <th scope="row">Delivery</th>
-              {sampleSuppliers.map((supplier) => <td key={supplier.name}>{supplier.delivery}</td>)}
+              {restaurantSampleQuotes.map((quote) => <td key={quote.supplierName}>{quote.delivery}</td>)}
             </tr>
             <tr>
               <th scope="row">Coverage</th>
-              {sampleSuppliers.map((supplier) => <td key={supplier.name}>{supplier.coverage}</td>)}
+              {restaurantSampleQuotes.map((quote) => <td key={quote.supplierName}>{quote.coverageCount} of {restaurantSampleRequest.items.length} items</td>)}
             </tr>
             <tr>
               <th scope="row">Payment terms</th>
-              {sampleSuppliers.map((supplier) => <td key={supplier.name}>{supplier.terms}</td>)}
+              {restaurantSampleQuotes.map((quote) => <td key={quote.supplierName}>{quote.terms}</td>)}
             </tr>
           </tbody>
         </table>
       </div>
 
       <div className="sample-ledger__foot">
-        <span><i className="status-dot" aria-hidden="true" />3 quotes {sampleSuppliers[0].status.toLowerCase()}</span>
-        <span>No recommendation is made for you</span>
+        <span><i className="status-dot" aria-hidden="true" />{restaurantSampleQuotes.length} quotes {restaurantSampleQuotes[0].status.toLowerCase()}</span>
+        <span>Illustrative prices · not live market data</span>
         <span className="sample-ledger__decision">Human award required →</span>
       </div>
     </figure>

@@ -1,5 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import {
+  restaurantSampleQuotes,
+  restaurantSampleRequest,
+} from '../../src/data/sample-procurement';
 
 const root = path.resolve(__dirname, '../..');
 
@@ -184,11 +188,34 @@ describe('public website contract', () => {
 
   test('keeps sample preview counts and launch units honest', () => {
     const tour = source('src/components/public/ProductTour.tsx');
+    const sample = source('src/data/sample-procurement.ts');
 
-    expect(tour).toContain('4 of 8 shown');
-    expect(tour).toContain('2 of 8 shown');
-    expect(tour).toContain("['Coriander', '3', 'kg']");
-    expect(tour).not.toContain("'bunch'");
+    expect(tour).toContain('items.slice(0, 4)');
+    expect(tour).toContain('items.slice(0, 2)');
+    expect(sample).toContain("name: 'Coriander', quantity: 3, unit: 'kg'");
+    expect(`${tour}\n${sample}`).not.toContain("'bunch'");
+  });
+
+  test('uses a coherent seven-day restaurant order instead of decorative demo numbers', () => {
+    expect(restaurantSampleRequest.context).toMatch(/Bengaluru/i);
+    expect(restaurantSampleRequest.context).toMatch(/100 covers/i);
+    expect(restaurantSampleRequest.cadence).toBe('7-day kitchen order');
+    expect(restaurantSampleRequest.delivery).toBe('Next morning');
+    expect(restaurantSampleRequest.items).toHaveLength(8);
+
+    const submittedQuote = restaurantSampleQuotes[0];
+    const calculatedSubtotal = restaurantSampleRequest.items.reduce(
+      (total: number, item: { quantity: number; sampleRatePaise: number }) => (
+        total + item.quantity * item.sampleRatePaise
+      ),
+      0,
+    );
+    expect(calculatedSubtotal).toBe(submittedQuote.subtotalPaise);
+
+    for (const quote of restaurantSampleQuotes) {
+      expect(quote.totalPaise).toBe(quote.subtotalPaise + quote.gstPaise + quote.freightPaise);
+      expect(quote.coverageCount).toBeLessThanOrEqual(restaurantSampleRequest.items.length);
+    }
   });
 
   test('stacks the supplier total cleanly on narrow screens', () => {

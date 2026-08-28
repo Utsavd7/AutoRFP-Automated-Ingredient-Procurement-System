@@ -4,75 +4,31 @@ import {
   requireAccountContext,
   tenantToAccount,
 } from '@/lib/server-account';
-import { updateWorkspaceAccount } from '@/lib/account/update-workspace';
-import { AuthorizationError, requireOwner } from '@/lib/auth/guards';
 
-export async function GET() {
-  const context = await requireAccountContext();
-  if (!context) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-  return NextResponse.json({
-    account: tenantToAccount(context.tenant, context.user.email),
-  });
+function privateResponse<T extends Response>(response: T): T {
+  response.headers.set('Cache-Control', 'private, no-store');
+  response.headers.set('Referrer-Policy', 'no-referrer');
+  response.headers.set('X-Content-Type-Options', 'nosniff');
+  return response;
 }
 
-export async function PUT(req: Request) {
-  const context = await requireAccountContext();
-  if (!context) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+export async function GET() {
+  let context;
   try {
-    requireOwner(context.user, 'manage-settings');
+    context = await requireAccountContext();
   } catch {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    return privateResponse(NextResponse.json(
+      { error: 'Workspace account is temporarily unavailable.' },
+      { status: 503 },
+    ));
   }
-  const body = await req.json();
-  const name = String(body.name ?? '').trim();
-  const email = String(body.email ?? '').trim().toLowerCase();
-  const addressLine = String(
-    body.addressLine ?? body.location ?? context.tenant.addressLine,
-  ).trim();
-  const city = String(body.city ?? context.tenant.city).trim();
-  const state = String(body.state ?? context.tenant.state).trim();
-  const pin = String(body.pin ?? context.tenant.pin).trim();
-  const phone = String(body.phone ?? context.tenant.phone).trim();
-
-  if (
-    !name ||
-    !email.includes('@') ||
-    !addressLine ||
-    !city ||
-    !state ||
-    !pin ||
-    !phone
-  ) {
-    return NextResponse.json(
-      { error: 'Restaurant, email, address, city, state, PIN, and phone are required.' },
-      { status: 400 },
-    );
+  if (!context) {
+    return privateResponse(NextResponse.json(
+      { error: 'Unauthorized' },
+      { status: 401 },
+    ));
   }
-
-  let updated;
-  try {
-    updated = await updateWorkspaceAccount({
-      actor: { userId: context.user.id, tenantId: context.tenant.id },
-      name,
-      email,
-      addressLine,
-      city,
-      state,
-      pin,
-      phone,
-    });
-  } catch (error) {
-    if (error instanceof AuthorizationError) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-    throw error;
-  }
-
-  return NextResponse.json({
-    account: tenantToAccount(updated.tenant, updated.user.email),
-  });
+  return privateResponse(NextResponse.json({
+    account: tenantToAccount(context.tenant, context.user.email),
+  }));
 }

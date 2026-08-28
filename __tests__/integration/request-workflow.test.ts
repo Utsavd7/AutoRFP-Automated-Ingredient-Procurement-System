@@ -267,14 +267,6 @@ describe('restricted PostgreSQL procurement request workflow', () => {
                 quantity: '1',
                 unit: 'KILOGRAM',
                 tenant: { connect: { id: 'tenant-b' } },
-                sourceIngredient: {
-                  connect: {
-                    tenantId_id: {
-                      tenantId: 'tenant-b',
-                      id: 'ingredient-private',
-                    },
-                  },
-                },
               },
             },
             supplierRequests: {
@@ -354,12 +346,12 @@ describe('restricted PostgreSQL procurement request workflow', () => {
         );
         expect(created.items).toEqual([
           expect.objectContaining({
-            sourceIngredientId: 'ingredient-b',
             name: 'Butter',
             quantity: expect.objectContaining({}),
             unit: 'KILOGRAM',
           }),
         ]);
+        expect(created.items[0]).not.toHaveProperty('sourceIngredientId');
         expect(created.items[0]!.quantity.toString()).toBe('4.25');
         expect(created.supplierRequests).toHaveLength(2);
         expect(created.supplierRequests[0]).not.toHaveProperty('tokenDigest');
@@ -957,7 +949,7 @@ describe('restricted PostgreSQL procurement request workflow', () => {
         const batchSupplierIds = [
           'supplier-race-a',
           'supplier-race-b',
-          ...Array.from({ length: 98 }, (_, index) => `supplier-batch-${index}`),
+          ...Array.from({ length: 18 }, (_, index) => `supplier-batch-${index}`),
         ];
         await admin.supplier.createMany({
           data: batchSupplierIds.slice(2).map((id, index) => ({
@@ -996,11 +988,11 @@ describe('restricted PostgreSQL procurement request workflow', () => {
           app,
           options,
         );
-        expect(maximumOpened.links).toHaveLength(100);
+        expect(maximumOpened.links).toHaveLength(20);
         const maximumRawTokens = maximumOpened.links.map(({ url }) =>
           tokenFromFragmentShareUrl(url),
         );
-        expect(new Set(maximumRawTokens).size).toBe(100);
+        expect(new Set(maximumRawTokens).size).toBe(20);
         expect(
           await admin.auditEvent.count({
             where: {
@@ -1011,7 +1003,7 @@ describe('restricted PostgreSQL procurement request workflow', () => {
               },
             },
           }),
-        ).toBe(100);
+        ).toBe(20);
       } finally {
         await app?.$disconnect();
         await admin.$disconnect();

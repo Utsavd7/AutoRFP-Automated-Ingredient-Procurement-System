@@ -1,20 +1,40 @@
 BEGIN;
 
--- SECURITY DEFINER is safe here only when the migration owner is the known
--- local/Supabase administrator and can bypass the forced tenant policies.
+-- SECURITY DEFINER is safe here only when the migration role owns every
+-- protected application table and can use a row-security-bypassing role.
+-- Verify capabilities instead of assuming a provider-specific owner name.
 DO $migration_owner$
 DECLARE
     owner_can_bypass BOOLEAN;
+    owner_owns_tables BOOLEAN;
 BEGIN
-    SELECT role.rolsuper OR role.rolbypassrls
+    SELECT pg_catalog.bool_or(
+        (role.rolsuper OR role.rolbypassrls)
+        AND pg_catalog.pg_has_role(current_user, role.oid, 'USAGE')
+    )
     INTO owner_can_bypass
-    FROM pg_catalog.pg_roles AS role
-    WHERE role.rolname = current_user;
+    FROM pg_catalog.pg_roles AS role;
 
-    IF current_user NOT IN ('postgres', 'autorfp')
-       OR COALESCE(owner_can_bypass, false) = false
+    SELECT COUNT(*) = 17
+           AND pg_catalog.bool_and(class.relowner = current_user::pg_catalog.regrole)
+    INTO owner_owns_tables
+    FROM pg_catalog.pg_class AS class
+    JOIN pg_catalog.pg_namespace AS namespace
+      ON namespace.oid = class.relnamespace
+    WHERE namespace.nspname = 'public'
+      AND class.relkind = 'r'
+      AND class.relname = ANY (ARRAY[
+          'Tenant', 'User', 'ExternalIdentity', 'Invitation', 'Menu',
+          'Recipe', 'Ingredient', 'Supplier', 'ProcurementRequest',
+          'RequestItem', 'SupplierRequest', 'SupplierQuote',
+          'SupplierQuoteItem', 'Award', 'AwardLine', 'AuditEvent',
+          'RateLimitBucket'
+      ]);
+
+    IF COALESCE(owner_can_bypass, false) = false
+       OR COALESCE(owner_owns_tables, false) = false
     THEN
-        RAISE EXCEPTION 'Forced-RLS migration requires the direct postgres/local autorfp administrator connection';
+        RAISE EXCEPTION 'Forced-RLS migration requires a row-security-bypassing owner of every application table';
     END IF;
 END
 $migration_owner$;
@@ -32,6 +52,23 @@ $runtime_role$;
 
 ALTER ROLE autorfp_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
     NOINHERIT NOREPLICATION NOBYPASSRLS;
+
+DO $runtime_role_membership$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM pg_catalog.pg_roles AS inherited_role
+        WHERE (inherited_role.rolsuper OR inherited_role.rolbypassrls)
+          AND pg_catalog.pg_has_role(
+              'autorfp_app',
+              inherited_role.oid,
+              'MEMBER'
+          )
+    ) THEN
+        RAISE EXCEPTION 'autorfp_app must not inherit a row-security-bypassing role; create it directly with SQL instead of a provider console';
+    END IF;
+END
+$runtime_role_membership$;
 
 REVOKE ALL PRIVILEGES ON SCHEMA public FROM PUBLIC, autorfp_app;
 CREATE SCHEMA autorfp_private;

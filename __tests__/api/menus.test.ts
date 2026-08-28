@@ -58,7 +58,11 @@ const body = {
 const jsonRequest = (url: string, method: string, value: unknown) =>
   new Request(url, {
     method,
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Origin: new URL(url).origin,
+      'Sec-Fetch-Site': 'same-origin',
+    },
     body: JSON.stringify(value),
   });
 
@@ -239,6 +243,64 @@ describe('reviewed menu API', () => {
 
     expect(response.status).toBe(400);
     expect(createReviewedMenuDraft).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['create', () => createMenu(new Request('http://localhost/api/menus', {
+      method: 'POST',
+      headers: {
+        Origin: 'https://attacker.example',
+        'Sec-Fetch-Site': 'cross-site',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    }))],
+    ['update', () => updateMenu(new Request('http://localhost/api/menus/menu-a', {
+      method: 'PUT',
+      headers: {
+        Origin: 'https://attacker.example',
+        'Sec-Fetch-Site': 'cross-site',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    }), routeContext('menu-a') as never)],
+    ['approve', () => approveMenu(new Request('http://localhost/api/menus/menu-a/approve', {
+      method: 'POST',
+      headers: {
+        Origin: 'https://attacker.example',
+        'Sec-Fetch-Site': 'cross-site',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ expectedVersion: 1 }),
+    }), routeContext('menu-a') as never)],
+  ])('rejects cross-origin %s before authentication or menu work', async (_label, call) => {
+    jest.mocked(requireAccountContext).mockClear();
+    const response = await call();
+
+    expect(response.status).toBe(403);
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(requireAccountContext).not.toHaveBeenCalled();
+    expect(createReviewedMenuDraft).not.toHaveBeenCalled();
+    expect(updateReviewedMenuDraft).not.toHaveBeenCalled();
+    expect(approveReviewedMenu).not.toHaveBeenCalled();
+  });
+
+  it('rejects non-JSON menu writes before authentication', async () => {
+    jest.mocked(requireAccountContext).mockClear();
+    const response = await createMenu(new Request('http://localhost/api/menus', {
+      method: 'POST',
+      headers: {
+        Origin: 'http://localhost',
+        'Sec-Fetch-Site': 'same-origin',
+        'Content-Type': 'text/plain',
+      },
+      body: '{}',
+    }));
+
+    expect(response.status).toBe(415);
+    expect(requireAccountContext).not.toHaveBeenCalled();
   });
 
   it('requires an expected version for approval', async () => {

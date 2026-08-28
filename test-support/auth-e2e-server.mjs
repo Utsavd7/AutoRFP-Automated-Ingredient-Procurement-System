@@ -187,6 +187,7 @@ async function main() {
     NEXTAUTH_URL: `http://127.0.0.1:${appPort}`,
     NEXTAUTH_SECRET: 'quoteplate-local-browser-test-secret-2026',
     NEXT_DIST_DIR: '.next-auth-e2e',
+    QUOTEPLATE_LOCAL_E2E: '1',
   };
   if (!liveGoogle) {
     appEnv.GOOGLE_CLIENT_ID = 'local-google-client';

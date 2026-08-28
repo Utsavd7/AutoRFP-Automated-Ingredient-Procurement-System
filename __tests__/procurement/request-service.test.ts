@@ -1,11 +1,13 @@
 import {
   decodeRequestCursor,
   encodeRequestCursor,
+  PROCUREMENT_REQUEST_LIMITS,
   ProcurementRequestValidationError,
   validateDraftPatchInput,
   validateLinkActionInput,
   validateOpenRequestInput,
   validateProcurementRequestDraftInput,
+  validateRepeatRequestInput,
 } from '@/lib/procurement/request-service';
 
 const now = new Date('2027-01-08T09:00:00.000Z');
@@ -31,6 +33,35 @@ const validDraft = {
 };
 
 describe('procurement request input boundaries', () => {
+  it('uses realistic launch ceilings for suppliers and ingredient lines', () => {
+    expect(PROCUREMENT_REQUEST_LIMITS.suppliers).toBe(20);
+    expect(PROCUREMENT_REQUEST_LIMITS.ingredients).toBe(250);
+    expect(() =>
+      validateProcurementRequestDraftInput(
+        {
+          ...validDraft,
+          supplierIds: Array.from({ length: 21 }, (_, index) => `supplier-${index}`),
+        },
+        now,
+      ),
+    ).toThrow(ProcurementRequestValidationError);
+    expect(() =>
+      validateProcurementRequestDraftInput(
+        {
+          ...validDraft,
+          ingredientSelection: {
+            mode: 'SELECTED',
+            ingredientIds: Array.from(
+              { length: 251 },
+              (_, index) => `ingredient-${index}`,
+            ),
+          },
+        },
+        now,
+      ),
+    ).toThrow(ProcurementRequestValidationError);
+  });
+
   it('normalizes a selected-ingredient India request without losing exact IDs', () => {
     expect(validateProcurementRequestDraftInput(validDraft, now)).toEqual({
       title: 'Weekly vegetables — Indiranagar',
@@ -154,6 +185,27 @@ describe('procurement request input boundaries', () => {
     expect(() =>
       validateOpenRequestInput({ expectedVersion: 2, status: 'OPEN' }),
     ).toThrow(ProcurementRequestValidationError);
+  });
+
+  it('accepts only bounded future dates when running a completed request again', () => {
+    expect(validateRepeatRequestInput({
+      expectedSourceVersion: 3,
+      title: 'Weekly vegetables · 17 January',
+      deliveryDate: '2027-01-17',
+      quoteDeadline: '2027-01-16T10:00:00.000Z',
+    }, now)).toEqual({
+      expectedSourceVersion: 3,
+      title: 'Weekly vegetables · 17 January',
+      deliveryDate: new Date('2027-01-17T00:00:00.000Z'),
+      quoteDeadline: new Date('2027-01-16T10:00:00.000Z'),
+    });
+    expect(() => validateRepeatRequestInput({
+      expectedSourceVersion: 3,
+      title: 'Weekly vegetables',
+      deliveryDate: '2027-01-10',
+      quoteDeadline: '2027-01-10T00:00:00.000Z',
+      sourceRequestId: 'client-controlled',
+    }, now)).toThrow(ProcurementRequestValidationError);
   });
 
   it('round-trips an opaque bounded list cursor and rejects tampering', () => {

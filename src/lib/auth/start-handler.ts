@@ -19,6 +19,14 @@ import {
   GoogleOnboardingError,
 } from '@/lib/auth/oauth-start';
 import { consumeWorkspaceCreationRateLimit } from '@/lib/auth/rate-limit';
+import {
+  pilotEmailAllowed,
+  productionEmailOwnerSignupAllowed,
+} from '@/lib/auth/pilot-access';
+import {
+  browserJsonMutationRejection,
+  privateMutationResponse,
+} from '@/lib/security/browser-mutation';
 
 const MAX_SIGNUP_BODY_BYTES = 16 * 1_024;
 const GENERIC_SIGNUP_ERROR =
@@ -33,35 +41,41 @@ type AuthStartDependencies = {
 
 function errorResponse(error: unknown) {
   if (error instanceof EmailSignupError) {
-    return NextResponse.json({ error: error.message }, { status: error.status });
+    return privateMutationResponse(NextResponse.json({ error: error.message }, { status: error.status }));
   }
   if (error instanceof GoogleOnboardingError) {
-    return NextResponse.json({ error: error.message }, { status: 400 });
+    return privateMutationResponse(NextResponse.json({ error: error.message }, { status: 400 }));
   }
-  return NextResponse.json(
+  return privateMutationResponse(NextResponse.json(
     { error: GENERIC_SIGNUP_ERROR },
     { status: 503 },
-  );
+  ));
 }
 
 function invalidBodyResponse(error: unknown) {
   if (error instanceof RequestBodyTooLargeError) {
-    return NextResponse.json(
+    return privateMutationResponse(NextResponse.json(
       { error: 'Signup details must be smaller than 16 KB.' },
       { status: 413 },
-    );
+    ));
   }
   if (error instanceof InvalidJsonBodyError) {
-    return NextResponse.json(
+    return privateMutationResponse(NextResponse.json(
       { error: 'Send valid signup details.' },
       { status: 400 },
-    );
+    ));
   }
   return null;
 }
 
 export function createAuthStartHandler(dependencies: AuthStartDependencies) {
   return async function authStart(request: Request) {
+    const rejected = browserJsonMutationRejection(request, dependencies.env);
+    if (rejected) {
+      return privateMutationResponse(rejected === 'CROSS_ORIGIN'
+        ? NextResponse.json({ error: 'Start signup from the QuotePlate sign-up page.' }, { status: 403 })
+        : NextResponse.json({ error: 'Send signup details as application/json.' }, { status: 415 }));
+    }
     let body: EmailSignupInput & { method?: string };
     try {
       const parsed = await readBoundedJson(request, MAX_SIGNUP_BODY_BYTES);
@@ -74,10 +88,26 @@ export function createAuthStartHandler(dependencies: AuthStartDependencies) {
     }
 
     if (body.method !== 'email' && body.method !== 'google') {
-      return NextResponse.json(
+      return privateMutationResponse(NextResponse.json(
         { error: 'Choose email or Google signup.' },
         { status: 400 },
-      );
+      ));
+    }
+
+    if (!pilotEmailAllowed(body.email, dependencies.env)) {
+      return privateMutationResponse(NextResponse.json(
+        { error: 'This pilot is available only to approved restaurant owners.' },
+        { status: 403 },
+      ));
+    }
+    if (
+      body.method === 'email' &&
+      !productionEmailOwnerSignupAllowed(dependencies.env)
+    ) {
+      return privateMutationResponse(NextResponse.json(
+        { error: 'Use your approved Google account to activate this pilot.' },
+        { status: 403 },
+      ));
     }
 
     const now = dependencies.now();
@@ -88,13 +118,13 @@ export function createAuthStartHandler(dependencies: AuthStartDependencies) {
         now,
       });
       if (!rateLimit.allowed) {
-        return NextResponse.json(
+        return privateMutationResponse(NextResponse.json(
           { error: GENERIC_SIGNUP_ERROR },
           {
             status: 429,
             headers: { 'Retry-After': String(rateLimit.retryAfterSeconds) },
           },
-        );
+        ));
       }
     } catch (error) {
       return errorResponse(error);
@@ -103,30 +133,30 @@ export function createAuthStartHandler(dependencies: AuthStartDependencies) {
     if (body.method === 'email') {
       try {
         await dependencies.emailSignup(body);
-        return NextResponse.json({ ok: true }, { status: 201 });
+        return privateMutationResponse(NextResponse.json({ ok: true }, { status: 201 }));
       } catch (error) {
         if (
           error instanceof EmailSignupError &&
           error.code === 'EMAIL_ALREADY_REGISTERED'
         ) {
-          return NextResponse.json({ ok: true }, { status: 201 });
+          return privateMutationResponse(NextResponse.json({ ok: true }, { status: 201 }));
         }
         return errorResponse(error);
       }
     }
 
     if (!googleAuthAvailable(dependencies.env)) {
-      return NextResponse.json(
+      return privateMutationResponse(NextResponse.json(
         { error: 'Google sign-in is not configured. Use email and password.' },
         { status: 503 },
-      );
+      ));
     }
     const secret = dependencies.env.NEXTAUTH_SECRET?.trim();
     if (!secret) {
-      return NextResponse.json(
+      return privateMutationResponse(NextResponse.json(
         { error: 'Google sign-in is temporarily unavailable. Use email and password.' },
         { status: 503 },
-      );
+      ));
     }
 
     try {
@@ -155,7 +185,7 @@ export function createAuthStartHandler(dependencies: AuthStartDependencies) {
         flowId: cookie.flowId,
       });
       response.cookies.set(cookie.name, cookie.value, cookie.options);
-      return response;
+      return privateMutationResponse(response);
     } catch (error) {
       return errorResponse(error);
     }

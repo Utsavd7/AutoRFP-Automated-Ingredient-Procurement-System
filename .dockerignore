@@ -1,0 +1,15 @@
+.git
+.github
+.next
+.next-*
+.auth-e2e-support
+.env
+.env.*
+!.env.sample
+node_modules
+test-results
+coverage
+docs
+__tests__
+tests
+*.log

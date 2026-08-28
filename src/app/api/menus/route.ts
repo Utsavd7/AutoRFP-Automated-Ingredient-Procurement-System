@@ -14,6 +14,10 @@ import {
   MenuValidationError,
 } from '@/lib/menu/menu-service';
 import { requireAccountContext } from '@/lib/server-account';
+import {
+  browserJsonMutationRejection,
+  privateMutationResponse,
+} from '@/lib/security/browser-mutation';
 
 function actorFrom(context: NonNullable<Awaited<ReturnType<typeof requireAccountContext>>>) {
   return { userId: context.user.id, tenantId: context.tenant.id };
@@ -52,9 +56,15 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const rejected = browserJsonMutationRejection(request);
+  if (rejected) {
+    return privateMutationResponse(rejected === 'CROSS_ORIGIN'
+      ? problemResponse(403, 'Request not allowed', 'Create menus from the QuotePlate workspace page.')
+      : problemResponse(415, 'Unsupported media type', 'Send this request as application/json.'));
+  }
   const context = await requireAccountContext();
   if (!context) {
-    return problemResponse(401, 'Unauthorized', 'Authentication is required.');
+    return privateMutationResponse(problemResponse(401, 'Unauthorized', 'Authentication is required.'));
   }
 
   let draft: unknown;
@@ -62,10 +72,10 @@ export async function POST(request: Request) {
     draft = await readBoundedJson(request, MENU_REQUEST_BODY_BYTES);
   } catch (error) {
     if (error instanceof RequestBodyTooLargeError) {
-      return problemResponse(413, 'Request too large', error.message);
+      return privateMutationResponse(problemResponse(413, 'Request too large', error.message));
     }
     if (!(error instanceof InvalidJsonBodyError)) throw error;
-    return problemResponse(400, 'Invalid request', 'Provide a valid JSON body.');
+    return privateMutationResponse(problemResponse(400, 'Invalid request', 'Provide a valid JSON body.'));
   }
 
   try {
@@ -73,8 +83,8 @@ export async function POST(request: Request) {
       actor: actorFrom(context),
       draft,
     });
-    return NextResponse.json({ menu }, { status: 201 });
+    return privateMutationResponse(NextResponse.json({ menu }, { status: 201 }));
   } catch (error) {
-    return menuError(error);
+    return privateMutationResponse(menuError(error));
   }
 }

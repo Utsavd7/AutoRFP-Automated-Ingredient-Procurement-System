@@ -19,7 +19,7 @@ export function resolveInvitationOrigin(
     throw new TypeError('The invitation origin cannot contain credentials.');
   }
   if (url.protocol !== 'https:') {
-    if (production || url.protocol !== 'http:' || !localHosts.has(url.hostname)) {
+    if (url.protocol !== 'http:' || !localHosts.has(url.hostname)) {
       throw new TypeError('Invitation links require HTTPS outside local development.');
     }
   }

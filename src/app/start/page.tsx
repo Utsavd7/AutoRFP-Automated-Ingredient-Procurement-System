@@ -4,6 +4,7 @@ import { AuthPageShell } from '@/components/auth/AuthPageShell';
 import { googleAuthAvailable } from '@/lib/auth';
 import { resolveAuthCallback } from '@/lib/auth/callback-url';
 import { authErrorMessage } from '@/lib/auth/client-errors';
+import { productionEmailOwnerSignupAllowed } from '@/lib/auth/pilot-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,6 +34,7 @@ export default async function StartPage({ searchParams }: StartPageProps) {
       mode="start"
       callbackUrl={callbackUrl}
       googleAvailable={googleAvailable}
+      emailOwnerSignupAvailable={productionEmailOwnerSignupAllowed(process.env)}
       initialError={error ? authErrorMessage(error) : null}
     />
   );

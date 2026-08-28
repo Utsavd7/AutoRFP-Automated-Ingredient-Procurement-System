@@ -26,6 +26,14 @@ const auditRules = {
     entityType: 'ProcurementRequest',
     metadata: ['reason'],
   },
+  'request.repeated': {
+    entityType: 'ProcurementRequest',
+    metadata: ['sourceRequestId'],
+  },
+  'audit.export': {
+    entityType: 'ProcurementRequest',
+    metadata: ['kind', 'format', 'byteCount'],
+  },
 } as const;
 
 export type AuditAction = keyof typeof auditRules;

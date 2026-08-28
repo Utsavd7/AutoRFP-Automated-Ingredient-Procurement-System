@@ -63,6 +63,9 @@ next-env.d.ts
 # ── Vercel ────────────────────────────────────────────────
 .vercel
 
+# ── Netlify local build output ────────────────────────────
+/.netlify/
+
 # ── ChromaDB vector store data ────────────────────────────
 /chroma_data/
 /chroma/

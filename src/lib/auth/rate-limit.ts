@@ -46,7 +46,16 @@ export function digestAuthRateLimitSubject(
     .digest('hex');
 }
 
-export function authClientIdentifier(headers: Headers) {
+export function authClientIdentifier(
+  headers: Headers,
+  environment: { NODE_ENV?: string } = process.env,
+) {
+  if (environment.NODE_ENV === 'production') {
+    return (
+      normalizedSubject(headers.get('x-nf-client-connection-ip')) ??
+      'production-unidentified'
+    );
+  }
   const direct =
     normalizedSubject(headers.get('cf-connecting-ip')) ??
     normalizedSubject(headers.get('x-real-ip'));
@@ -68,33 +77,32 @@ async function consumeAuthRateLimit(
 ) {
   const email = normalizedSubject(input.email);
   const clientIdentifier = normalizedSubject(input.clientIdentifier);
-  const attempts = [
-    email
-      ? consume({
-          ...configuration.email,
-          subjectDigest: digestAuthRateLimitSubject('email', email),
-          now: input.now,
-        })
-      : null,
-    clientIdentifier
-      ? consume({
-          ...configuration.client,
-          subjectDigest: digestAuthRateLimitSubject('client', clientIdentifier),
-          now: input.now,
-        })
-      : null,
-  ].filter((attempt): attempt is Promise<RateLimitResult> => attempt !== null);
+  const results: RateLimitResult[] = [];
+  if (clientIdentifier) {
+    const clientResult = await consume({
+      ...configuration.client,
+      subjectDigest: digestAuthRateLimitSubject('client', clientIdentifier),
+      now: input.now,
+    });
+    if (!clientResult.allowed) return clientResult;
+    results.push(clientResult);
+  }
+  if (email) {
+    const emailResult = await consume({
+      ...configuration.email,
+      subjectDigest: digestAuthRateLimitSubject('email', email),
+      now: input.now,
+    });
+    if (!emailResult.allowed) return emailResult;
+    results.push(emailResult);
+  }
 
-  if (!attempts.length) return { allowed: true, retryAfterSeconds: 1 };
-  const results = await Promise.all(attempts);
-  const denied = results.filter((result) => !result.allowed);
+  if (!results.length) return { allowed: true, retryAfterSeconds: 1 };
   return {
-    allowed: denied.length === 0,
+    allowed: true,
     retryAfterSeconds: Math.max(
       1,
-      ...(denied.length ? denied : results).map(
-        (result) => result.retryAfterSeconds,
-      ),
+      ...results.map((result) => result.retryAfterSeconds),
     ),
   };
 }

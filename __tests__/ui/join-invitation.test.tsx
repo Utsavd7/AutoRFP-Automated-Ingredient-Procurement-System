@@ -2,14 +2,11 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import JoinInvitationPage, {
   metadata,
-} from '@/app/(public)/join/[token]/page';
+} from '@/app/(public)/join/page';
 
 describe('public invitation acceptance page', () => {
   it('renders an accessible focused join form', async () => {
-    const token = 'A'.repeat(43);
-    const page = await JoinInvitationPage({
-      params: Promise.resolve({ token }),
-    });
+    const page = JoinInvitationPage();
     const html = renderToStaticMarkup(page);
 
     expect(html).toContain('Join your restaurant workspace');
@@ -20,7 +17,7 @@ describe('public invitation acceptance page', () => {
     expect(html).toContain('name="password"');
     expect(html).toContain('autoComplete="new-password"');
     expect(html).toContain('minLength="8"');
-    expect(html).toContain('Accept invitation');
+    expect(html).toContain('Checking invitation…');
   });
 
   it('prevents invitation URLs from being indexed or used as referrers', () => {

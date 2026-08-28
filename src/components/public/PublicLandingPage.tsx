@@ -59,7 +59,7 @@ export function PublicLandingPage() {
           <header className="section-heading">
             <p className="public-eyebrow">One commercial thread</p>
             <h2 id="workflow-title">From reviewed demand<br />to a recorded award.</h2>
-            <p>Restaurant teams control the request and the decision. Suppliers only see and answer the request shared with them.</p>
+            <p>Restaurant teams control the request and the decision. Suppliers only see and answer the request shared with them. When the need returns, run the request again and compare new quotes with the saved history.</p>
           </header>
           <ol className="workflow__list">
             {workflow.map(([title, detail], index) => (

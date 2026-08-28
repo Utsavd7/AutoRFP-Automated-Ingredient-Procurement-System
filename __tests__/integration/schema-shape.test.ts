@@ -196,6 +196,8 @@ test('database catalog exposes only the tenant-safe launch authority', async () 
 
       const columnsByKey = new Map(columns.map((column) => [columnKey(column), column]));
 
+      expect(columns).toHaveLength(171);
+
       for (const table of tenantOwnedTables) {
         expect(columnsByKey.get(`${table}.tenantId`)).toEqual(
           expect.objectContaining({ data_type: 'text', is_nullable: 'NO' }),
@@ -203,12 +205,14 @@ test('database catalog exposes only the tenant-safe launch authority', async () 
       }
       expect(columnsByKey.has('Tenant.tenantId')).toBe(false);
       expect(columnsByKey.has('RateLimitBucket.tenantId')).toBe(false);
-      expect(columnsByKey.get('Recipe.retiredAt')).toEqual(
-        expect.objectContaining({
-          data_type: 'timestamp without time zone',
-          is_nullable: 'YES',
-        }),
-      );
+      for (const removedColumn of [
+        'Recipe.retiredAt',
+        'RequestItem.sourceIngredientId',
+        'Supplier.verifiedAt',
+        'Supplier.verifiedByUserId',
+      ]) {
+        expect(columnsByKey.has(removedColumn)).toBe(false);
+      }
       expect(
         columns
           .filter(({ table_name }) => table_name === 'ExternalIdentity')
@@ -289,12 +293,15 @@ test('database catalog exposes only the tenant-safe launch authority', async () 
           'SupplierQuoteItem_availableQuantity_check',
           'SupplierQuoteItem_gstBasisPoints_check',
           'SupplierQuoteItem_gstPaise_check',
+          'SupplierQuoteItem_line_total_check',
+          'SupplierQuoteItem_quote_shape_check',
           'SupplierQuoteItem_subtotalPaise_check',
           'SupplierQuoteItem_totalPaise_check',
           'SupplierQuoteItem_unitRatePaise_check',
           'SupplierQuote_deliveryDate_check',
           'SupplierQuote_freightPaise_check',
           'SupplierQuote_gstPaise_check',
+          'SupplierQuote_landed_total_check',
           'SupplierQuote_revision_check',
           'SupplierQuote_subtotalPaise_check',
           'SupplierQuote_totalPaise_check',
@@ -303,6 +310,17 @@ test('database catalog exposes only the tenant-safe launch authority', async () 
           'SupplierRequest_tokenDigest_length_check',
           'User_email_lowercase_check',
         ].sort(),
+      );
+      expect(
+        checks.find(
+          ({ constraint_name }) =>
+            constraint_name === 'Award_supplierSnapshots_size_check',
+        ),
+      ).toEqual(
+        expect.objectContaining({
+          table_name: 'Award',
+          definition: expect.stringContaining('2097152'),
+        }),
       );
 
       const quantityColumns = [
@@ -399,7 +417,6 @@ test('database catalog exposes only the tenant-safe launch authority', async () 
         ['Ingredient', ['tenantId'], 'Tenant', ['id']],
         ['Ingredient', ['tenantId', 'recipeId'], 'Recipe', ['tenantId', 'id']],
         ['Supplier', ['tenantId'], 'Tenant', ['id']],
-        ['Supplier', ['tenantId', 'verifiedByUserId'], 'User', ['tenantId', 'id']],
         ['ProcurementRequest', ['tenantId'], 'Tenant', ['id']],
         ['ProcurementRequest', ['tenantId', 'menuId'], 'Menu', ['tenantId', 'id']],
         [
@@ -419,12 +436,6 @@ test('database catalog exposes only the tenant-safe launch authority', async () 
           'RequestItem',
           ['tenantId', 'requestId'],
           'ProcurementRequest',
-          ['tenantId', 'id'],
-        ],
-        [
-          'RequestItem',
-          ['tenantId', 'sourceIngredientId'],
-          'Ingredient',
           ['tenantId', 'id'],
         ],
         ['SupplierRequest', ['tenantId'], 'Tenant', ['id']],
@@ -663,7 +674,7 @@ test('database catalog exposes only the tenant-safe launch authority', async () 
             "totalPaise", "awardedByUserId"
           ) VALUES (
             'oversized-award', 'catalog-tenant-a', 'catalog-request-a',
-            jsonb_build_object('payload', repeat('x', 17000)), '{}', 0, 'catalog-user-a'
+            jsonb_build_object('payload', repeat('x', 2100000)), '{}', 0, 'catalog-user-a'
           )
         `),
       ).rejects.toThrow();

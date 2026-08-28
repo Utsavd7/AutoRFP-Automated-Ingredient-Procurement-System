@@ -15,24 +15,34 @@ import {
   MenuValidationError,
 } from '@/lib/menu/menu-service';
 import { requireAccountContext } from '@/lib/server-account';
+import {
+  browserJsonMutationRejection,
+  privateMutationResponse,
+} from '@/lib/security/browser-mutation';
 
 type MenuRouteContext = { params: Promise<{ id: string }> };
 
-export async function POST(_request: Request, context: MenuRouteContext) {
+export async function POST(request: Request, context: MenuRouteContext) {
+  const rejected = browserJsonMutationRejection(request);
+  if (rejected) {
+    return privateMutationResponse(rejected === 'CROSS_ORIGIN'
+      ? problemResponse(403, 'Request not allowed', 'Approve menus from the QuotePlate workspace page.')
+      : problemResponse(415, 'Unsupported media type', 'Send this request as application/json.'));
+  }
   const account = await requireAccountContext();
   if (!account) {
-    return problemResponse(401, 'Unauthorized', 'Authentication is required.');
+    return privateMutationResponse(problemResponse(401, 'Unauthorized', 'Authentication is required.'));
   }
 
   let body: unknown;
   try {
-    body = await readBoundedJson(_request, MENU_REQUEST_BODY_BYTES);
+    body = await readBoundedJson(request, MENU_REQUEST_BODY_BYTES);
   } catch (error) {
     if (error instanceof RequestBodyTooLargeError) {
-      return problemResponse(413, 'Request too large', error.message);
+      return privateMutationResponse(problemResponse(413, 'Request too large', error.message));
     }
     if (!(error instanceof InvalidJsonBodyError)) throw error;
-    return problemResponse(400, 'Invalid request', 'Provide a valid JSON body.');
+    return privateMutationResponse(problemResponse(400, 'Invalid request', 'Provide a valid JSON body.'));
   }
 
   const expectedVersion =
@@ -46,21 +56,21 @@ export async function POST(_request: Request, context: MenuRouteContext) {
       menuId: id,
       expectedVersion,
     });
-    return NextResponse.json({ menu });
+    return privateMutationResponse(NextResponse.json({ menu }));
   } catch (error) {
     if (error instanceof MenuNotFoundError) {
-      return problemResponse(404, 'Menu not found', 'The menu is unavailable.');
+      return privateMutationResponse(problemResponse(404, 'Menu not found', 'The menu is unavailable.'));
     }
     if (error instanceof MenuConflictError) {
-      return problemResponse(409, 'Menu is not ready', error.message);
+      return privateMutationResponse(problemResponse(409, 'Menu is not ready', error.message));
     }
     if (error instanceof MenuValidationError) {
-      return problemResponse(422, 'Invalid menu', error.message, {
+      return privateMutationResponse(problemResponse(422, 'Invalid menu', error.message, {
         errors: error.errors,
-      });
+      }));
     }
     if (error instanceof AuthorizationError) {
-      return problemResponse(403, 'Forbidden', 'You cannot approve this menu.');
+      return privateMutationResponse(problemResponse(403, 'Forbidden', 'You cannot approve this menu.'));
     }
     throw error;
   }

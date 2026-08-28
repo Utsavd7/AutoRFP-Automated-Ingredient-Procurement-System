@@ -11,7 +11,13 @@ export type RateLimitScope =
   | 'auth-workspace-create-client'
   | 'auth-workspace-create-email'
   | 'member-invitation-accept'
-  | 'supplier-request';
+  | 'member-invitation-accept-client'
+  | 'supplier-request'
+  | 'supplier-quote-access-client'
+  | 'supplier-quote-read-client'
+  | 'supplier-quote-read-token'
+  | 'supplier-quote-submit-client'
+  | 'supplier-quote-submit';
 
 const DIGEST_PATTERN = /^[a-f0-9]{64}$/;
 

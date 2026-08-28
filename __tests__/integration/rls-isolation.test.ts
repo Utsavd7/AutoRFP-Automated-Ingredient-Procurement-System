@@ -121,6 +121,27 @@ test('forced RLS isolates every tenant transaction under the restricted runtime 
         rolbypassrls: false,
       });
 
+      await admin.$executeRawUnsafe(
+        'CREATE ROLE inherited_runtime_bypass NOLOGIN BYPASSRLS',
+      );
+      await admin.$executeRawUnsafe(
+        'GRANT inherited_runtime_bypass TO autorfp_app',
+      );
+      const inheritedClient = await provisionAppClient(admin, databaseUrl);
+      await expect(
+        assertRuntimeDatabaseRole(inheritedClient),
+      ).rejects.toMatchObject({ code: 'UNSAFE_DATABASE_ROLE' });
+      const inheritedCallback = jest.fn();
+      await expect(
+        withTenant('tenant-a', inheritedCallback, inheritedClient),
+      ).rejects.toMatchObject({ code: 'UNSAFE_DATABASE_ROLE' });
+      expect(inheritedCallback).not.toHaveBeenCalled();
+      await inheritedClient.$disconnect();
+      await admin.$executeRawUnsafe(
+        'REVOKE inherited_runtime_bypass FROM autorfp_app',
+      );
+      await admin.$executeRawUnsafe('DROP ROLE inherited_runtime_bypass');
+
       const protectedTables = await admin.$queryRaw<
         Array<{ table_name: string; enabled: boolean; forced: boolean }>
       >`

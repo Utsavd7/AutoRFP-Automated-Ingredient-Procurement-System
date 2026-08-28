@@ -6,10 +6,12 @@ DECLARE
     owns_private_schema BOOLEAN;
     owns_required_tables BOOLEAN;
 BEGIN
-    SELECT role.rolsuper OR role.rolbypassrls
+    SELECT pg_catalog.bool_or(
+        (role.rolsuper OR role.rolbypassrls)
+        AND pg_catalog.pg_has_role(current_user, role.oid, 'USAGE')
+    )
     INTO owner_can_bypass
-    FROM pg_catalog.pg_roles AS role
-    WHERE role.rolname = current_user;
+    FROM pg_catalog.pg_roles AS role;
 
     SELECT namespace.nspowner = current_user::pg_catalog.regrole
     INTO owns_private_schema

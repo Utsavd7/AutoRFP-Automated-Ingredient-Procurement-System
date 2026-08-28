@@ -1,329 +1,208 @@
-# AutoRFP - Automated Ingredient Procurement System
+# QuotePlate
 
-> Built by Utsav Doshi · [github.com/Utsavd7](https://github.com/Utsavd7)
+**Every supplier quote. One accountable decision.**
 
----
+QuotePlate is an India-first restaurant procurement workspace. A restaurant can prepare an ingredient request, collect quotes from its own suppliers without asking them to create accounts, compare the real landed cost, record a whole or split award, and keep the complete commercial history for the next buying cycle.
 
-## Current Status
+Built by [Utsav Doshi](https://github.com/Utsavd7) · [View the repository](https://github.com/Utsavd7/AutoRFP-Automated-Ingredient-Procurement-System)
 
-AutoRFP is in a production-safety rebuild. The default application currently supports authenticated restaurant workspaces, bounded pasted menu text, and a saved draft of menu text and extracted dish names. It does not yet create an ingredient demand plan, send supplier requests, present market estimates as verified evidence, accept public supplier quotes, simulate supplier replies, or run negotiation workflows.
+![QuotePlate wordmark](public/brand/wordmark-horizontal.svg)
 
-The earlier pricing, supplier discovery, quote simulation, background-job, public quote, and agent negotiation modules remain quarantined behind explicit legacy-demo flags while they are replaced and verified. They are not production capabilities.
+## Product status
 
-The approved target is an India-first procurement workflow for 1 to 10 restaurant users initially, designed to scale beyond 20. The target includes reviewed supplier outreach, traceable price evidence, a secure quote portal, reliable delivery processing, and tenant-isolated procurement records. Those capabilities will only move into the current feature set after their production gates are complete.
+The complete launch workflow is implemented and passes the local release gate. Unit, integration, responsive browser, accessibility, migration, tenant-isolation, production-build, and bounded 20-restaurant load checks pass. Production provider setup, one encrypted remote restore, and the live canary remain intentionally pending; none of those steps may add a card, enable billing, or accept a paid upgrade.
 
-## What the Safe Baseline Does
+The controlled launch is sized for **one to four restaurants** on cardless free plans. The code and test profile already cover **20 isolated restaurant workspaces** so the application can grow without a rewrite.
 
-Every restaurant has to buy food. Every single week.
+## What a restaurant can do
 
-The chef or owner has to figure out: what do we need, how much of it, who sells it, what's the going rate, and are we getting a fair price? Then they call suppliers, wait for quotes, compare them manually, negotiate a little, and place an order. Then do it all over again next week.
+- Activate a production owner workspace with an approved Google account; invited or existing users can use local credentials where configured.
+- Invite team members with expiring, single-use links and sign out from every responsive layout.
+- Paste a menu, review dishes and ingredient quantities, correct them, approve the reviewed menu, and track its version number.
+- Add, search, edit, deactivate, import, or export up to 500 suppliers per operation in the restaurant's own directory.
+- Build a draft request with delivery details, dates, commercial terms, up to 250 items, and up to 20 suppliers.
+- Open the request and share a different secure link or QR code with each supplier.
+- Let a supplier quote without an account, including partial availability, substitutions, GST, tax-inclusive rates, freight, delivery, validity, terms, and a deliberate no-quote choice.
+- Preserve every submitted quote revision instead of silently replacing earlier prices.
+- Compare normalized unit rates, coverage, GST, freight, delivery fit, and final landed totals in one view.
+- Award the complete request to one supplier or split it item by item, with a human-entered reason and an immutable decision record.
+- Download request, comparison, award, and accounting CSVs plus one PDF purchase order per winning supplier.
+- Review history and practical spend insights, then repeat an earlier request as a fresh editable draft.
 
-You paste menu text and review the extracted dish names. The menu draft is saved, and the workflow stops there. Ingredient entry, quantity planning, and supplier actions are not enabled in the current safe default.
+## Why suppliers do not need another app
 
----
+QuotePlate works with the suppliers a restaurant already knows. Each supplier receives a private, expiring request link and can submit from a phone without registering, installing an app, or joining a marketplace. A restaurant can create, rotate, or revoke that link and see when it was first viewed.
 
-## Why This Problem Is Worth Solving
+## Why a restaurant keeps using it after meeting a supplier
 
-Food is the single biggest controllable cost in a restaurant — typically 28–35% of revenue. Even small inefficiencies compound fast.
+Direct supplier relationships are expected, not blocked. The lasting value is the next purchase: comparing fresh prices, checking GST and freight, tracking revisions, splitting an award, generating purchase orders, and knowing exactly why a decision was made. Going back to calls and spreadsheets removes that shared record and makes price changes harder to spot.
 
-But the way most restaurants actually handle procurement hasn't changed much in decades:
+## Product principles
 
-- **No price visibility.** Suppliers quote whatever they want. Most restaurant owners have no idea if chicken breast is up 15% this month because of avian flu or if their beef distributor is padding margins. There's no live market signal in the room.
-- **No negotiation leverage.** A single restaurant calling one supplier has almost none. There's no data, no comparison, and no time to shop around.
-- **No memory.** Every procurement cycle starts from zero. Nobody knows what they paid last quarter, which vendor came in cheapest for salmon, or that the last time wheat spiked they should've locked in flour early.
-- **It's all manual.** Phone calls, emails, spreadsheets. The chef is doing this on top of running a kitchen. It's the last thing anyone wants to spend time on.
+- **Factual, not automated theatre.** QuotePlate records supplier-entered facts and keeps the final award under human control.
+- **No marketplace lock-in.** The restaurant owns its supplier relationships and procurement records.
+- **No paid API dependency.** The launch product uses no paid AI, email, SMS, WhatsApp, pricing, payments, or supplier-discovery API.
+- **No surprise billing.** Provider-side caps, card removal, and a manual release check protect the free-plan boundary. Project workflows never add a payment method, enable overage, auto-recharge, or accept an upgrade.
+- **Useful on an ordinary phone.** The public site, authenticated workspace, forms, tables, dialogs, and supplier quote flow are tested across phone, tablet, and desktop layouts.
 
-The result: restaurants routinely overpay, miss pricing windows, and have no visibility into whether their food costs are trending in the right direction.
+## Technology
 
-This is a real operational problem for independent restaurants without a dedicated procurement team. The approved rollout starts in India with 1 to 10 restaurant users, then expands after the safety and reliability gates are proven.
+| Layer | Choice |
+| --- | --- |
+| Web application | Next.js 16, React 19, TypeScript, Tailwind CSS 4 |
+| Database | PostgreSQL with Prisma 5 |
+| Authentication | NextAuth, Google OAuth, Argon2 local credentials |
+| Documents | CSV, QR code PNG, and PDF generated inside the application |
+| Production host | Netlify Free |
+| Production database | Neon Postgres Free |
+| Automation | GitHub Actions with manual production approval |
+| Production backup | Encrypted Backblaze B2 Free storage |
+| Self-hosting option | Multi-stage, non-root Docker image |
 
----
+All production dependencies are open source. There is no LLM, vector database, background-job platform, paid monitoring service, transactional-email vendor, or usage-priced API in the runtime.
 
-## Why I Built This
+## Lean database
 
-I wanted to explore the intersection of procurement automation, market evidence, and restaurant operations. The original prototype tested the ideas below. During the production-safety rebuild, only menu and dish-name drafting are enabled by default; the rest are quarantined prototype modules or approved target capabilities.
+The launch schema has **17 tables and 171 scalar fields**. It is deliberately normalized: identity, invitations, quote revisions, award lines, and the audit trail remain separate because merging them would weaken security or destroy useful history while saving negligible storage.
 
-**Hidden ingredient prototype** — The original experiment used model inference to add likely cooking ingredients. The production-safe parser does not invent ingredients that are absent from the submitted menu text. Operator-reviewed recipe enrichment is an approved target.
+Four unsupported or redundant fields were removed in the final minimal-column migration:
 
-**Quantity-planning prototype** - The legacy interface contains deterministic unit and scaling rules, but the current safe parser does not create ingredients and the safe workflow does not use those rules. Reviewed ingredient entry and quantity planning are target capabilities.
+- recipe retirement timestamp;
+- duplicate request-item source reference;
+- supplier verification timestamp;
+- supplier verifier reference.
 
-**Market evidence prototype** — The legacy module maps some ingredients to commodity and retail series, then derives estimates. Those estimates are not currently presented as verified supplier-market evidence. The approved target requires source attribution, freshness, units, and India-relevant coverage.
+The canonical schema-only reference lists every retained table and field: [docs/database-schema.md](docs/database-schema.md).
 
-**Negotiation prototype** — The legacy demo contains five typed LangGraph nodes and SSE event streaming. It is not enabled in the production-safe workflow and is not considered production-ready negotiation.
+## Security model
 
-**Parallel quote simulation prototype** — The quarantined legacy demo can simulate multiple vendor responses in parallel. Simulated replies are not real supplier quotes and are never shown as production results.
+- Every restaurant-owned table has forced PostgreSQL row-level security.
+- The running application uses a restricted `autorfp_app` role with no superuser, database-creation, role-creation, replication, inherited privilege, or RLS-bypass capability.
+- Tenant context is set inside transactions; cross-restaurant reads and writes are tested against real PostgreSQL.
+- Supplier and invitation secrets are random opaque tokens; only their digests are stored.
+- Supplier links expire and can be revoked or rotated. Quote revisions and final awards are immutable records.
+- Browser mutations require a same-origin check, and public/auth endpoints use bounded bodies and persistent rate limits.
+- Authentication responses avoid account-discovery details. The deployment runbook requires `QUOTEPLATE_RUNTIME_STARTUP_CHECK=1`, which makes production startup and readiness fail closed on unsafe configuration.
+- Security headers, private database functions, owner/member authorization, bounded exports, and cursor pagination are verified in automated tests.
 
-**Background-job prototype** — Legacy Inngest functions exist in the repository, but production delivery, retry, idempotency, and monitoring guarantees are not complete.
+## Run locally
 
-**Tenant safety baseline** — Internal API routes derive tenant identity from authenticated sessions, and tenant-owned quote writes use scoped transactional checks. A complete model-by-model isolation audit remains an exit gate before public launch.
+### Requirements
 
-**Procurement memory prototype** — Optional ChromaDB integration code exists in the quarantined recommendation workflow. The production-safe default does not use generated memory to influence procurement decisions.
+- Node.js `20.18.1` through `24.x`
+- npm
+- PostgreSQL 15 or newer for manual development
+- Docker, or complete local PostgreSQL server binaries (`initdb`, `postgres`, `createdb`, `psql`), for the integration and browser suites
 
----
+Install the exact dependency tree:
 
-## Current Baseline and Approved Target
-
-| Area | Current production-safe default | Approved target |
-|---|---|---|
-| Menu input | Bounded pasted text | Reviewed import options with explicit source handling |
-| Demand planning | Not enabled; only menu text and dish names are saved | Versioned demand plans with operator approval |
-| Market evidence | Disabled | Traceable India-relevant evidence with source, timestamp, and unit |
-| Supplier outreach | Disabled | Reviewed requests through a production email provider |
-| Supplier quotes | Public portal disabled | Secure tokenized quote collection and audit history |
-| Recommendation and negotiation | Disabled | Evidence-grounded recommendations with human approval |
-| Background processing | Legacy handlers disabled | Idempotent jobs with retries, observability, and recovery procedures |
-| Tenant isolation | Session-derived tenant guards on internal routes | Completed model and route audit with adversarial tests |
-
----
-
-## Enabled Core Features
-
-**Saved Menu Draft**
-Paste bounded menu text. The application saves the submitted text and extracted dish names without inventing ingredients.
-
-**Safe Stop Before External Action**
-After the menu draft is saved, the default workflow stops at `Menu draft saved for review`. Ingredient planning, supplier outreach, market evidence, quote collection, recommendation, risk scoring, simulation, and negotiation controls are hidden.
-
-## Quarantined Legacy Modules
-
-The following modules are retained temporarily for replacement work and local legacy demonstrations. Server routes fail closed unless `AUTORFP_ENABLE_LEGACY_DEMO=true` outside production, and client controls require `NEXT_PUBLIC_AUTORFP_ENABLE_LEGACY_DEMO=true`. Production ignores the server legacy flag.
-
-**Market Pricing Prototype**
-The legacy demo can request commodity and retail series and can produce category-based estimates. Results are prototype estimates, not current supplier evidence.
-
-**ML Price Forecasting Prototype**
-The legacy module contains OLS forecasting and anomaly heuristics. It is disabled by default, and its output is not production market evidence.
-
-**5-Node LangGraph Negotiation Pipeline (SSE streamed)**
-
-The negotiation pipeline is built as a typed `StateGraph` with five nodes:
-
-1. **loadData** — loads legacy demo quotes and estimates
-2. **orchestrate** — sets a simulated strategy and target vendors
-3. **analyze** — reads prototype pricing context
-4. **negotiate** — drafts counter-offers and simulates vendor responses
-5. **finalize** — summarizes simulated outcomes
-
-The graph and its SSE events are implementation experiments. They are inaccessible in the default product and carry no production delivery or outcome guarantee.
-
-**Inngest Background Jobs**
-Three legacy background function definitions are registered at `/api/inngest`: pricing refresh, RFP processing, and archival. The route is quarantined. Retry, idempotency, delivery, and recovery behavior still require production verification.
-
-**Tenant Isolation Baseline**
-Authenticated internal routes derive their tenant from the session, and sensitive quote writes use tenant-aware transactional conditions. The existing Prisma extension is defense in depth, not a claim that every model and operation has passed the final isolation audit.
-
-**RAG Procurement Memory Prototype**
-Optional Ollama and ChromaDB integration code remains in the legacy recommendation workflow. It is disabled in the production-safe default.
-
-**RFP and Quote Prototype**
-Legacy code exists for RFP records, email-provider experiments, a public quote page, and simulated quote collection. These paths are disabled by default. The public quote page returns a static unavailable state without loading an RFP while disabled.
-
-**Error Monitoring**
-`@sentry/nextjs` captures exceptions with stack traces and component context. Every authenticated page is wrapped in a React `ErrorBoundary` class component that shows a recovery UI and reports to Sentry on `componentDidCatch`. Set `NEXT_PUBLIC_SENTRY_DSN` to activate; the app runs normally without it.
-
-**Procurement History and Intelligence**
-History and intelligence screens can display stored records. The safe default does not create a completed supplier procurement run, so simulated savings and supplier outcomes are not presented as real results.
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| Framework | Next.js 16 App Router + TypeScript |
-| Auth | NextAuth v4 · Credentials provider · JWT sessions |
-| Database | PostgreSQL via Prisma ORM (Supabase or local) |
-| Pipeline | LangGraph prototype, legacy demo only |
-| Background jobs | Inngest prototype, quarantined |
-| Cloud LLM | Groq integration, optional legacy demo only |
-| Local LLM | Ollama `llama3.2` (optional) |
-| Embeddings | Ollama `nomic-embed-text` · deterministic fallback |
-| Vector store | ChromaDB (optional) |
-| Market data | Prototype Yahoo Finance and BLS connectors, quarantined |
-| ML | Prototype OLS regression and anomaly heuristic, quarantined |
-| Email | Prototype Resend connector, quarantined |
-| Supplier search | Prototype Google Places connector, quarantined |
-| Streaming | Prototype SSE negotiation transcript, quarantined |
-| Tenant isolation | Session-derived route guards plus scoped database conditions |
-| Error monitoring | Sentry `@sentry/nextjs` + React Error Boundaries |
-| UI animations | Framer Motion · `motion.div` + `AnimatePresence` + spring transitions |
-| Toasts | Sonner |
-| Command palette | `cmdk` · `⌘K` keyboard shortcut |
-| Styling | Tailwind CSS v4 |
-
----
-
-## Project Structure
-
-Current production-safe application surface:
-
-```text
-src/app/page.tsx                              Sign-in and workspace setup
-src/app/(app)/layout.tsx                      Authenticated application shell
-src/app/(app)/procurement/page.tsx            Menu and dish-name drafting by default
-src/app/quote/[rfpId]/page.tsx                Static unavailable state by default
-src/app/api/auth/[...nextauth]/route.ts        Authenticated session handling
-src/app/api/account/route.ts                   Session-derived restaurant profile
-src/app/api/parse-menu/route.ts                Bounded pasted-text menu drafting
-src/app/api/procurement-session/active/route.ts Saved in-progress workflow metadata
-src/lib/api/require-api-tenant.ts              Session-derived tenant guard
-src/lib/features/legacy-features.ts            Fail-closed legacy feature gate
-prisma/schema.prisma                           Database models and tenant indexes
-```
-
-Quarantined prototype modules:
-
-```text
-src/app/demo-seed/page.tsx                     Disabled demo workspace seeding
-src/app/quote/[rfpId]/page.tsx                 Disabled legacy quote form
-src/app/api/inngest/route.ts                    Disabled background-function handler
-src/app/api/pricing/route.ts                    Disabled market-estimate prototype
-src/app/api/ml/forecast/route.ts                Disabled forecast prototype
-src/app/api/distributors/route.ts               Disabled supplier-search prototype
-src/app/api/send-rfp/route.ts                   Disabled supplier-request prototype
-src/app/api/simulate-conversation/route.ts      Disabled vendor-simulation prototype
-src/app/api/recommend/route.ts                  Disabled recommendation prototype
-src/app/api/agent/negotiate/route.ts            Disabled negotiation graph prototype
-src/inngest/functions.ts                       Unverified background-function definitions
-src/lib/llm.ts                                  Optional local and legacy model adapters
-src/lib/embeddings.ts                           Optional legacy embedding adapter
-src/lib/chroma.ts                               Optional legacy vector-memory adapter
-src/lib/prisma.ts                               Prisma client with selected tenant safeguards
-```
-
----
-
-## Getting Started
-
-### 1. Clone and install
-
-```bash
+```sh
 git clone https://github.com/Utsavd7/AutoRFP-Automated-Ingredient-Procurement-System.git
 cd AutoRFP-Automated-Ingredient-Procurement-System
-npm install
-```
-
-### 2. Configure environment
-
-```bash
+npm ci --omit=peer
 cp .env.sample .env
 ```
 
-| Variable | Required | Purpose |
-|---|---|---|
-| `DATABASE_URL` | Yes | PostgreSQL connection string. Use Supabase or local Postgres. |
-| `NEXTAUTH_URL` | Yes | App URL — `http://localhost:3000` locally. |
-| `NEXTAUTH_SECRET` | Yes | Session signing secret. Run `openssl rand -base64 32`. |
-| `AUTORFP_ENABLE_LEGACY_DEMO` | No | Keep `false`. Enables quarantined server routes only in non-production environments. |
-| `NEXT_PUBLIC_AUTORFP_ENABLE_LEGACY_DEMO` | No | Keep `false`. Shows quarantined client controls only in a non-production legacy demo. |
-| `GROQ_API_KEY` | No | Optional legacy demo integration. Not used by the production-safe default. |
-| `GOOGLE_MAPS_API_KEY` | No | Optional legacy demo supplier-search integration. |
-| `RESEND_API_KEY` | No | Optional legacy demo email integration. It is not proof of delivery. |
-| `MOCK_EMAIL` | No | Optional legacy demo routing address. |
-| `AUTORFP_SEND_BUYER_REPORT` | No | Legacy demo switch. Leave disabled. |
-| `BUYER_EMAIL` | No | Legacy demo report recipient. |
-| `CHROMA_URL` | No | Optional legacy demo vector-store URL. |
-| `OLLAMA_URL` | No | Optional local model URL. The safe default does not require it. |
-| `NEXT_PUBLIC_SENTRY_DSN` | Optional | Sentry DSN. Error tracking is disabled when unset. |
-| `INNGEST_EVENT_KEY` | No | Legacy background-job development only. |
-| `INNGEST_SIGNING_KEY` | No | Legacy background-job development only. |
+Create a local database with your PostgreSQL owner account, then apply the committed migrations. Replace `YOUR_LOCAL_OWNER` with that local PostgreSQL username. Do not use `prisma db push`.
 
-### 3. Initialize the database
-
-```bash
-npx prisma generate
-npx prisma db push
+```sh
+createdb --username YOUR_LOCAL_OWNER quoteplate
+QUOTEPLATE_OWNER_URL='postgresql://YOUR_LOCAL_OWNER@127.0.0.1:5432/quoteplate?schema=public'
+DATABASE_URL="$QUOTEPLATE_OWNER_URL" DIRECT_URL="$QUOTEPLATE_OWNER_URL" npx prisma migrate deploy
+psql "$QUOTEPLATE_OWNER_URL"
 ```
 
-### 4. Optional: local AI services
+At the interactive PostgreSQL prompt, give the restricted application role a local password:
 
-Ollama for local/private inference (confirmed working with `llama3.2` + `nomic-embed-text`):
-```bash
-ollama pull llama3.2
-ollama pull nomic-embed-text
+```text
+\password autorfp_app
+\q
 ```
 
-ChromaDB for RAG procurement memory:
-```bash
-chroma run --path ./chroma_data
+Then set these values in `.env`; URL-encode the application password if it contains reserved URL characters. Keep the owner URL out of `.env` because it is needed only while applying migrations.
+
+```dotenv
+DATABASE_URL="postgresql://autorfp_app:URL_ENCODED_LOCAL_APP_PASSWORD@127.0.0.1:5432/quoteplate?schema=public"
+NEXTAUTH_URL="http://localhost:3000"
+NEXTAUTH_SECRET="REPLACE_WITH_AT_LEAST_32_RANDOM_CHARACTERS"
+QUOTEPLATE_PILOT_EMAILS="owner@example.com"
 ```
 
-Both are optional — the app degrades gracefully without them.
+Google OAuth is optional locally. Add both Google values from `.env.sample` only when you want to exercise the real provider, then start the application:
 
-### 5. Run
-
-```bash
+```sh
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000), create a restaurant workspace, and paste a menu.
+For the fastest clean review, `npm run test:integration` and `npm run test:e2e` create and remove their own disposable local PostgreSQL environments; they do not use a remote database or paid service.
 
----
+## Verification
 
-## Safe Local Workflow
-
-Start the app with the legacy flags left at `false`, create a restaurant workspace, and paste menu text. The flow stops after saving the menu text and extracted dish names. Ingredient planning, demo seeding, and external-action workflows are intentionally unavailable in this mode.
-
-### Sample menus to try
-
-Paste this text into New Procurement:
-```
-Classic Cheeseburger $14
-Spaghetti Carbonara $18
-Grilled Salmon $26
-Chicken Parmesan $22
-Caesar Salad $14
-Margherita Pizza $16
-Eggs Benedict $13
-Tiramisu $10
+```sh
+npm test
+npm run test:integration
+npm run test:e2e
+npm run lint
+npm run typecheck
+npm run build
 ```
 
----
+Recorded release evidence:
 
-## Current and Legacy Runtime Behavior
+| Gate | Result |
+| --- | --- |
+| Unit and API tests | 83 suites, 559 tests passed |
+| Real PostgreSQL integration | 22 suites, 38 tests passed |
+| Responsive end-to-end journeys | 39 passed across desktop, phone and tablet; 3 intentional provider/duplicate-flow skips |
+| Empty-database migrations and forced-RLS isolation | Passed |
+| Bounded 20-restaurant profile | Passed with zero errors or tenant mismatches |
+| Production dependency audit | 0 vulnerabilities |
+| Lint, TypeScript, Next.js build | Passed |
+| Offline Netlify production packaging | Passed |
 
-| Capability | Current default | Legacy demo only |
-|---|---|---|
-| Menu parsing | Deterministic bounded-text draft | Explicitly enabled local or external model experiments |
-| Negotiation | Disabled | LangGraph and model fallbacks |
-| Embeddings and memory | Disabled | Optional Ollama and ChromaDB experiments |
-| Background jobs | Disabled | Inngest function experiments |
-| Error tracking | React error boundaries | Optional Sentry integration |
+See [docs/reports/launch-verification.md](docs/reports/launch-verification.md) for the evidence and remaining provider gates.
 
-The current default does not depend on paid AI, supplier search, email, or background-job APIs.
+## Free-only production release
 
----
+Production is intentionally not published on every push. The release workflow accepts only an exact commit already on `main`, requires successful CI for that commit, waits for approval in the protected GitHub `production` environment, applies migrations with a step-scoped owner credential, publishes once, and runs a canary.
 
-## Quarantined Architecture Notes
+Before a first release:
 
-This section documents legacy implementation code that remains in the repository for replacement work. It does not describe enabled production behavior.
+1. Confirm Netlify, Neon, GitHub, Google, and Backblaze B2 are cardless Free accounts with no paid overage or auto-recharge.
+2. Configure Google OAuth with the exact callback `${NEXTAUTH_URL}/api/auth/callback/google`; every production owner email must be Google-verified and exactly listed in `QUOTEPLATE_PILOT_EMAILS`.
+3. Run the database-only bootstrap workflow for the approved `main` commit.
+4. Set the runtime-role password interactively and store only the restricted pooled URL in Netlify.
+5. Configure the dedicated read-only backup role and complete one real encrypted restore using the cardless backup environment.
+6. Run the manually approved Netlify release workflow. Stop immediately if any provider asks for payment or an upgrade.
 
-### LangGraph Negotiation Pipeline
+Operational instructions:
 
-The `GET /api/agent/negotiate` route compiles a `StateGraph` at module load time:
+- [Deployment](docs/runbooks/deployment.md)
+- [No-billing boundaries](docs/runbooks/cost-boundaries.md)
+- [Backup and restore](docs/runbooks/backup-restore.md)
+- [Rollback](docs/runbooks/rollback.md)
+- [Incident response](docs/runbooks/incident.md)
 
+## Repository map
+
+```text
+src/app/                 public pages, authenticated screens, and route handlers
+src/components/          product workspaces and responsive UI
+src/lib/                 auth, tenancy, procurement, quotes, awards, exports, reporting
+prisma/schema.prisma     canonical database model
+prisma/migrations/       reviewed, forward-only PostgreSQL migrations
+tests/e2e/               complete desktop, phone, and tablet product journeys
+tests/load/              bounded 20-restaurant launch profile
+__tests__/integration/   real PostgreSQL migration and isolation checks
+scripts/                 canary, backup, restore, and operational safeguards
+public/brand/            canonical SVG logo, app icon, and social card
+docs/                    schema, research, verification, brand, and runbooks
 ```
-loadData → orchestrate → analyze → negotiate → finalize → END
-```
 
-Each node returns a partial state update. The legacy `negotiate` node can emit SSE events through a request-scoped callback map. The route and client controls are disabled by default.
+## Design and research
 
-`loadDataNode` contains `menuId` and `tenantId` filters. Production safety relies on authenticated route-derived tenant context and scoped database operations, and the remaining legacy graph still requires a final isolation audit before any release.
+- [Brand kit and canonical SVG assets](docs/brand/README.md)
+- [India restaurant procurement competitive review](docs/research/india-restaurant-procurement-competitive-review.md)
+- [Schema-only database reference](docs/database-schema.md)
 
-### Parallel Quote Simulation
-
-`handleAutoConversation` contains a parallel simulation experiment using `Promise.all`. Simulated vendor messages are test data, not supplier responses. The handler is gated off by default.
-
-### Tenant Isolation
-
-`src/lib/prisma.ts` includes a Prisma extension that injects tenant fields for selected models and operations. Internal routes now derive tenant context from authenticated sessions, and sensitive quote writes use transactional tenant conditions. A complete tenant matrix and adversarial verification remain required before launch.
-
-### Inngest
-
-Three background function definitions are registered at `GET|POST|PUT /api/inngest` for legacy development. The route fails closed unless legacy demo mode is explicitly enabled outside production. Production job semantics are not yet approved.
-
----
-
-## License
-
-MIT
+**QuotePlate** combines the two sides of the product: supplier **quotes** and the restaurant **plate** those purchases ultimately serve. The two document forms in the mark represent a request and a quote moving toward one recorded decision. The product and company names remain provisional until formal trademark, company-name, and domain clearance is completed.

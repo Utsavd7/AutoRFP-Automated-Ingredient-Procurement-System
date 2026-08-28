@@ -19,7 +19,11 @@ const postMenu = (menuText: string) =>
   POST(
     new Request('http://localhost/api/parse-menu', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: 'http://localhost',
+        'Sec-Fetch-Site': 'same-origin',
+      },
       body: JSON.stringify({ menuText, tenantId: 'client-controlled-tenant' }),
     }),
   );
@@ -117,6 +121,24 @@ describe('parse-menu persistence', () => {
     );
 
     expect(response.status).toBe(413);
+    expect(menuCreate).not.toHaveBeenCalled();
+  });
+
+  it('rejects a cross-origin parse before authentication or persistence', async () => {
+    jest.mocked(requireAccountContext).mockClear();
+    const response = await POST(new Request('http://localhost/api/parse-menu', {
+      method: 'POST',
+      headers: {
+        Origin: 'https://attacker.example',
+        'Sec-Fetch-Site': 'cross-site',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ menuText: 'Dal Makhani' }),
+    }));
+
+    expect(response.status).toBe(403);
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(requireAccountContext).not.toHaveBeenCalled();
     expect(menuCreate).not.toHaveBeenCalled();
   });
 });

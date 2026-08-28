@@ -16,6 +16,10 @@ import {
   ProcurementRequestValidationError,
 } from '@/lib/procurement/request-service';
 import { requireAccountContext } from '@/lib/server-account';
+import {
+  browserJsonMutationRejection,
+  privateMutationResponse,
+} from '@/lib/security/browser-mutation';
 
 export type RequestActor = { tenantId: string; userId: string };
 
@@ -80,20 +84,26 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const rejected = browserJsonMutationRejection(request);
+  if (rejected) {
+    return privateMutationResponse(rejected === 'CROSS_ORIGIN'
+      ? problemResponse(403, 'Request not allowed', 'Create procurement requests from the QuotePlate workspace page.')
+      : problemResponse(415, 'Unsupported media type', 'Send this request as application/json.'));
+  }
   const account = await requireAccountContext();
   if (!account) {
-    return problemResponse(401, 'Unauthorized', 'Authentication is required.');
+    return privateMutationResponse(problemResponse(401, 'Unauthorized', 'Authentication is required.'));
   }
   const body = await readRequestBody(request);
-  if (body instanceof Response) return body;
+  if (body instanceof Response) return privateMutationResponse(body);
 
   try {
     const created = await createProcurementRequestDraft({
       actor: requestActor(account),
       draft: body,
     });
-    return NextResponse.json({ request: created }, { status: 201 });
+    return privateMutationResponse(NextResponse.json({ request: created }, { status: 201 }));
   } catch (error) {
-    return requestServiceError(error);
+    return privateMutationResponse(requestServiceError(error));
   }
 }

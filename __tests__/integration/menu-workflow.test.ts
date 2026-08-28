@@ -164,14 +164,6 @@ test('member review, approval, and edits stay tenant scoped and preserve issued 
           items: {
             create: {
               tenant: { connect: { id: 'tenant-a' } },
-              sourceIngredient: {
-                connect: {
-                  tenantId_id: {
-                    tenantId: 'tenant-a',
-                    id: ingredientBeforeEdit!.id,
-                  },
-                },
-              },
               name: ingredientBeforeEdit!.name,
               quantity: ingredientBeforeEdit!.quantity,
               unit: ingredientBeforeEdit!.unit,
@@ -221,35 +213,19 @@ test('member review, approval, and edits stay tenant scoped and preserve issued 
         where: { id: request.items[0]!.id },
       });
       expect(requestItemAfterEdit).toEqual(requestItemBeforeEdit);
-      const [retiredFact] = await admin.$queryRaw<
-        Array<{
-          recipeName: string;
-          ingredientName: string;
-          quantity: string;
-          unit: string;
-          retiredAt: Date | null;
-        }>
-      >`
-        SELECT
-          recipe."name" AS "recipeName",
-          ingredient."name" AS "ingredientName",
-          ingredient."quantity"::TEXT AS "quantity",
-          ingredient."unit"::TEXT AS "unit",
-          recipe."retiredAt" AS "retiredAt"
-        FROM "Recipe" AS recipe
-        JOIN "Ingredient" AS ingredient
-          ON ingredient."tenantId" = recipe."tenantId"
-         AND ingredient."recipeId" = recipe."id"
-        WHERE recipe."tenantId" = 'tenant-a'
-          AND ingredient."id" = ${ingredientBeforeEdit!.id}
-      `;
-      expect(retiredFact).toEqual({
-        recipeName: 'Dal Makhani',
-        ingredientName: 'Urad dal',
-        quantity: '2.500',
-        unit: 'KILOGRAM',
-        retiredAt: expect.any(Date),
-      });
+      expect(
+        await admin.recipe.count({
+          where: {
+            tenantId: 'tenant-a',
+            id: ingredientBeforeEdit!.recipeId,
+          },
+        }),
+      ).toBe(0);
+      expect(
+        await admin.ingredient.count({
+          where: { tenantId: 'tenant-a', id: ingredientBeforeEdit!.id },
+        }),
+      ).toBe(0);
       expect(
         await admin.ingredient.count({
           where: {

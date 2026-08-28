@@ -7,6 +7,10 @@ import {
 } from '@/lib/procurement/request-service';
 import { requireAccountContext } from '@/lib/server-account';
 import {
+  browserJsonMutationRejection,
+  privateMutationResponse,
+} from '@/lib/security/browser-mutation';
+import {
   readRequestBody,
   requestActor,
   requestServiceError,
@@ -38,12 +42,18 @@ export async function GET(_request: Request, context: RequestRouteContext) {
 }
 
 export async function PATCH(request: Request, context: RequestRouteContext) {
+  const rejected = browserJsonMutationRejection(request);
+  if (rejected) {
+    return privateMutationResponse(rejected === 'CROSS_ORIGIN'
+      ? problemResponse(403, 'Request not allowed', 'Edit procurement requests from the QuotePlate workspace page.')
+      : problemResponse(415, 'Unsupported media type', 'Send this request as application/json.'));
+  }
   const account = await requireAccountContext();
   if (!account) {
-    return problemResponse(401, 'Unauthorized', 'Authentication is required.');
+    return privateMutationResponse(problemResponse(401, 'Unauthorized', 'Authentication is required.'));
   }
   const body = await readRequestBody(request);
-  if (body instanceof Response) return body;
+  if (body instanceof Response) return privateMutationResponse(body);
   const values = record(body);
   const { expectedVersion, ...patch } = values;
   const { id } = await context.params;
@@ -54,8 +64,8 @@ export async function PATCH(request: Request, context: RequestRouteContext) {
       expectedVersion,
       patch,
     });
-    return NextResponse.json({ request: updated });
+    return privateMutationResponse(NextResponse.json({ request: updated }));
   } catch (error) {
-    return requestServiceError(error);
+    return privateMutationResponse(requestServiceError(error));
   }
 }

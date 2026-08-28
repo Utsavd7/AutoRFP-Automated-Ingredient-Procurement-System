@@ -91,6 +91,8 @@ describe('public website contract', () => {
     expect(allPublicSource).toMatch(/tenant isolation/i);
     expect(allPublicSource).toMatch(/expir(?:ing|y)/i);
     expect(allPublicSource).toMatch(/audit history/i);
+    expect(allPublicSource).toMatch(/run the request again/i);
+    expect(allPublicSource).toMatch(/saved history/i);
     expect(allPublicSource).not.toMatch(/SOC\s?2|ISO\s?27001|certified|compliant with/i);
   });
 

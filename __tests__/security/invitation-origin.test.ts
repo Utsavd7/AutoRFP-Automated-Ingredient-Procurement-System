@@ -26,6 +26,15 @@ describe('invitation origin', () => {
     ).toBe('https://app.quoteplate.example/');
   });
 
+  it('allows an HTTP loopback origin for a local production-like server', () => {
+    expect(
+      resolveInvitationOrigin({
+        NODE_ENV: 'production',
+        NEXTAUTH_URL: 'http://127.0.0.1:52560',
+      }).toString(),
+    ).toBe('http://127.0.0.1:52560/');
+  });
+
   it('allows an HTTP loopback fallback only outside production', () => {
     expect(resolveInvitationOrigin({ NODE_ENV: 'test' }).toString()).toBe(
       'http://localhost:3000/',

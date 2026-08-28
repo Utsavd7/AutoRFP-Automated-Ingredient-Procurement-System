@@ -1,0 +1,934 @@
+'use client';
+
+import {
+  ArrowLeft,
+  CalendarDays,
+  Check,
+  CheckCircle2,
+  Clipboard,
+  Download,
+  ExternalLink,
+  FileSpreadsheet,
+  Link2,
+  MapPin,
+  MessageCircle,
+  Pencil,
+  Plus,
+  QrCode,
+  ReceiptText,
+  RefreshCw,
+  ShieldCheck,
+  Trash2,
+  Truck,
+  Users,
+  AlertTriangle,
+  XCircle,
+} from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+import { formatInr } from '@/lib/domain/money';
+import {
+  cappedAllocationQuantity,
+  calculateSplitAwardPreview,
+  type SplitAllocation,
+} from '@/lib/awards/award-preview';
+import { DraftRequestEditor } from './DraftRequestEditor';
+import styles from './request-detail.module.css';
+
+type Status = 'DRAFT' | 'OPEN' | 'AWARDED' | 'CANCELLED';
+type RequestItem = { id: string; name: string; quantity: string; unit: string };
+type SupplierGrant = {
+  id: string;
+  supplierId: string;
+  expiresAt: string;
+  revokedAt: string | null;
+  viewedAt: string | null;
+  supplier: {
+    id: string;
+    businessName: string;
+    contactName: string | null;
+    phone: string | null;
+    whatsappNumber: string | null;
+    email: string | null;
+    isActive: boolean;
+  };
+};
+
+export type ProcurementRequestDetail = {
+  id: string;
+  title: string;
+  status: Status;
+  version: number;
+  deliveryDetails: { addressLine?: string; city?: string; state?: string; pin?: string; instructions?: string };
+  deliveryDate: string;
+  quoteDeadline: string;
+  commercialTerms: string | null;
+  items: RequestItem[];
+  supplierRequests: SupplierGrant[];
+};
+
+type ComparisonItem = {
+  requestItemId: string;
+  requestItemName: string;
+  quoteItemId: string | null;
+  requestedQuantity: string;
+  requestUnit: string;
+  quotedAvailableQuantity: string | null;
+  quotedUnit: string | null;
+  normalizedAvailableQuantity: string | null;
+  normalizedUnitRatePaise: string | null;
+  unitComparable: boolean;
+  coverage: 'FULL' | 'PARTIAL' | 'MISSING' | 'UNIT_MISMATCH';
+  gstBasisPoints: number | null;
+  taxInclusive: boolean;
+  substitution: string | null;
+  subtotalPaise: string;
+  gstPaise: string;
+  totalPaise: string;
+};
+
+type ComparisonQuote = {
+  quoteId: string;
+  supplierRequestId: string;
+  supplierId: string;
+  supplierName: string;
+  revision: number;
+  subtotalPaise: string;
+  gstPaise: string;
+  freightPaise: string;
+  totalPaise: string;
+  deliveryDate: string;
+  validUntil: string;
+  submittedAt: string;
+  commercialTerms: string | null;
+  notes: string | null;
+  coveredItemCount: number;
+  totalItemCount: number;
+  fullCoverage: boolean;
+  comparable: boolean;
+  deliveryFit: 'ON_OR_BEFORE' | 'AFTER_REQUESTED_DATE';
+  expired: boolean;
+  missingTerms: boolean;
+  missingRequestItemIds: string[];
+  partialRequestItemIds: string[];
+  substitutions: Array<{ requestItemId: string; text: string }>;
+  supplierActive?: boolean;
+  awardable?: boolean;
+  awardIssues?: string[];
+  items: ComparisonItem[];
+};
+
+type AwardSupplierSnapshot = {
+  supplierId: string;
+  supplierName: string;
+  contactName?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  gstin?: string | null;
+  quoteId: string;
+  revision: number;
+  freightPaise: string;
+  deliveryDate: string;
+  commercialTerms?: string | null;
+};
+
+type AwardDetail = {
+  id: string;
+  requestId: string;
+  rationale: string | null;
+  totalPaise: string;
+  createdAt: string;
+  splitAward: boolean;
+  deliverySnapshot?: {
+    requestTitle?: string;
+    requestedDeliveryDate?: string;
+    deliveryDetails?: ProcurementRequestDetail['deliveryDetails'];
+  };
+  suppliers: AwardSupplierSnapshot[];
+  lines: Array<{
+    id: string;
+    requestItemId: string;
+    requestItemName: string;
+    supplierQuoteItemId: string;
+    supplierId: string;
+    quantity: string;
+    unit: string;
+    unitRatePaise: string;
+    gstBasisPoints: number;
+    subtotalPaise: string;
+    gstPaise: string;
+    totalPaise: string;
+  }>;
+};
+
+export type QuoteComparison = {
+  request: {
+    id: string;
+    title: string;
+    deliveryDate: string;
+    quoteDeadline: string;
+    commercialTerms: string | null;
+    itemCount: number;
+    items: RequestItem[];
+    status?: Status;
+    version?: number;
+    award?: AwardDetail | null;
+  };
+  quotes: ComparisonQuote[];
+};
+
+export type ShareLink = {
+  supplierRequestId: string;
+  supplierId: string;
+  businessName?: string;
+  url: string;
+  expiresAt: string;
+};
+
+const statusLabel: Record<Status, string> = { DRAFT: 'Draft', OPEN: 'Open', AWARDED: 'Awarded', CANCELLED: 'Cancelled' };
+
+function displayDate(value: string, withTime = false) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Date unavailable';
+  return new Intl.DateTimeFormat('en-IN', withTime
+    ? { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' }
+    : { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }).format(date);
+}
+
+function unitLabel(unit: string) {
+  return ({ KILOGRAM: 'kg', GRAM: 'g', LITRE: 'L', MILLILITRE: 'ml', PIECE: 'piece', PACK: 'pack', CASE: 'case', CRATE: 'crate' } as Record<string, string>)[unit] ?? unit.toLowerCase();
+}
+
+async function problemMessage(response: Response, fallback: string) {
+  const body = (await response.json().catch(() => ({}))) as { detail?: string; error?: string };
+  return body.detail || body.error || fallback;
+}
+
+function grantState(grant: SupplierGrant, hasQuote: boolean) {
+  if (grant.revokedAt) return 'Revoked';
+  if (hasQuote) return 'Quoted';
+  if (grant.viewedAt) return 'Viewed';
+  return 'Not viewed';
+}
+
+export function SupplierFreshLinkActions({
+  link,
+  busy,
+  onCopy,
+  onWhatsApp,
+  onQr,
+}: {
+  link: ShareLink;
+  busy: boolean;
+  onCopy: () => void;
+  onWhatsApp: () => void;
+  onQr: () => void;
+}) {
+  const supplier = link.businessName ?? 'supplier';
+  return (
+    <>
+      <button type="button" disabled={busy} onClick={onCopy}>
+        <Clipboard aria-hidden="true" />Copy
+      </button>
+      <button type="button" disabled={busy} onClick={onWhatsApp}>
+        <MessageCircle aria-hidden="true" />WhatsApp
+      </button>
+      <button
+        type="button"
+        disabled={busy}
+        aria-label={`Download QR for ${supplier}`}
+        onClick={onQr}
+      >
+        <QrCode aria-hidden="true" />QR
+      </button>
+    </>
+  );
+}
+
+export function RequestDetail({
+  requestId,
+  initialRequest,
+  initialComparison,
+}: {
+  requestId: string;
+  initialRequest?: ProcurementRequestDetail;
+  initialComparison?: QuoteComparison;
+}) {
+  const router = useRouter();
+  const [request, setRequest] = useState<ProcurementRequestDetail | null>(initialRequest ?? null);
+  const [comparison, setComparison] = useState<QuoteComparison | null>(initialComparison ?? null);
+  const [shareLinks, setShareLinks] = useState<ShareLink[]>([]);
+  const [loading, setLoading] = useState(!initialRequest);
+  const [working, setWorking] = useState('');
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [editingDraft, setEditingDraft] = useState(false);
+  const [refreshingQuotes, setRefreshingQuotes] = useState(false);
+  const [awardMode, setAwardMode] = useState<'WHOLE' | 'SPLIT'>('WHOLE');
+  const [wholeQuoteId, setWholeQuoteId] = useState('');
+  const [splitAllocations, setSplitAllocations] = useState<Record<string, SplitAllocation[]>>({});
+  const [rationale, setRationale] = useState('');
+  const initialLoadStarted = useRef(false);
+
+  const loadComparison = useCallback(async (quiet = false) => {
+    if (!quiet) setRefreshingQuotes(true);
+    try {
+      const comparisonResponse = await fetch(
+        `/api/requests/${encodeURIComponent(requestId)}/comparison`,
+        { cache: 'no-store' },
+      );
+      if (!comparisonResponse.ok) {
+        throw new Error(await problemMessage(comparisonResponse, 'We could not load supplier quotes.'));
+      }
+      setComparison((await comparisonResponse.json()) as QuoteComparison);
+      if (!quiet) setNotice('Supplier quotes refreshed.');
+    } catch (caught) {
+      if (!quiet) {
+        setError(caught instanceof Error ? caught.message : 'We could not load supplier quotes.');
+      }
+    } finally {
+      if (!quiet) setRefreshingQuotes(false);
+    }
+  }, [requestId]);
+
+  const loadAll = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const response = await fetch(`/api/requests/${encodeURIComponent(requestId)}`, { cache: 'no-store' });
+      if (!response.ok) throw new Error(await problemMessage(response, 'We could not load this request.'));
+      const result = (await response.json()) as { request: ProcurementRequestDetail };
+      setRequest(result.request);
+      if (result.request.status === 'OPEN' || result.request.status === 'AWARDED') {
+        const comparisonResponse = await fetch(`/api/requests/${encodeURIComponent(requestId)}/comparison`, { cache: 'no-store' });
+        if (!comparisonResponse.ok) throw new Error(await problemMessage(comparisonResponse, 'We could not load supplier quotes.'));
+        setComparison((await comparisonResponse.json()) as QuoteComparison);
+      } else {
+        setComparison(null);
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'We could not load this request.');
+    } finally {
+      setLoading(false);
+    }
+  }, [requestId]);
+
+  useEffect(() => {
+    if (initialRequest || initialLoadStarted.current) return;
+    initialLoadStarted.current = true;
+    void loadAll();
+  }, [initialRequest, loadAll]);
+
+  useEffect(() => {
+    if (request?.status !== 'OPEN') return;
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') void loadComparison(true);
+    };
+    const interval = window.setInterval(refreshWhenVisible, 30_000);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+    };
+  }, [loadComparison, request?.status]);
+
+  const quoteByGrant = useMemo(() => new Map((comparison?.quotes ?? []).map((quote) => [quote.supplierRequestId, quote])), [comparison]);
+
+  async function openRequest() {
+    if (!request || request.status !== 'DRAFT' || working) return;
+    if (!window.confirm('Open this request and create one private quote link for each supplier?')) return;
+    setWorking('open');
+    setError('');
+    try {
+      const response = await fetch(`/api/requests/${encodeURIComponent(request.id)}/open`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expectedVersion: request.version }),
+      });
+      if (!response.ok) throw new Error(await problemMessage(response, 'We could not open this request.'));
+      const result = (await response.json()) as { request: ProcurementRequestDetail; links: ShareLink[] };
+      setRequest(result.request);
+      setShareLinks(result.links);
+      setComparison({ request: { id: result.request.id, title: result.request.title, deliveryDate: result.request.deliveryDate.slice(0, 10), quoteDeadline: result.request.quoteDeadline, commercialTerms: result.request.commercialTerms, itemCount: result.request.items.length, items: result.request.items }, quotes: [] });
+      setNotice('Request opened. Copy and share each supplier link below.');
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'We could not open this request.');
+    } finally {
+      setWorking('');
+    }
+  }
+
+  async function changeLink(grant: SupplierGrant, action: 'rotate' | 'revoke') {
+    if (!request || request.status !== 'OPEN' || working) return;
+    if (action === 'revoke' && !window.confirm(`Revoke ${grant.supplier.businessName}'s quote link?`)) return;
+    setWorking(`${action}:${grant.id}`);
+    setError('');
+    try {
+      const response = await fetch(`/api/requests/${encodeURIComponent(request.id)}/links`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ supplierRequestId: grant.id, expectedVersion: request.version, action }),
+      });
+      if (!response.ok) throw new Error(await problemMessage(response, `We could not ${action} this link.`));
+      const result = (await response.json()) as { request: ProcurementRequestDetail; link?: { url: string; expiresAt: string } };
+      setRequest(result.request);
+      const freshLink = result.link;
+      if (freshLink) {
+        setShareLinks((current) => [
+          ...current.filter(({ supplierRequestId }) => supplierRequestId !== grant.id),
+          { supplierRequestId: grant.id, supplierId: grant.supplierId, businessName: grant.supplier.businessName, ...freshLink },
+        ]);
+        setNotice(`New link created for ${grant.supplier.businessName}. Share this link now; it is not stored in readable form.`);
+      } else {
+        setShareLinks((current) => current.filter(({ supplierRequestId }) => supplierRequestId !== grant.id));
+        setNotice(`${grant.supplier.businessName}'s link was revoked.`);
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : `We could not ${action} this link.`);
+    } finally {
+      setWorking('');
+    }
+  }
+
+  async function copyLink(link: ShareLink) {
+    try {
+      await navigator.clipboard.writeText(link.url);
+      setNotice(`${link.businessName ?? 'Supplier'} link copied.`);
+    } catch {
+      setError('Copy was blocked by the browser. Select and copy the link manually.');
+    }
+  }
+
+  async function saveDownload(response: Response, fallbackFilename: string) {
+    if (!response.ok) throw new Error(await problemMessage(response, 'We could not prepare this download.'));
+    const disposition = response.headers.get('content-disposition') ?? '';
+    const filename = /filename="([a-z0-9][a-z0-9.-]{0,180})"/i.exec(disposition)?.[1] ?? fallbackFilename;
+    const objectUrl = URL.createObjectURL(await response.blob());
+    const anchor = document.createElement('a');
+    anchor.href = objectUrl;
+    anchor.download = filename;
+    anchor.rel = 'noopener';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+  }
+
+  async function download(url: string, label: string, fallbackFilename: string) {
+    if (working) return;
+    setWorking(`download:${label}`);
+    setError('');
+    try {
+      await saveDownload(await fetch(url, { cache: 'no-store' }), fallbackFilename);
+      setNotice(`${label} downloaded.`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : `We could not download ${label.toLowerCase()}.`);
+    } finally {
+      setWorking('');
+    }
+  }
+
+  async function downloadQr(link: ShareLink) {
+    if (!request || working) return;
+    setWorking(`qr:${link.supplierRequestId}`);
+    setError('');
+    try {
+      const response = await fetch(`/api/requests/${encodeURIComponent(request.id)}/qr`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: link.url }),
+      });
+      await saveDownload(response, 'quoteplate-supplier-link.png');
+      setNotice(`${link.businessName ?? 'Supplier'} QR downloaded.`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'We could not create this QR code.');
+    } finally {
+      setWorking('');
+    }
+  }
+
+  function whatsappLink(link: ShareLink) {
+    const text = `Quote request from our restaurant: ${link.url}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+  }
+
+  const splitPreview = useMemo(() => comparison
+    ? calculateSplitAwardPreview({
+        requestItems: comparison.request.items,
+        quotes: comparison.quotes,
+        allocations: splitAllocations,
+      })
+    : null, [comparison, splitAllocations]);
+  const wholeQuote = comparison?.quotes.find(({ quoteId }) => quoteId === wholeQuoteId);
+  const wholeReady = Boolean(
+    wholeQuote &&
+    wholeQuote.comparable &&
+    !wholeQuote.expired &&
+    wholeQuote.supplierActive !== false &&
+    wholeQuote.awardable !== false,
+  );
+  const awardReady = Boolean(
+    rationale.trim() && (awardMode === 'WHOLE' ? wholeReady : splitPreview?.ready),
+  );
+
+  function awardableLine(quote: ComparisonQuote, item: ComparisonItem) {
+    return Boolean(
+      item.quoteItemId &&
+      item.unitComparable &&
+      item.normalizedAvailableQuantity &&
+      item.normalizedUnitRatePaise &&
+      item.gstBasisPoints !== null &&
+      !quote.expired &&
+      quote.supplierActive !== false &&
+      quote.awardable !== false,
+    );
+  }
+
+  function addSplitAllocation(requested: RequestItem, quote: ComparisonQuote, item: ComparisonItem) {
+    const quoteItemId = item.quoteItemId;
+    const normalizedAvailableQuantity = item.normalizedAvailableQuantity;
+    if (!quoteItemId || !normalizedAvailableQuantity) return;
+    setSplitAllocations((current) => {
+      const currentRows = current[requested.id] ?? [];
+      if (currentRows.some((allocation) => allocation.quoteItemId === quoteItemId)) return current;
+      const coverage = splitPreview?.itemCoverage[requested.id];
+      let amount: string;
+      try {
+        amount = cappedAllocationQuantity(
+          coverage?.remaining ?? requested.quantity,
+          normalizedAvailableQuantity,
+        );
+      } catch {
+        return current;
+      }
+      return {
+        ...current,
+        [requested.id]: [
+          ...currentRows,
+          { quoteItemId, quantity: amount },
+        ],
+      };
+    });
+  }
+
+  function updateSplitQuantity(requestItemId: string, quoteItemId: string, quantity: string) {
+    if (!/^\d*(?:\.\d{0,3})?$/.test(quantity)) return;
+    setSplitAllocations((current) => ({
+      ...current,
+      [requestItemId]: (current[requestItemId] ?? []).map((allocation) =>
+        allocation.quoteItemId === quoteItemId ? { ...allocation, quantity } : allocation,
+      ),
+    }));
+  }
+
+  function removeSplitAllocation(requestItemId: string, quoteItemId: string) {
+    setSplitAllocations((current) => ({
+      ...current,
+      [requestItemId]: (current[requestItemId] ?? []).filter(
+        (allocation) => allocation.quoteItemId !== quoteItemId,
+      ),
+    }));
+  }
+
+  async function recordAward() {
+    if (!request || !comparison || request.status !== 'OPEN' || !awardReady || working) return;
+    const finalTotal = awardMode === 'WHOLE'
+      ? wholeQuote?.totalPaise
+      : splitPreview?.totalPaise;
+    if (!finalTotal) return;
+    if (!window.confirm(
+      `Record the final award for ${formatInr(finalTotal)}? The supplier, quantities and prices cannot be edited afterwards.`,
+    )) return;
+    setWorking('award');
+    setError('');
+    try {
+      const body = awardMode === 'WHOLE'
+        ? { mode: 'WHOLE', expectedRequestVersion: request.version, supplierQuoteId: wholeQuoteId, rationale: rationale.trim() }
+        : {
+            mode: 'SPLIT', expectedRequestVersion: request.version, rationale: rationale.trim(),
+            selections: splitPreview?.selections ?? [],
+          };
+      const response = await fetch(`/api/requests/${encodeURIComponent(request.id)}/award`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      });
+      if (!response.ok) throw new Error(await problemMessage(response, 'We could not record this award.'));
+      setNotice('Award recorded. The request and winning prices are now locked.');
+      await loadAll();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'We could not record this award.');
+    } finally {
+      setWorking('');
+    }
+  }
+
+  if (loading) return <main className={styles.page}><div className={styles.loading} aria-label="Loading request"><span /><span /><span /></div></main>;
+  if (!request) return <main className={styles.page}><section className={styles.missing}><h1>Request unavailable</h1><p>{error || 'This request could not be found.'}</p><button type="button" onClick={() => void loadAll()}>Try again</button></section></main>;
+
+  const delivery = request.deliveryDetails;
+  const committedAward = comparison?.request.award ?? null;
+  return (
+    <main className={styles.page}>
+      <header className={styles.header}>
+        <div>
+          <button className={styles.back} type="button" onClick={() => router.push('/procurement')}><ArrowLeft aria-hidden="true" />Procurement</button>
+          <p className={styles.eyebrow}>Procurement request</p>
+          <h1>{request.title}</h1>
+          <div className={styles.headerMeta}>
+            <span className={styles[`status${request.status}`]}>{statusLabel[request.status]}</span>
+            <span>Version {request.version}</span>
+            <span>{request.items.length} {request.items.length === 1 ? 'item' : 'items'}</span>
+            <span>{request.supplierRequests.length} {request.supplierRequests.length === 1 ? 'supplier' : 'suppliers'}</span>
+          </div>
+        </div>
+        {request.status === 'DRAFT' && (
+          <div className={styles.headerActions}>
+            <button className={styles.secondaryButton} type="button" disabled={Boolean(working)} onClick={() => setEditingDraft((current) => !current)}>
+              <Pencil aria-hidden="true" />{editingDraft ? 'Close editor' : 'Edit draft'}
+            </button>
+            <button className={styles.primaryButton} type="button" disabled={Boolean(working) || editingDraft} onClick={() => void openRequest()}>
+              <ExternalLink aria-hidden="true" />{working === 'open' ? 'Opening…' : 'Open and create links'}
+            </button>
+          </div>
+        )}
+        {request.status === 'AWARDED' && <div className={styles.locked}><ShieldCheck aria-hidden="true" />Award recorded</div>}
+      </header>
+
+      {notice && <div className={styles.notice} role="status"><Check aria-hidden="true" />{notice}</div>}
+      {error && <div className={styles.error} role="alert">{error}</div>}
+
+      {request.status === 'DRAFT' && editingDraft && (
+        <DraftRequestEditor
+          request={request}
+          onCancel={() => setEditingDraft(false)}
+          onSaved={() => {
+            setEditingDraft(false);
+            setNotice('Draft changes saved. Review the facts once more before opening it.');
+            void loadAll();
+          }}
+        />
+      )}
+
+      <section className={styles.facts} aria-label="Request facts">
+        <div><CalendarDays aria-hidden="true" /><span><small>Quote deadline</small><strong>{displayDate(request.quoteDeadline, true)}</strong></span></div>
+        <div><Truck aria-hidden="true" /><span><small>Delivery date</small><strong>{displayDate(request.deliveryDate)}</strong></span></div>
+        <div><MapPin aria-hidden="true" /><span><small>Deliver to</small><strong>{[delivery.addressLine, delivery.city, delivery.state, delivery.pin].filter(Boolean).join(', ')}</strong></span></div>
+      </section>
+      {delivery.instructions && <aside className={styles.instructions}><strong>Delivery instructions</strong>{delivery.instructions}</aside>}
+
+      <section className={styles.panel}>
+        <header><div><p className={styles.eyebrow}>Demand</p><h2>Requested items</h2></div><span>{request.items.length} total</span></header>
+        <div className={styles.itemTable}>
+          <div className={styles.tableHeader}><span>Item</span><span>Quantity</span></div>
+          {request.items.map((item) => <div className={styles.itemRow} key={item.id}><strong>{item.name}</strong><span>{item.quantity} {unitLabel(item.unit)}</span></div>)}
+        </div>
+        {request.commercialTerms && <div className={styles.terms}><strong>Terms shared with suppliers</strong><p>{request.commercialTerms}</p></div>}
+      </section>
+
+      <section className={`${styles.panel} ${styles.exportPanel}`} aria-labelledby="request-downloads-heading">
+        <header>
+          <div><p className={styles.eyebrow}>Records</p><h2 id="request-downloads-heading">Download records</h2></div>
+          <span>Private · prepared only when you click</span>
+        </header>
+        <div className={styles.exportGrid}>
+          <button
+            type="button"
+            disabled={Boolean(working)}
+            onClick={() => void download(
+              `/api/requests/${encodeURIComponent(request.id)}/export?kind=request`,
+              'Request CSV',
+              'quoteplate-request.csv',
+            )}
+          >
+            <FileSpreadsheet aria-hidden="true" />
+            <span><strong>Request CSV</strong><small>Items, quantities and delivery details</small></span>
+            <Download aria-hidden="true" />
+          </button>
+          {(request.status === 'OPEN' || request.status === 'AWARDED') && (
+            <button
+              type="button"
+              disabled={Boolean(working)}
+              onClick={() => void download(
+                `/api/requests/${encodeURIComponent(request.id)}/export?kind=quotes`,
+                'Quote comparison CSV',
+                'quoteplate-quote-comparison.csv',
+              )}
+            >
+              <FileSpreadsheet aria-hidden="true" />
+              <span><strong>Quote comparison CSV</strong><small>Supplier totals, coverage and delivery</small></span>
+              <Download aria-hidden="true" />
+            </button>
+          )}
+          {committedAward && (
+            <>
+              <button
+                type="button"
+                disabled={Boolean(working)}
+                onClick={() => void download(
+                  `/api/requests/${encodeURIComponent(request.id)}/export?kind=award`,
+                  'Award decision CSV',
+                  'quoteplate-award-decision.csv',
+                )}
+              >
+                <FileSpreadsheet aria-hidden="true" />
+                <span><strong>Award decision CSV</strong><small>Saved supplier and decision facts</small></span>
+                <Download aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                disabled={Boolean(working)}
+                onClick={() => void download(
+                  `/api/requests/${encodeURIComponent(request.id)}/export?kind=accounting`,
+                  'Accounting CSV',
+                  'quoteplate-accounting.csv',
+                )}
+              >
+                <FileSpreadsheet aria-hidden="true" />
+                <span><strong>Accounting CSV</strong><small>Line totals, GST and freight</small></span>
+                <Download aria-hidden="true" />
+              </button>
+            </>
+          )}
+        </div>
+        {committedAward && (
+          <div className={styles.purchaseOrders}>
+            <p><ReceiptText aria-hidden="true" /><span><strong>Supplier purchase orders</strong><small>One PDF for each awarded supplier</small></span></p>
+            <div>
+              {committedAward.suppliers.map((supplier) => (
+                <button
+                  type="button"
+                  disabled={Boolean(working)}
+                  key={`${supplier.supplierId}:${supplier.quoteId}`}
+                  onClick={() => void download(
+                    `/api/awards/${encodeURIComponent(committedAward.id)}/purchase-orders/${encodeURIComponent(supplier.supplierId)}`,
+                    `Purchase order for ${supplier.supplierName}`,
+                    'quoteplate-purchase-order.pdf',
+                  )}
+                >
+                  <span><strong>Purchase order · {supplier.supplierName}</strong><small>PDF · award-time prices and terms</small></span>
+                  <Download aria-hidden="true" />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </section>
+
+      <section className={styles.panel}>
+        <header><div><p className={styles.eyebrow}>Supplier progress</p><h2>Private quote links</h2></div><Users aria-hidden="true" /></header>
+        <div className={styles.grantList}>
+          {request.supplierRequests.map((grant) => {
+            const quote = quoteByGrant.get(grant.id);
+            const state = grantState(grant, Boolean(quote));
+            const freshLink = shareLinks.find(({ supplierRequestId }) => supplierRequestId === grant.id);
+            return (
+              <article key={grant.id}>
+                <span className={styles.supplierInitial}>{grant.supplier.businessName.charAt(0).toUpperCase()}</span>
+                <span className={styles.supplierName}><strong>{grant.supplier.businessName}</strong><small>{grant.supplier.contactName || grant.supplier.phone || 'Supplier contact'}</small></span>
+                <span className={styles[`grant${state.replace(' ', '')}`]}>{state}</span>
+                <span className={styles.grantDate}>{grant.viewedAt ? `Viewed ${displayDate(grant.viewedAt, true)}` : `Expires ${displayDate(grant.expiresAt, true)}`}</span>
+                <span className={styles.linkActions}>
+                  {freshLink && (
+                    <SupplierFreshLinkActions
+                      link={freshLink}
+                      busy={Boolean(working)}
+                      onCopy={() => void copyLink(freshLink)}
+                      onWhatsApp={() => whatsappLink(freshLink)}
+                      onQr={() => void downloadQr(freshLink)}
+                    />
+                  )}
+                  {request.status === 'OPEN' && !grant.revokedAt && <button type="button" disabled={Boolean(working)} onClick={() => void changeLink(grant, 'rotate')}><RefreshCw aria-hidden="true" />New link</button>}
+                  {request.status === 'OPEN' && !grant.revokedAt && <button className={styles.revoke} type="button" disabled={Boolean(working)} onClick={() => void changeLink(grant, 'revoke')}><XCircle aria-hidden="true" />Revoke</button>}
+                </span>
+                {freshLink && <code>{freshLink.url}</code>}
+              </article>
+            );
+          })}
+        </div>
+        {request.status === 'OPEN' && shareLinks.length === 0 && <p className={styles.linkHelp}><Link2 aria-hidden="true" />For safety, old links cannot be displayed again. Use “New link” only when you need another copy.</p>}
+      </section>
+
+      {(request.status === 'OPEN' || request.status === 'AWARDED') && (
+        <section className={styles.panel}>
+          <header>
+            <div><p className={styles.eyebrow}>Fact comparison</p><h2>Supplier quotes</h2></div>
+            <div className={styles.quoteHeaderAction}>
+              <span>{comparison?.quotes.length ?? 0} received</span>
+              {request.status === 'OPEN' && (
+                <button type="button" disabled={refreshingQuotes} onClick={() => void loadComparison()}>
+                  <RefreshCw aria-hidden="true" />{refreshingQuotes ? 'Refreshing…' : 'Refresh quotes'}
+                </button>
+              )}
+            </div>
+          </header>
+          {!comparison || comparison.quotes.length === 0 ? (
+            <div className={styles.quoteEmpty}><MessageCircle aria-hidden="true" /><h3>Waiting for supplier quotes</h3><p>Submitted quotes will appear here with GST, freight, coverage and delivery facts.</p></div>
+          ) : (
+            <>
+              <div className={styles.quoteCards}>
+                {comparison.quotes.map((quote) => (
+                  <article key={quote.quoteId}>
+                    <div className={styles.quoteTop}><span><strong>{quote.supplierName}</strong><small>Revision {quote.revision}</small></span><i className={quote.comparable ? styles.comparable : styles.incomplete}>{quote.comparable ? 'Full quote' : 'Check coverage'}</i></div>
+                    <strong className={styles.quoteTotal}>{formatInr(quote.totalPaise)}</strong>
+                    <div className={styles.quoteBreakdown}><span>Before GST {formatInr(quote.subtotalPaise)}</span><span>GST {formatInr(quote.gstPaise)}</span><span>Freight {formatInr(quote.freightPaise)}</span></div>
+                    <div className={styles.quoteFacts}><span>{quote.coveredItemCount}/{quote.totalItemCount} items</span><span>Delivery {displayDate(quote.deliveryDate)}</span><span>Valid to {displayDate(quote.validUntil)}</span></div>
+                    {quote.commercialTerms && <p>{quote.commercialTerms}</p>}
+                    {quote.substitutions.length > 0 && <p className={styles.substitution}>{quote.substitutions.length} substitution {quote.substitutions.length === 1 ? 'noted' : 'notes'}</p>}
+                    {(quote.expired || quote.deliveryFit === 'AFTER_REQUESTED_DATE' || quote.missingTerms || quote.supplierActive === false || (quote.awardIssues?.length ?? 0) > 0) && (
+                      <div className={styles.quoteWarnings}>
+                        <AlertTriangle aria-hidden="true" />
+                        <ul>
+                          {quote.expired && <li>Quote validity has ended.</li>}
+                          {quote.deliveryFit === 'AFTER_REQUESTED_DATE' && <li>Delivery is later than requested.</li>}
+                          {quote.missingTerms && <li>Payment terms were not supplied.</li>}
+                          {quote.supplierActive === false && <li>Supplier is inactive and cannot receive an award.</li>}
+                          {(quote.awardIssues ?? []).map((issue) => <li key={issue}>{issue}</li>)}
+                        </ul>
+                      </div>
+                    )}
+                  </article>
+                ))}
+              </div>
+              <div className={styles.comparisonWrap}>
+                <table>
+                  <thead><tr><th>Requested item</th>{comparison.quotes.map((quote) => <th key={quote.quoteId}>{quote.supplierName}</th>)}</tr></thead>
+                  <tbody>{comparison.request.items.map((requested) => (
+                    <tr key={requested.id}>
+                      <th><strong>{requested.name}</strong><small>{requested.quantity} {unitLabel(requested.unit)}</small></th>
+                      {comparison.quotes.map((quote) => {
+                        const item = quote.items.find(({ requestItemId }) => requestItemId === requested.id);
+                        return <td key={quote.quoteId}>{item?.unitComparable && item.normalizedUnitRatePaise ? <><strong>{formatInr(item.normalizedUnitRatePaise)} / {unitLabel(requested.unit)}</strong><small>{item.coverage === 'PARTIAL' ? `${item.normalizedAvailableQuantity} ${unitLabel(requested.unit)} available` : 'Full requested quantity available'}</small><small>{item.gstBasisPoints === null ? 'GST not supplied' : `${item.gstBasisPoints / 100}% GST${item.taxInclusive ? ' included' : ''}`}</small>{item.substitution && <em>{item.substitution}</em>}</> : <span className={styles.unavailable}>{item?.coverage === 'UNIT_MISMATCH' ? 'Unit mismatch' : 'Not quoted'}</span>}</td>;
+                      })}
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+
+              {request.status === 'OPEN' && (
+                <div className={styles.awardBox}>
+                  <div><p className={styles.eyebrow}>Human decision</p><h3>Record the award</h3><p>QuotePlate shows the facts. Your restaurant chooses the supplier.</p></div>
+                  <div className={styles.awardModes}>
+                    <button type="button" className={awardMode === 'WHOLE' ? styles.selectedMode : ''} onClick={() => setAwardMode('WHOLE')}>Whole request</button>
+                    <button type="button" className={awardMode === 'SPLIT' ? styles.selectedMode : ''} onClick={() => setAwardMode('SPLIT')}>Split by item</button>
+                  </div>
+                  {awardMode === 'WHOLE' ? (
+                    <div className={styles.awardChoices}>{comparison.quotes.map((quote) => {
+                      const eligible = quote.comparable && !quote.expired && quote.supplierActive !== false && quote.awardable !== false;
+                      return (
+                        <label className={wholeQuoteId === quote.quoteId ? styles.selectedChoice : styles.awardChoice} key={quote.quoteId}>
+                          <input type="radio" name="whole-award" disabled={!eligible} checked={wholeQuoteId === quote.quoteId} onChange={() => setWholeQuoteId(quote.quoteId)} />
+                          <span>
+                            <strong>{quote.supplierName}</strong>
+                            <small>{eligible ? `${formatInr(quote.totalPaise)} · full landed total` : quote.supplierActive === false ? 'Supplier is inactive' : quote.expired ? 'Quote validity has ended' : 'Complete comparable coverage required'}</small>
+                          </span>
+                          {wholeQuoteId === quote.quoteId && <CheckCircle2 aria-hidden="true" />}
+                        </label>
+                      );
+                    })}</div>
+                  ) : (
+                    <div className={styles.splitBuilder}>{comparison.request.items.map((requested) => {
+                      const candidates = comparison.quotes.flatMap((quote) => {
+                        const item = quote.items.find(({ requestItemId }) => requestItemId === requested.id);
+                        return item && awardableLine(quote, item) ? [{ quote, item }] : [];
+                      });
+                      const allocations = splitAllocations[requested.id] ?? [];
+                      const coverage = splitPreview?.itemCoverage[requested.id];
+                      return (
+                        <section className={styles.allocationItem} key={requested.id}>
+                          <header>
+                            <span><strong>{requested.name}</strong><small>{requested.quantity} {unitLabel(requested.unit)} needed</small></span>
+                            <span className={coverage?.valid ? styles.coverageComplete : styles.coverageRemaining}>
+                              {coverage?.valid ? 'Fully allocated' : `${coverage?.remaining ?? requested.quantity} ${unitLabel(requested.unit)} remaining`}
+                            </span>
+                          </header>
+                          {allocations.map((allocation) => {
+                            const selected = candidates.find(({ item }) => item.quoteItemId === allocation.quoteItemId);
+                            if (!selected) return null;
+                            return (
+                              <div className={styles.allocationRow} key={allocation.quoteItemId}>
+                                <span><strong>{selected.quote.supplierName}</strong><small>{formatInr(selected.item.normalizedUnitRatePaise!)} / {unitLabel(requested.unit)} · up to {selected.item.normalizedAvailableQuantity} {unitLabel(requested.unit)}</small></span>
+                                <label><span>Quantity</span><input aria-label={`${requested.name} quantity from ${selected.quote.supplierName}`} inputMode="decimal" value={allocation.quantity} onChange={(event) => updateSplitQuantity(requested.id, allocation.quoteItemId, event.target.value)} /></label>
+                                <button type="button" aria-label={`Remove ${selected.quote.supplierName} from ${requested.name}`} onClick={() => removeSplitAllocation(requested.id, allocation.quoteItemId)}><Trash2 aria-hidden="true" /></button>
+                              </div>
+                            );
+                          })}
+                          <div className={styles.availableSuppliers}>
+                            {candidates.filter(({ item }) => !allocations.some(({ quoteItemId }) => quoteItemId === item.quoteItemId)).map(({ quote, item }) => (
+                              <button type="button" disabled={coverage?.valid} key={item.quoteItemId} onClick={() => addSplitAllocation(requested, quote, item)}>
+                                <Plus aria-hidden="true" />{quote.supplierName}<small>{item.normalizedAvailableQuantity} {unitLabel(requested.unit)} available</small>
+                              </button>
+                            ))}
+                            {candidates.length === 0 && <p>No valid comparable supplier line is available for this item.</p>}
+                          </div>
+                        </section>
+                      );
+                    })}
+                    {splitPreview && splitPreview.errors.length > 0 && <ul className={styles.allocationErrors}>{[...new Set(splitPreview.errors)].slice(0, 4).map((issue) => <li key={issue}>{issue}</li>)}</ul>}
+                    </div>
+                  )}
+                  {(wholeQuote && awardMode === 'WHOLE') && (
+                    <div className={styles.awardPreview} aria-label="Whole award landed total">
+                      <span><small>Before GST</small><strong>{formatInr(wholeQuote.subtotalPaise)}</strong></span>
+                      <span><small>GST</small><strong>{formatInr(wholeQuote.gstPaise)}</strong></span>
+                      <span><small>Freight</small><strong>{formatInr(wholeQuote.freightPaise)}</strong></span>
+                      <span className={styles.finalTotal}><small>Final landed total</small><strong>{formatInr(wholeQuote.totalPaise)}</strong></span>
+                    </div>
+                  )}
+                  {(splitPreview && awardMode === 'SPLIT') && (
+                    <div className={styles.awardPreview} aria-label="Split award landed total">
+                      <span><small>Before GST</small><strong>{formatInr(splitPreview.subtotalPaise)}</strong></span>
+                      <span><small>GST</small><strong>{formatInr(splitPreview.gstPaise)}</strong></span>
+                      <span><small>Freight</small><strong>{formatInr(splitPreview.freightPaise)}</strong></span>
+                      <span className={styles.finalTotal}><small>Final landed total</small><strong>{formatInr(splitPreview.totalPaise)}</strong></span>
+                    </div>
+                  )}
+                  <label className={styles.rationale}><span>Reason for this decision *</span><textarea rows={3} maxLength={500} value={rationale} placeholder="Best complete price with delivery on the requested date." onChange={(event) => setRationale(event.target.value)} /></label>
+                  <button className={styles.primaryButton} type="button" disabled={!awardReady || Boolean(working)} onClick={() => void recordAward()}>{working === 'award' ? 'Recording…' : 'Record award'}</button>
+                </div>
+              )}
+
+              {request.status === 'AWARDED' && comparison.request.award && (() => {
+                const award = comparison.request.award;
+                const suppliers = new Map(award.suppliers.map((supplier) => [supplier.supplierId, supplier]));
+                return (
+                  <section className={styles.awardRecord} aria-label="Recorded award">
+                    <header>
+                      <div><p className={styles.eyebrow}>Final decision record</p><h3>{award.splitAward ? 'Split award' : 'Supplier award'}</h3></div>
+                      <span><small>Awarded {displayDate(award.createdAt, true)}</small><strong>{formatInr(award.totalPaise)}</strong></span>
+                    </header>
+                    <div className={styles.awardReason}><strong>Why this decision was made</strong><p>{award.rationale || 'No decision note was recorded.'}</p></div>
+                    <div className={styles.awardLines}>
+                      <div className={styles.awardLineHeader}><span>Item and supplier</span><span>Quantity</span><span>Rate</span><span>GST</span><span>Line total</span></div>
+                      {award.lines.map((line) => {
+                        const supplier = suppliers.get(line.supplierId);
+                        return (
+                          <div className={styles.awardLine} key={line.id}>
+                            <span><strong>{line.requestItemName}</strong><small>{supplier?.supplierName ?? 'Supplier snapshot'}</small></span>
+                            <span>{line.quantity} {unitLabel(line.unit)}</span>
+                            <span>{formatInr(line.unitRatePaise)} / {unitLabel(line.unit)}</span>
+                            <span>{line.gstBasisPoints / 100}%</span>
+                            <strong>{formatInr(line.totalPaise)}</strong>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className={styles.awardSuppliers}>
+                      {award.suppliers.map((supplier) => (
+                        <article key={`${supplier.supplierId}:${supplier.quoteId}`}>
+                          <strong>{supplier.supplierName}</strong>
+                          <span>Quote revision {supplier.revision}</span>
+                          <span>Freight {formatInr(supplier.freightPaise)}</span>
+                          <span>Delivery {displayDate(supplier.deliveryDate)}</span>
+                          {supplier.gstin && <span>GSTIN {supplier.gstin}</span>}
+                          {supplier.commercialTerms && <p>{supplier.commercialTerms}</p>}
+                        </article>
+                      ))}
+                    </div>
+                    <p className={styles.immutableNote}><ShieldCheck aria-hidden="true" />This record uses the supplier, quote, quantity, tax and delivery facts saved at the time of the award.</p>
+                  </section>
+                );
+              })()}
+            </>
+          )}
+        </section>
+      )}
+    </main>
+  );
+}

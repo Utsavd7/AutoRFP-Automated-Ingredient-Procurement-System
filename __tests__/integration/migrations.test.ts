@@ -1,6 +1,9 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
 import { PrismaClient } from '@prisma/client';
 
-import { withMigratedPostgres } from './setup/postgres';
+import { withMigratedPostgres, withPostgres } from './setup/postgres';
 
 const expectedTables = [
   'AuditEvent',
@@ -77,9 +80,111 @@ test('deploys every migration to an empty PostgreSQL database without schema dri
           finished_at: expect.any(Date),
           rolled_back_at: null,
         }),
+        expect.objectContaining({
+          migration_name: '20260827000600_public_supplier_grants',
+          finished_at: expect.any(Date),
+          rolled_back_at: null,
+        }),
+        expect.objectContaining({
+          migration_name: '20260827000700_quote_integrity',
+          finished_at: expect.any(Date),
+          rolled_back_at: null,
+        }),
+        expect.objectContaining({
+          migration_name: '20260827000800_award_snapshot_capacity',
+          finished_at: expect.any(Date),
+          rolled_back_at: null,
+        }),
+        expect.objectContaining({
+          migration_name: '20260827000900_minimal_launch_columns',
+          finished_at: expect.any(Date),
+          rolled_back_at: null,
+        }),
+        expect.objectContaining({
+          migration_name: '20260827001000_backup_role',
+          finished_at: expect.any(Date),
+          rolled_back_at: null,
+        }),
       ]);
     } finally {
       await prisma.$disconnect();
+    }
+  });
+});
+
+function ownerGuard(migration: string) {
+  const sql = readFileSync(
+    path.resolve(__dirname, `../../prisma/migrations/${migration}/migration.sql`),
+    'utf8',
+  );
+  return sql.slice(
+    sql.indexOf('DO $migration_owner$'),
+    sql.indexOf('$migration_owner$;') + '$migration_owner$;'.length,
+  );
+}
+
+test('early owner guards accept inherited bypass capability without provider usernames', async () => {
+  await withPostgres(async ({ databaseUrl, migrateTo }) => {
+    await migrateTo('20260827000200_launch_schema');
+    const admin = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
+    try {
+      await admin.$executeRawUnsafe(
+        'CREATE ROLE neon_superuser_compat NOSUPERUSER NOCREATEDB NOCREATEROLE BYPASSRLS NOLOGIN',
+      );
+      await admin.$executeRawUnsafe(
+        'CREATE ROLE neon_launch_owner NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT NOBYPASSRLS NOLOGIN',
+      );
+      await admin.$executeRawUnsafe(
+        'GRANT neon_superuser_compat TO neon_launch_owner',
+      );
+      await admin.$executeRawUnsafe(
+        'CREATE SCHEMA autorfp_private AUTHORIZATION neon_launch_owner',
+      );
+      for (const table of expectedTables) {
+        await admin.$executeRawUnsafe(
+          `ALTER TABLE public."${table}" OWNER TO neon_launch_owner`,
+        );
+      }
+
+      for (const migration of [
+        '20260827000300_forced_rls',
+        '20260827000400_member_invitations',
+        '20260827000500_menu_recipe_retirement',
+        '20260827000600_public_supplier_grants',
+      ]) {
+        await expect(
+          admin.$transaction(async (transaction) => {
+            await transaction.$executeRawUnsafe('SET LOCAL ROLE neon_launch_owner');
+            await transaction.$executeRawUnsafe(ownerGuard(migration));
+          }),
+        ).resolves.toBeUndefined();
+      }
+    } finally {
+      await admin.$disconnect();
+    }
+  });
+});
+
+test('forced-RLS migration rejects a pre-created runtime role with privileged membership', async () => {
+  await withPostgres(async ({ databaseUrl, migrateTo }) => {
+    await migrateTo('20260827000200_launch_schema');
+    const admin = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
+    try {
+      await admin.$executeRawUnsafe(
+        'CREATE ROLE provider_console_admin NOLOGIN BYPASSRLS',
+      );
+      await admin.$executeRawUnsafe(
+        'CREATE ROLE autorfp_app LOGIN INHERIT NOBYPASSRLS',
+      );
+      await admin.$executeRawUnsafe(
+        'GRANT provider_console_admin TO autorfp_app',
+      );
+
+      await expect(
+        migrateTo('20260827000300_forced_rls'),
+      ).rejects.toThrow(/must not inherit a row-security-bypassing role/i);
+    } finally {
+      await admin.$disconnect();
     }
   });
 });

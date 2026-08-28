@@ -6,6 +6,7 @@ type RuntimeRoleRow = {
   currentUser: string;
   rolsuper: boolean;
   rolbypassrls: boolean;
+  hasBypassMembership: boolean;
 };
 
 const assertions = new WeakMap<object, Promise<void>>();
@@ -28,7 +29,17 @@ export function assertRuntimeDatabaseRole(client: RuntimeRoleClient) {
       SELECT
         current_user::TEXT AS "currentUser",
         role.rolsuper,
-        role.rolbypassrls
+        role.rolbypassrls,
+        EXISTS (
+          SELECT 1
+          FROM pg_catalog.pg_roles AS inherited_role
+          WHERE (inherited_role.rolsuper OR inherited_role.rolbypassrls)
+            AND pg_catalog.pg_has_role(
+              current_user,
+              inherited_role.oid,
+              'MEMBER'
+            )
+        ) AS "hasBypassMembership"
       FROM pg_catalog.pg_roles AS role
       WHERE role.rolname = current_user
     `);
@@ -36,7 +47,8 @@ export function assertRuntimeDatabaseRole(client: RuntimeRoleClient) {
       !role ||
       role.currentUser !== 'autorfp_app' ||
       role.rolsuper ||
-      role.rolbypassrls
+      role.rolbypassrls ||
+      role.hasBypassMembership
     ) {
       throw new RuntimeDatabaseRoleError();
     }

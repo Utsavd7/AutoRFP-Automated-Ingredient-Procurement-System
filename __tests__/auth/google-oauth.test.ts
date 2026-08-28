@@ -161,6 +161,24 @@ describe('Google OAuth identity resolution', () => {
     expect(repo.createOwnerIdentity).not.toHaveBeenCalled();
   });
 
+  it('refuses owner creation when the verified email is outside the controlled pilot', async () => {
+    const repo = repository();
+    await expect(resolveGoogleIdentity(
+      {
+        account: { provider: 'google', providerAccountId: 'google-subject-1' },
+        profile: {
+          sub: 'google-subject-1',
+          email: 'asha@example.com',
+          email_verified: true,
+        },
+        onboarding,
+        pilotAccess: () => false,
+      },
+      repo,
+    )).rejects.toMatchObject({ code: 'PILOT_ACCESS_REQUIRED' });
+    expect(repo.createOwnerIdentity).not.toHaveBeenCalled();
+  });
+
   it('rejects inactive users and tenants even with a valid provider identity', async () => {
     const inactiveUser = repository({
       findIdentity: jest

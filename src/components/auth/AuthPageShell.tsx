@@ -9,6 +9,7 @@ import styles from './AuthExperience.module.css';
 type AuthPageShellProps = {
   mode: 'signin' | 'start';
   googleAvailable: boolean;
+  emailOwnerSignupAvailable?: boolean;
   callbackUrl: string;
   initialError?: string | null;
 };

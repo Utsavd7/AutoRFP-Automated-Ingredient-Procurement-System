@@ -62,7 +62,6 @@ type MenuErrors = Record<string, string[]>;
 
 const menuInclude = {
   recipes: {
-    where: { retiredAt: null },
     orderBy: [{ position: 'asc' as const }, { id: 'asc' as const }],
     include: {
       ingredients: {
@@ -549,7 +548,7 @@ export async function listReviewedMenus(
           updatedAt: true,
           _count: {
             select: {
-              recipes: { where: { retiredAt: null } },
+              recipes: true,
               requests: true,
             },
           },
@@ -594,27 +593,8 @@ async function replaceMenuFacts(
   tenantId: string,
   existing: Prisma.MenuGetPayload<{ include: typeof menuInclude }>,
 ) {
-  const retiredAt = new Date();
-  await transaction.recipe.updateMany({
-    where: { tenantId, menuId: existing.id, retiredAt: null },
-    data: { retiredAt },
-  });
-  await transaction.ingredient.deleteMany({
-    where: {
-      tenantId,
-      recipe: { menuId: existing.id, retiredAt: { not: null } },
-      requestItems: { none: {} },
-    },
-  });
   await transaction.recipe.deleteMany({
-    where: {
-      tenantId,
-      menuId: existing.id,
-      retiredAt: { not: null },
-      ingredients: {
-        none: { requestItems: { some: {} } },
-      },
-    },
+    where: { tenantId, menuId: existing.id },
   });
 }
 

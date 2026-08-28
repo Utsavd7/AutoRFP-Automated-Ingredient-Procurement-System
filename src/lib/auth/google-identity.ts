@@ -37,6 +37,7 @@ type GoogleIdentityErrorCode =
   | 'GOOGLE_EMAIL_UNVERIFIED'
   | 'GOOGLE_EMAIL_MISMATCH'
   | 'GOOGLE_ACCOUNT_NOT_REGISTERED'
+  | 'PILOT_ACCESS_REQUIRED'
   | 'EMAIL_ALREADY_REGISTERED'
   | 'ACCOUNT_INACTIVE'
   | 'GOOGLE_UNAVAILABLE';
@@ -99,6 +100,7 @@ export async function resolveGoogleIdentity(
     account: GoogleAccount;
     profile: GoogleProfile;
     onboarding: GoogleOnboarding | null;
+    pilotAccess?: (email: string) => boolean;
   },
   repository: GoogleIdentityRepository = prismaGoogleIdentityRepository,
 ) {
@@ -144,6 +146,12 @@ export async function resolveGoogleIdentity(
       throw new GoogleIdentityError(
         'GOOGLE_EMAIL_MISMATCH',
         'Continue with the same Google email used to start signup.',
+      );
+    }
+    if (input.pilotAccess && !input.pilotAccess(email)) {
+      throw new GoogleIdentityError(
+        'PILOT_ACCESS_REQUIRED',
+        'This pilot is available only to approved restaurant owners.',
       );
     }
     if (await repository.findUserByEmail(email)) {

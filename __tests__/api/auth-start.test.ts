@@ -18,7 +18,11 @@ const workspace = {
 function request(body: unknown) {
   return new Request('http://localhost/api/auth/start', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      Origin: 'http://localhost',
+      'Sec-Fetch-Site': 'same-origin',
+    },
     body: JSON.stringify(body),
   });
 }
@@ -31,6 +35,102 @@ function allowRateLimit() {
 }
 
 describe('POST /api/auth/start', () => {
+  it('keeps production workspace creation inside the four-restaurant pilot', async () => {
+    const emailSignup = jest.fn();
+    const rateLimit = jest.fn();
+    const handler = createAuthStartHandler({
+      env: {
+        NODE_ENV: 'production',
+        GOOGLE_CLIENT_ID: 'client',
+        GOOGLE_CLIENT_SECRET: 'secret',
+        NEXTAUTH_SECRET: 'test-secret-that-is-long-enough',
+        QUOTEPLATE_PILOT_EMAILS: 'pilot-one@example.com,pilot-two@example.com',
+      },
+      emailSignup,
+      now: () => new Date('2026-08-28T00:00:00.000Z'),
+      rateLimit,
+    });
+
+    for (const method of ['email', 'google']) {
+      const response = await handler(request({
+        ...workspace,
+        method,
+        password: 'secure password',
+      }));
+      expect(response.status).toBe(403);
+      await expect(response.json()).resolves.toEqual({
+        error: 'This pilot is available only to approved restaurant owners.',
+      });
+    }
+    expect(rateLimit).not.toHaveBeenCalled();
+    expect(emailSignup).not.toHaveBeenCalled();
+  });
+
+  it('uses verified Google—not an unverified password—to activate a production pilot owner', async () => {
+    const emailSignup = jest.fn();
+    const rateLimit = allowRateLimit();
+    const handler = createAuthStartHandler({
+      env: {
+        NODE_ENV: 'production',
+        GOOGLE_CLIENT_ID: 'client',
+        GOOGLE_CLIENT_SECRET: 'secret',
+        NEXTAUTH_SECRET: 'test-secret-that-is-long-enough',
+        QUOTEPLATE_PILOT_EMAILS: workspace.email,
+      },
+      emailSignup,
+      now: () => new Date('2026-08-28T00:00:00.000Z'),
+      rateLimit,
+    });
+
+    const response = await handler(request({
+      ...workspace,
+      method: 'email',
+      password: 'secure password',
+    }));
+
+    expect(response.status).toBe(403);
+    expect(emailSignup).not.toHaveBeenCalled();
+    expect(rateLimit).not.toHaveBeenCalled();
+  });
+
+  it('rejects cross-origin and non-JSON signup attempts before consuming quota', async () => {
+    const emailSignup = jest.fn();
+    const rateLimit = jest.fn();
+    const handler = createAuthStartHandler({
+      env: {},
+      emailSignup,
+      now: () => new Date('2026-08-28T00:00:00.000Z'),
+      rateLimit,
+    } as never);
+
+    const crossOrigin = await handler(new Request('http://localhost/api/auth/start', {
+      method: 'POST',
+      headers: {
+        Origin: 'https://attacker.example',
+        'Sec-Fetch-Site': 'cross-site',
+        'Content-Type': 'text/plain',
+      },
+      body: JSON.stringify({ ...workspace, method: 'email', password: 'secure password' }),
+    }));
+    const wrongMedia = await handler(new Request('http://localhost/api/auth/start', {
+      method: 'POST',
+      headers: {
+        Origin: 'http://localhost',
+        'Sec-Fetch-Site': 'same-origin',
+        'Content-Type': 'text/plain',
+      },
+      body: JSON.stringify({ ...workspace, method: 'email', password: 'secure password' }),
+    }));
+
+    expect(crossOrigin.status).toBe(403);
+    expect(wrongMedia.status).toBe(415);
+    expect(crossOrigin.headers.get('cache-control')).toBe('private, no-store');
+    expect(crossOrigin.headers.get('referrer-policy')).toBe('no-referrer');
+    expect(crossOrigin.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(rateLimit).not.toHaveBeenCalled();
+    expect(emailSignup).not.toHaveBeenCalled();
+  });
+
   it('consumes a workspace-creation quota before expensive signup work', async () => {
     const emailSignup = jest.fn();
     const rateLimit = jest.fn().mockResolvedValue({
@@ -206,6 +306,7 @@ describe('POST /api/auth/start', () => {
         GOOGLE_CLIENT_SECRET: 'secret',
         NEXTAUTH_SECRET: secret,
         NODE_ENV: 'production',
+        QUOTEPLATE_PILOT_EMAILS: workspace.email,
       },
       emailSignup: jest.fn(),
       now: () => new Date('2026-08-28T00:00:00.000Z'),
@@ -253,6 +354,7 @@ describe('POST /api/auth/start', () => {
         GOOGLE_CLIENT_SECRET: 'secret',
         NEXTAUTH_SECRET: 'test-secret-that-is-long-enough',
         NODE_ENV: 'production',
+        QUOTEPLATE_PILOT_EMAILS: workspace.email,
       },
       emailSignup: jest.fn(),
       now: () => new Date('2026-08-28T00:00:00.000Z'),

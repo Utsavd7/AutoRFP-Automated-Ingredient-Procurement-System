@@ -3,8 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
 
@@ -82,7 +82,6 @@ model User {
   invitationsSent            Invitation[]         @relation("InvitationInviter")
   menusApproved              Menu[]               @relation("MenuApprover")
   menusCreated               Menu[]               @relation("MenuCreator")
-  suppliersVerified          Supplier[]           @relation("SupplierVerifier")
   procurementRequestsCreated ProcurementRequest[] @relation("ProcurementRequestCreator")
   awardsGranted              Award[]              @relation("AwardGrantor")
   auditEvents                AuditEvent[]         @relation("AuditActor")
@@ -153,7 +152,6 @@ model Recipe {
   menuId      String
   name        String
   position    Int
-  retiredAt   DateTime?
   tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   menu        Menu         @relation(fields: [tenantId, menuId], references: [tenantId, id], onDelete: Cascade)
   ingredients Ingredient[]
@@ -163,16 +161,15 @@ model Recipe {
 }
 
 model Ingredient {
-  id           String          @id @default(uuid())
-  tenantId     String
-  recipeId     String
-  name         String
-  quantity     Decimal         @db.Decimal(18, 3)
-  unit         ProcurementUnit
-  position     Int
-  tenant       Tenant          @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  recipe       Recipe          @relation(fields: [tenantId, recipeId], references: [tenantId, id], onDelete: Cascade)
-  requestItems RequestItem[]
+  id       String          @id @default(uuid())
+  tenantId String
+  recipeId String
+  name     String
+  quantity Decimal         @db.Decimal(18, 3)
+  unit     ProcurementUnit
+  position Int
+  tenant   Tenant          @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  recipe   Recipe          @relation(fields: [tenantId, recipeId], references: [tenantId, id], onDelete: Cascade)
 
   @@unique([tenantId, id])
   @@index([tenantId, recipeId, position])
@@ -193,18 +190,14 @@ model Supplier {
   gstin            String?
   notes            String?
   isActive         Boolean           @default(true)
-  verifiedAt       DateTime?
-  verifiedByUserId String?
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
   tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  verifiedBy       User?             @relation("SupplierVerifier", fields: [tenantId, verifiedByUserId], references: [tenantId, id], onDelete: Restrict)
   supplierRequests SupplierRequest[]
   awardLines       AwardLine[]
 
   @@unique([tenantId, id])
   @@index([tenantId, isActive, businessName])
-  @@index([tenantId, verifiedByUserId])
 }
 
 model ProcurementRequest {
@@ -243,23 +236,20 @@ model ProcurementRequest {
 }
 
 model RequestItem {
-  id                 String              @id @default(uuid())
-  tenantId           String
-  requestId          String
-  sourceIngredientId String?
-  name               String
-  quantity           Decimal             @db.Decimal(18, 3)
-  unit               ProcurementUnit
-  createdAt          DateTime            @default(now())
-  tenant             Tenant              @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  request            ProcurementRequest  @relation(fields: [tenantId, requestId], references: [tenantId, id], onDelete: Restrict)
-  sourceIngredient   Ingredient?         @relation(fields: [tenantId, sourceIngredientId], references: [tenantId, id], onDelete: Restrict)
-  quoteItems         SupplierQuoteItem[]
-  awardLines         AwardLine[]
+  id         String              @id @default(uuid())
+  tenantId   String
+  requestId  String
+  name       String
+  quantity   Decimal             @db.Decimal(18, 3)
+  unit       ProcurementUnit
+  createdAt  DateTime            @default(now())
+  tenant     Tenant              @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  request    ProcurementRequest  @relation(fields: [tenantId, requestId], references: [tenantId, id], onDelete: Restrict)
+  quoteItems SupplierQuoteItem[]
+  awardLines AwardLine[]
 
   @@unique([tenantId, id])
   @@index([tenantId, requestId])
-  @@index([tenantId, sourceIngredientId])
 }
 
 model SupplierRequest {

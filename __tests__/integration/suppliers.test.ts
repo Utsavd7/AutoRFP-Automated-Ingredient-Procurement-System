@@ -102,10 +102,10 @@ test('supplier CRUD, search, active filtering, and cursor pagination stay tenant
           businessName: 'Alpha Produce',
           phone: '+919876500001',
           email: 'sales1@supplier.in',
-          verifiedAt: null,
-          verifiedByUserId: null,
         }),
       );
+      expect(alpha).not.toHaveProperty('verifiedAt');
+      expect(alpha).not.toHaveProperty('verifiedByUserId');
       expect(await admin.auditEvent.count({ where: { action: 'supplier.created' } }))
         .toBe(3);
 

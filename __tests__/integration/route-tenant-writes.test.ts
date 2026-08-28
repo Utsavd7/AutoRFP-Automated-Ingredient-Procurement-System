@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 
 import { PrismaClient } from '@prisma/client';
 
-import { updateWorkspaceAccount } from '@/lib/account/update-workspace';
+import { createPrismaWorkspaceSettingsOperations } from '@/lib/account/workspace-settings';
 import { createDeterministicMenuDraft } from '@/lib/menu/menu-service';
 
 import { withMigratedPostgres } from './setup/postgres';
@@ -70,12 +70,12 @@ async function seedWorkspace(
 
 const accountUpdate = {
   name: 'Updated Kitchen',
-  email: 'updated-owner-a@example.test',
   addressLine: '2 New Road',
   city: 'Pune',
   state: 'Maharashtra',
   pin: '411001',
   phone: '9000000002',
+  gstin: null,
 };
 
 test('restricted route services scope account and menu writes to the current tenant', async () => {
@@ -98,26 +98,23 @@ test('restricted route services scope account and menu writes to the current ten
         ownerEmail: 'owner-b@example.test',
       });
       app = await provisionAppClient(admin, databaseUrl);
+      const settings = createPrismaWorkspaceSettingsOperations(app);
 
-      const updated = await updateWorkspaceAccount(
-        {
-          actor: { userId: 'owner-a', tenantId: 'tenant-a' },
-          ...accountUpdate,
-        },
-        app,
-      );
-      expect(updated.tenant).toEqual(
+      const updated = await settings.update({
+        actor: { userId: 'owner-a', tenantId: 'tenant-a' },
+        details: accountUpdate,
+      });
+      expect(updated.workspace).toEqual(
         expect.objectContaining({
-          id: 'tenant-a',
           name: 'Updated Kitchen',
           city: 'Pune',
         }),
       );
-      expect(updated.user).toEqual(
+      expect(await admin.user.findUnique({ where: { id: 'owner-a' } })).toEqual(
         expect.objectContaining({
           id: 'owner-a',
           name: 'owner-a Name',
-          email: 'updated-owner-a@example.test',
+          email: 'owner-a@example.test',
         }),
       );
       expect(
@@ -131,7 +128,6 @@ test('restricted route services scope account and menu writes to the current ten
           metadata: {
             fields: [
               'name',
-              'email',
               'addressLine',
               'city',
               'pin',
@@ -142,37 +138,34 @@ test('restricted route services scope account and menu writes to the current ten
       ]);
 
       await expect(
-        updateWorkspaceAccount(
-          {
-            actor: { userId: 'member-a', tenantId: 'tenant-a' },
+        settings.update({
+          actor: { userId: 'member-a', tenantId: 'tenant-a' },
+          details: {
             ...accountUpdate,
             name: 'Member Changed This',
           },
-          app,
-        ),
+        }),
       ).rejects.toMatchObject({ code: 'FORBIDDEN' });
       await expect(
-        updateWorkspaceAccount(
-          {
-            actor: { userId: 'owner-b', tenantId: 'tenant-a' },
+        settings.update({
+          actor: { userId: 'owner-b', tenantId: 'tenant-a' },
+          details: {
             ...accountUpdate,
             name: 'Cross Tenant Changed This',
           },
-          app,
-        ),
+        }),
       ).rejects.toMatchObject({ code: 'FORBIDDEN' });
 
       await expect(
-        updateWorkspaceAccount(
-          {
-            actor: { userId: 'owner-a', tenantId: 'tenant-a' },
+        settings.update({
+          actor: { userId: 'owner-a', tenantId: 'tenant-a' },
+          details: {
             ...accountUpdate,
             name: 'Must Roll Back',
-            email: 'owner-b@example.test',
+            pin: 'invalid',
           },
-          app,
-        ),
-      ).rejects.toMatchObject({ code: 'P2002' });
+        }),
+      ).rejects.toMatchObject({ status: 422 });
       expect(await admin.tenant.findUnique({ where: { id: 'tenant-a' } }))
         .toEqual(expect.objectContaining({ name: 'Updated Kitchen' }));
       expect(

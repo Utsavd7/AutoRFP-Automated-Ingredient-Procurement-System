@@ -73,7 +73,9 @@ async function openAccountNavigation(page: Page) {
   if ((page.viewportSize()?.width ?? 1_440) < 1_024) {
     await page.getByRole('button', { name: 'Open navigation' }).click();
     await expect(
-      page.getByRole('button', { name: 'Close navigation' }),
+      page
+        .getByRole('complementary')
+        .getByRole('button', { name: 'Close navigation' }),
     ).toBeVisible();
   }
 }
@@ -121,14 +123,14 @@ test.describe.serial('application Google identity through local OAuth', () => {
     await authorizeLocalGoogle(page, identity);
 
     await expect(page).toHaveURL(/\/settings\?section=members$/);
-    await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Workspace settings' })).toBeVisible();
     await signOut(page);
 
     await page.goto('/signin?callbackUrl=%2Fsettings%3Fsection%3Dmembers');
     await startGoogle(page);
     await authorizeLocalGoogle(page, identity);
     await expect(page).toHaveURL(/\/settings\?section=members$/);
-    await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Workspace settings' })).toBeVisible();
     await signOut(page);
   });
 

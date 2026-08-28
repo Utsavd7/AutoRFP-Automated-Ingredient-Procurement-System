@@ -16,6 +16,7 @@ import styles from './AuthExperience.module.css';
 type AuthFormProps = {
   mode: 'signin' | 'start';
   googleAvailable: boolean;
+  emailOwnerSignupAvailable?: boolean;
   callbackUrl: string;
   initialError?: string | null;
 };
@@ -66,6 +67,7 @@ async function responseError(response: Response) {
 export function AuthForm({
   mode,
   googleAvailable,
+  emailOwnerSignupAvailable = true,
   callbackUrl,
   initialError = null,
 }: AuthFormProps) {
@@ -237,19 +239,21 @@ export function AuthForm({
             <span>Work email</span>
             <input name="email" type="email" autoComplete="email" maxLength={320} required />
           </label>
-          <label className={styles.fieldWide}>
-            <span>Password</span>
-            <input
-              name="password"
-              type="password"
-              autoComplete={mode === 'start' ? 'new-password' : 'current-password'}
-              aria-describedby={mode === 'start' ? 'password-help' : undefined}
-              minLength={8}
-              maxLength={1024}
-              required
-            />
-            {mode === 'start' && <small id="password-help">Use at least 8 characters.</small>}
-          </label>
+          {(mode === 'signin' || emailOwnerSignupAvailable) && (
+            <label className={styles.fieldWide}>
+              <span>Password</span>
+              <input
+                name="password"
+                type="password"
+                autoComplete={mode === 'start' ? 'new-password' : 'current-password'}
+                aria-describedby={mode === 'start' ? 'password-help' : undefined}
+                minLength={8}
+                maxLength={1024}
+                required
+              />
+              {mode === 'start' && <small id="password-help">Use at least 8 characters.</small>}
+            </label>
+          )}
         </div>
       </fieldset>
 
@@ -257,15 +261,18 @@ export function AuthForm({
       <p className={styles.progress} aria-live="polite">{busyMessage}</p>
 
       <div className={styles.actions}>
-        <button className={styles.primaryButton} disabled={pending !== null} type="submit">
-          {pending === 'email'
-            ? busyMessage
-            : mode === 'signin'
-              ? 'Sign in with email'
-              : 'Create workspace with email'}
-        </button>
-
-        <div className={styles.divider}><span>or</span></div>
+        {(mode === 'signin' || emailOwnerSignupAvailable) && (
+          <>
+            <button className={styles.primaryButton} disabled={pending !== null} type="submit">
+              {pending === 'email'
+                ? busyMessage
+                : mode === 'signin'
+                  ? 'Sign in with email'
+                  : 'Create workspace with email'}
+            </button>
+            <div className={styles.divider}><span>or</span></div>
+          </>
+        )}
 
         <button
           className={styles.googleButton}
@@ -278,7 +285,14 @@ export function AuthForm({
         </button>
         {!googleAvailable && (
           <p className={styles.providerNote}>
-            Google sign-in is not configured for this deployment. Use email and password.
+            {mode === 'signin'
+              ? 'Google sign-in is not configured for this deployment. Use email and password.'
+              : 'Google pilot access is not configured for this deployment yet.'}
+          </p>
+        )}
+        {mode === 'start' && !emailOwnerSignupAvailable && (
+          <p className={styles.providerNote}>
+            Pilot activation uses the approved owner&apos;s verified Google email.
           </p>
         )}
       </div>

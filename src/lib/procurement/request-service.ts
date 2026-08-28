@@ -21,8 +21,8 @@ export const PROCUREMENT_REQUEST_LIMITS = {
   placeBytes: 120,
   instructionsBytes: 1_000,
   termsBytes: 2_000,
-  suppliers: 100,
-  ingredients: 1_000,
+  suppliers: 20,
+  ingredients: 250,
   listPage: 50,
 } as const;
 
@@ -464,6 +464,31 @@ export function validateLinkActionInput(input: unknown) {
   return { action: action!, supplierRequestId, expectedVersion };
 }
 
+export function validateRepeatRequestInput(input: unknown, now = new Date()) {
+  const errors: ValidationErrors = {};
+  if (!isRecord(input)) {
+    throw new ProcurementRequestValidationError({ request: ['Provide repeat request details.'] });
+  }
+  rejectUnknownKeys(
+    input,
+    ['expectedSourceVersion', 'title', 'deliveryDate', 'quoteDeadline'],
+    errors,
+  );
+  let expectedSourceVersion = 0;
+  try {
+    expectedSourceVersion = validateExpectedVersion(input.expectedSourceVersion);
+  } catch (error) {
+    if (error instanceof ProcurementRequestValidationError) Object.assign(errors, error.errors);
+    else throw error;
+  }
+  const title = boundedText(input.title, 'title', PROCUREMENT_REQUEST_LIMITS.titleBytes, errors) ?? '';
+  const deliveryDate = parseDeliveryDate(input.deliveryDate, errors);
+  const quoteDeadline = parseQuoteDeadline(input.quoteDeadline, now, errors);
+  validateDeadlineBeforeIndiaDelivery(quoteDeadline, deliveryDate, errors);
+  throwIfInvalid(errors);
+  return { expectedSourceVersion, title, deliveryDate, quoteDeadline };
+}
+
 type RequestCursor = { createdAt: Date; id: string };
 
 export function encodeRequestCursor(cursor: RequestCursor) {
@@ -896,7 +921,6 @@ export async function createProcurementRequestDraft(
           tenantId: actor.tenantId,
           recipe: {
             menuId: draft.menuId,
-            retiredAt: null,
           },
           ...(selectedIds ? { id: { in: selectedIds } } : {}),
         },
@@ -910,8 +934,16 @@ export async function createProcurementRequestDraft(
       });
       if (
         ingredients.length === 0 ||
+        ingredients.length > PROCUREMENT_REQUEST_LIMITS.ingredients ||
         (selectedIds && ingredients.length !== selectedIds.length)
       ) {
+        if (ingredients.length > PROCUREMENT_REQUEST_LIMITS.ingredients) {
+          throw new ProcurementRequestValidationError({
+            ingredientSelection: [
+              `A request can include up to ${PROCUREMENT_REQUEST_LIMITS.ingredients} ingredient lines.`,
+            ],
+          });
+        }
         throw new ProcurementRequestNotFoundError();
       }
       const suppliers = await activeSuppliers(
@@ -949,14 +981,6 @@ export async function createProcurementRequestDraft(
               quantity: ingredient.quantity,
               unit: ingredient.unit,
               tenant: { connect: { id: actor.tenantId } },
-              sourceIngredient: {
-                connect: {
-                  tenantId_id: {
-                    tenantId: actor.tenantId,
-                    id: ingredient.id,
-                  },
-                },
-              },
             })),
           },
           supplierRequests: {
@@ -1328,6 +1352,117 @@ export async function changeSupplierRequestLink(
         supplierRequest,
         ...(rawLink ? { link: rawLink } : {}),
       };
+    },
+    client,
+  );
+}
+
+export async function repeatProcurementRequest(
+  input: { actor: RequestActor; sourceRequestId: string; repeat: unknown },
+  client: RequestClient = prisma,
+  options?: RequestServiceOptions,
+) {
+  const actor = validateActor(input.actor);
+  const sourceRequestId = validateRequestId(input.sourceRequestId);
+  const serviceOptions = optionsWithDefaults(options);
+  const repeat = validateRepeatRequestInput(input.repeat, serviceOptions.now());
+
+  return withTenant(
+    actor.tenantId,
+    async (transaction) => {
+      await requireActiveActor(transaction, actor);
+      const locked = await lockRequest(transaction, actor, sourceRequestId);
+      if (locked.version !== repeat.expectedSourceVersion) {
+        throw new ProcurementRequestConflictError(
+          'This request changed. Refresh it before running it again.',
+        );
+      }
+      if (locked.status !== 'AWARDED') {
+        throw new ProcurementRequestConflictError(
+          'Only a completed award can be run again.',
+        );
+      }
+      const now = await transactionTime(transaction, serviceOptions.transactionClock);
+      if (repeat.quoteDeadline.getTime() <= now.getTime()) {
+        throw new ProcurementRequestValidationError({
+          quoteDeadline: ['Quote deadline must be in the future.'],
+        });
+      }
+      const source = await transaction.procurementRequest.findFirst({
+        where: { tenantId: actor.tenantId, id: sourceRequestId },
+        select: {
+          id: true,
+          menuId: true,
+          deliveryDetails: true,
+          commercialTerms: true,
+          items: {
+            orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+            select: {
+              name: true,
+              quantity: true,
+              unit: true,
+            },
+          },
+          supplierRequests: {
+            orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+            where: { supplier: { isActive: true } },
+            select: { supplierId: true },
+          },
+        },
+      });
+      if (!source || source.items.length === 0 || !isRecord(source.deliveryDetails)) {
+        throw new ProcurementRequestNotFoundError();
+      }
+      if (source.supplierRequests.length === 0) {
+        throw new ProcurementRequestConflictError(
+          'Reactivate or add a supplier before running this request again.',
+        );
+      }
+      const expiresAt = linkExpiry(now, repeat.quoteDeadline);
+      const grants = source.supplierRequests.map(({ supplierId }) => ({
+        supplierId,
+        token: issueToken(serviceOptions.tokenFactory),
+      }));
+      const created = await transaction.procurementRequest.create({
+        data: {
+          tenantId: actor.tenantId,
+          title: repeat.title,
+          status: 'DRAFT',
+          version: 1,
+          menuId: source.menuId,
+          sourceRequestId: source.id,
+          deliveryDetails: source.deliveryDetails as Prisma.InputJsonObject,
+          deliveryDate: repeat.deliveryDate,
+          quoteDeadline: repeat.quoteDeadline,
+          commercialTerms: source.commercialTerms,
+          createdByUserId: actor.userId,
+          items: {
+            create: source.items.map((item) => ({
+              tenantId: actor.tenantId,
+              name: item.name,
+              quantity: item.quantity,
+              unit: item.unit,
+            })),
+          },
+          supplierRequests: {
+            create: grants.map(({ supplierId, token }) => ({
+              tenantId: actor.tenantId,
+              supplierId,
+              tokenDigest: token.digest,
+              expiresAt,
+            })),
+          },
+        },
+        include: requestDetailInclude,
+      });
+      await writeAuditEvent(transaction, {
+        tenantId: actor.tenantId,
+        actorUserId: actor.userId,
+        action: 'request.repeated',
+        entityId: created.id,
+        metadata: { sourceRequestId: source.id },
+      });
+      return created;
     },
     client,
   );

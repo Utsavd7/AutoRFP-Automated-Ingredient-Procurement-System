@@ -1,10 +1,11 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { createServer, request as requestHttp } from 'node:http';
 import { mkdir, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
 
 import { build } from 'esbuild';
+import { encode } from 'next-auth/jwt';
 
 const nextAuthPath = /^\/api\/auth\/(?:providers|session|csrf|signin(?:\/[^/?]+)?|callback\/[^/?]+|signout|error)(?:[/?]|$)/;
 
@@ -224,6 +225,241 @@ export async function startAuthGateway({
           return;
         }
         response.writeHead(204).end();
+        return;
+      }
+
+      if (
+        url.pathname === '/__test/database/procurement-export-journey' &&
+        request.method === 'POST'
+      ) {
+        const body = JSON.parse((await bodyBuffer(request)).toString('utf8'));
+        const email = String(body.email ?? '').trim().toLowerCase();
+        const user = await admin.user.findUnique({
+          where: { email },
+          select: { id: true, tenantId: true },
+        });
+        if (!user) {
+          json(response, 404, { error: 'Export journey owner was not found.' });
+          return;
+        }
+        const suffix = randomBytes(8).toString('hex');
+        const supplierId = `e2e-supplier-${suffix}`;
+        const requestId = `e2e-request-${suffix}`;
+        const itemId = `e2e-item-${suffix}`;
+        const grantId = `e2e-grant-${suffix}`;
+        const supplierName = 'GreenLeaf Export Foods';
+        const itemName = 'Tomato';
+        await admin.$transaction(async (transaction) => {
+          await transaction.supplier.create({
+            data: {
+              id: supplierId,
+              tenantId: user.tenantId,
+              businessName: supplierName,
+              contactName: 'Meera Shah',
+              phone: '9876543210',
+              whatsappNumber: '9876543210',
+              email: 'orders@greenleaf.example',
+              addressLine: '7 APMC Yard',
+              city: 'Pune',
+              state: 'Maharashtra',
+              pin: '411037',
+              gstin: '27ABCDE9999F1Z1',
+            },
+          });
+          await transaction.procurementRequest.create({
+            data: {
+              id: requestId,
+              tenantId: user.tenantId,
+              title: 'Fresh produce · Export journey',
+              status: 'OPEN',
+              version: 2,
+              deliveryDetails: {
+                addressLine: '18 Koregaon Park Road',
+                city: 'Pune',
+                state: 'Maharashtra',
+                pin: '411001',
+                instructions: 'Deliver before 8:00 AM.',
+              },
+              deliveryDate: new Date('2099-09-05T00:00:00.000Z'),
+              quoteDeadline: new Date('2099-09-03T10:00:00.000Z'),
+              commercialTerms: 'Payment in 15 days.',
+              openedAt: new Date(),
+              createdByUserId: user.id,
+            },
+          });
+          await transaction.requestItem.create({
+            data: {
+              id: itemId,
+              tenantId: user.tenantId,
+              requestId,
+              name: itemName,
+              quantity: '100',
+              unit: 'KILOGRAM',
+            },
+          });
+          await transaction.supplierRequest.create({
+            data: {
+              id: grantId,
+              tenantId: user.tenantId,
+              requestId,
+              supplierId,
+              tokenDigest: randomBytes(32).toString('hex'),
+              expiresAt: new Date('2099-09-03T10:00:00.000Z'),
+            },
+          });
+        });
+        json(response, 201, {
+          requestId,
+          itemId,
+          itemName,
+          supplierName,
+        });
+        return;
+      }
+
+      if (
+        url.pathname === '/__test/database/load-organizations' &&
+        request.method === 'POST'
+      ) {
+        const organizations = [];
+        const sessionSecret = process.env.NEXTAUTH_SECRET;
+        if (!sessionSecret) {
+          json(response, 503, { error: 'Local session secret is unavailable.' });
+          return;
+        }
+        for (let index = 1; index <= 20; index += 1) {
+          const suffix = String(index).padStart(2, '0');
+          const tenantId = `load-tenant-${suffix}`;
+          const userId = `load-owner-${suffix}`;
+          const supplierId = `load-supplier-${suffix}`;
+          const requestId = `load-request-${suffix}`;
+          const itemId = `load-item-${suffix}`;
+          const supplierRequestId = `load-grant-${suffix}`;
+          const restaurantName = `Load Restaurant ${suffix}`;
+          const rawToken = randomBytes(32).toString('base64url');
+          const tokenDigest = createHash('sha256')
+            .update('quoteplate:v1:supplier-request:', 'utf8')
+            .update(rawToken, 'ascii')
+            .digest('hex');
+          await admin.$transaction(async (transaction) => {
+            await transaction.tenant.create({
+              data: {
+                id: tenantId,
+                name: restaurantName,
+                addressLine: `${index} Market Road`,
+                city: 'Pune',
+                state: 'Maharashtra',
+                pin: `4110${suffix}`,
+                phone: `90000000${suffix}`,
+              },
+            });
+            await transaction.user.create({
+              data: {
+                id: userId,
+                tenantId,
+                name: `Load Owner ${suffix}`,
+                email: `load-owner-${suffix}@example.test`,
+                role: 'OWNER',
+              },
+            });
+            await transaction.supplier.create({
+              data: {
+                id: supplierId,
+                tenantId,
+                businessName: `Load Supplier ${suffix}`,
+                contactName: `Supplier Contact ${suffix}`,
+                phone: `91111111${suffix}`,
+              },
+            });
+            await transaction.procurementRequest.create({
+              data: {
+                id: requestId,
+                tenantId,
+                title: `Load produce request ${suffix}`,
+                status: 'OPEN',
+                version: 2,
+                deliveryDetails: {
+                  addressLine: `${index} Market Road`,
+                  city: 'Pune',
+                  state: 'Maharashtra',
+                  pin: `4110${suffix}`,
+                },
+                deliveryDate: new Date('2099-09-20T00:00:00.000Z'),
+                quoteDeadline: new Date('2099-09-15T10:00:00.000Z'),
+                commercialTerms: 'Payment in 15 days.',
+                openedAt: new Date(),
+                createdByUserId: userId,
+              },
+            });
+            await transaction.requestItem.create({
+              data: {
+                id: itemId,
+                tenantId,
+                requestId,
+                name: 'Tomato',
+                quantity: '10',
+                unit: 'KILOGRAM',
+              },
+            });
+            await transaction.supplierRequest.create({
+              data: {
+                id: supplierRequestId,
+                tenantId,
+                requestId,
+                supplierId,
+                tokenDigest,
+                expiresAt: new Date('2099-09-15T10:00:00.000Z'),
+              },
+            });
+          });
+          const sessionToken = await encode({
+            secret: sessionSecret,
+            token: { userId, tenantId },
+            maxAge: 60 * 60,
+          });
+          organizations.push({
+            id: `load-org-${suffix}`,
+            sessionCookie: `next-auth.session-token=${sessionToken}`,
+            isolationMarker: {
+              path: '/api/settings',
+              jsonPath: 'workspace.name',
+              equals: restaurantName,
+            },
+            authenticatedReads: [
+              { name: 'overview', path: '/api/overview' },
+              { name: 'requests', path: '/api/requests?limit=5' },
+            ],
+            supplierQuote: {
+              token: rawToken,
+              isolationMarker: {
+                jsonPath: 'restaurantName',
+                equals: restaurantName,
+              },
+              submission: {
+                expectedLatestRevision: 0,
+                deliveryDate: '2099-09-20',
+                validUntil: '2099-09-15',
+                freightInr: '0',
+                commercialTerms: 'Payment in 15 days.',
+                notes: 'Bounded local launch load verification.',
+                items: [{
+                  requestItemId: itemId,
+                  noQuote: false,
+                  availableQuantity: '10',
+                  unitRateInr: '50',
+                  gstPercent: '5',
+                  taxInclusive: false,
+                  substitution: null,
+                }],
+              },
+            },
+          });
+        }
+        json(response, 201, {
+          schemaVersion: 1,
+          readinessPath: '/api/health/ready',
+          organizations,
+        });
         return;
       }
 

@@ -3,6 +3,11 @@ import { NextResponse } from 'next/server';
 import { problemResponse } from '@/lib/api/problem';
 import { requireAccountContext } from '@/lib/server-account';
 import {
+  browserJsonMutationRejection,
+  browserMutationOriginRejection,
+  privateMutationResponse,
+} from '@/lib/security/browser-mutation';
+import {
   deactivateSupplier,
   getSupplier,
   updateSupplier,
@@ -37,12 +42,18 @@ export async function GET(_request: Request, context: SupplierRouteContext) {
 }
 
 export async function PUT(request: Request, context: SupplierRouteContext) {
+  const rejected = browserJsonMutationRejection(request);
+  if (rejected) {
+    return privateMutationResponse(rejected === 'CROSS_ORIGIN'
+      ? problemResponse(403, 'Request not allowed', 'Manage suppliers from the QuotePlate workspace page.')
+      : problemResponse(415, 'Unsupported media type', 'Send this request as application/json.'));
+  }
   const account = await requireAccountContext();
   if (!account) {
-    return problemResponse(401, 'Unauthorized', 'Authentication is required.');
+    return privateMutationResponse(problemResponse(401, 'Unauthorized', 'Authentication is required.'));
   }
   const changes = await readSupplierJson(request);
-  if (isProblemResponse(changes)) return changes;
+  if (isProblemResponse(changes)) return privateMutationResponse(changes);
   const { id } = await context.params;
   try {
     const supplier = await updateSupplier({
@@ -50,19 +61,24 @@ export async function PUT(request: Request, context: SupplierRouteContext) {
       supplierId: id,
       changes,
     });
-    return NextResponse.json(
-      { supplier },
-      { headers: { 'Cache-Control': 'private, no-store' } },
-    );
+    return privateMutationResponse(NextResponse.json({ supplier }));
   } catch (error) {
-    return supplierError(error);
+    return privateMutationResponse(supplierError(error));
   }
 }
 
-export async function DELETE(_request: Request, context: SupplierRouteContext) {
+export async function DELETE(request: Request, context: SupplierRouteContext) {
+  const rejected = browserMutationOriginRejection(request);
+  if (rejected) {
+    return privateMutationResponse(problemResponse(
+      403,
+      'Request not allowed',
+      'Manage suppliers from the QuotePlate workspace page.',
+    ));
+  }
   const account = await requireAccountContext();
   if (!account) {
-    return problemResponse(401, 'Unauthorized', 'Authentication is required.');
+    return privateMutationResponse(problemResponse(401, 'Unauthorized', 'Authentication is required.'));
   }
   const { id } = await context.params;
   try {
@@ -70,11 +86,8 @@ export async function DELETE(_request: Request, context: SupplierRouteContext) {
       actor: supplierActor(account),
       supplierId: id,
     });
-    return NextResponse.json(
-      { supplier },
-      { headers: { 'Cache-Control': 'private, no-store' } },
-    );
+    return privateMutationResponse(NextResponse.json({ supplier }));
   } catch (error) {
-    return supplierError(error);
+    return privateMutationResponse(supplierError(error));
   }
 }

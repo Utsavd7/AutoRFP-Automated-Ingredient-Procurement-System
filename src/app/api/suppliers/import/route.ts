@@ -3,6 +3,10 @@ import { NextResponse } from 'next/server';
 import { problemResponse } from '@/lib/api/problem';
 import { requireAccountContext } from '@/lib/server-account';
 import {
+  browserMutationOriginRejection,
+  privateMutationResponse,
+} from '@/lib/security/browser-mutation';
+import {
   parseSupplierCsv,
   readBoundedSupplierCsv,
 } from '@/lib/suppliers/csv';
@@ -19,9 +23,17 @@ const csvMediaTypes = new Set([
 ]);
 
 export async function POST(request: Request) {
+  const rejected = browserMutationOriginRejection(request);
+  if (rejected) {
+    return privateMutationResponse(problemResponse(
+      403,
+      'Request not allowed',
+      'Import suppliers from the QuotePlate workspace page.',
+    ));
+  }
   const account = await requireAccountContext();
   if (!account) {
-    return problemResponse(401, 'Unauthorized', 'Authentication is required.');
+    return privateMutationResponse(problemResponse(401, 'Unauthorized', 'Authentication is required.'));
   }
   const mediaType = request.headers
     .get('content-type')
@@ -29,11 +41,11 @@ export async function POST(request: Request) {
     ?.trim()
     .toLowerCase();
   if (!mediaType || !csvMediaTypes.has(mediaType)) {
-    return problemResponse(
+    return privateMutationResponse(problemResponse(
       415,
       'Unsupported file type',
       'Upload a UTF-8 CSV file.',
-    );
+    ));
   }
 
   try {
@@ -43,11 +55,10 @@ export async function POST(request: Request) {
       actor: supplierActor(account),
       rows,
     });
-    return NextResponse.json(result, {
+    return privateMutationResponse(NextResponse.json(result, {
       status: 201,
-      headers: { 'Cache-Control': 'private, no-store' },
-    });
+    }));
   } catch (error) {
-    return supplierError(error);
+    return privateMutationResponse(supplierError(error));
   }
 }

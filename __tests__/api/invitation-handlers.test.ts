@@ -9,12 +9,28 @@ const context = {
   user: { id: 'owner-a' },
 };
 
-function jsonRequest(url: string, method: string, body: unknown) {
+function jsonRequest(
+  url: string,
+  method: string,
+  body: unknown,
+  options: { origin?: string; contentType?: string; length?: string } = {},
+) {
   return new Request(url, {
     method,
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': options.contentType ?? 'application/json',
+      origin: options.origin ?? new URL(url).origin,
+      'sec-fetch-site': 'same-origin',
+      ...(options.length ? { 'content-length': options.length } : {}),
+    },
     body: JSON.stringify(body),
   });
+}
+
+function expectPrivate(response: Response) {
+  expect(response.headers.get('cache-control')).toBe('private, no-store');
+  expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+  expect(response.headers.get('x-content-type-options')).toBe('nosniff');
 }
 
 describe('member invitation route handlers', () => {
@@ -39,6 +55,8 @@ describe('member invitation route handlers', () => {
 
     expect(createResponse.status).toBe(401);
     expect(revokeResponse.status).toBe(401);
+    expectPrivate(createResponse);
+    expectPrivate(revokeResponse);
   });
 
   it('returns one copyable same-origin join link without a separate raw token', async () => {
@@ -61,7 +79,7 @@ describe('member invitation route handlers', () => {
     let response: Response;
     try {
       response = await handlers.POST(
-        jsonRequest('https://untrusted.invalid/api/members/invitations', 'POST', {
+        jsonRequest('https://quoteplate.example/api/members/invitations', 'POST', {
           email: ' MEMBER@EXAMPLE.COM ',
           role: 'OWNER',
         }),
@@ -79,10 +97,10 @@ describe('member invitation route handlers', () => {
         email: 'member@example.com',
         role: 'MEMBER',
         expiresAt: '2026-09-04T10:00:00.000Z',
-        link: `https://app.quoteplate.example/join/${'A'.repeat(43)}`,
+        link: `https://app.quoteplate.example/join#token=${'A'.repeat(43)}`,
       },
     });
-    expect(response.headers.get('cache-control')).toBe('no-store');
+    expectPrivate(response);
     expect(JSON.stringify(body)).not.toContain('"token"');
     expect(create).toHaveBeenCalledWith(
       {
@@ -107,7 +125,15 @@ describe('member invitation route handlers', () => {
     });
     const malformed = new Request(
       'https://quoteplate.example/api/members/invitations',
-      { method: 'POST', body: '{' },
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          origin: 'https://quoteplate.example',
+          'sec-fetch-site': 'same-origin',
+        },
+        body: '{',
+      },
     );
 
     expect((await handlers.POST(malformed)).status).toBe(400);
@@ -123,6 +149,43 @@ describe('member invitation route handlers', () => {
       ).status,
     ).toBe(403);
     expect(create).not.toHaveBeenCalled();
+  });
+
+  it('rejects cross-origin, non-JSON, and oversized management requests privately', async () => {
+    const create = jest.fn();
+    const revoke = jest.fn();
+    const handlers = createMemberInvitationHandlers({
+      accountContext: jest.fn().mockResolvedValue(context),
+      create,
+      revoke,
+      now: () => new Date('2026-08-28T10:00:00.000Z'),
+    });
+
+    const crossOrigin = await handlers.POST(jsonRequest(
+      'https://quoteplate.example/api/members/invitations',
+      'POST',
+      { email: 'member@example.com' },
+      { origin: 'https://evil.example' },
+    ));
+    const nonJson = await handlers.DELETE(jsonRequest(
+      'https://quoteplate.example/api/members/invitations',
+      'DELETE',
+      { invitationId: 'invite-a' },
+      { contentType: 'text/plain' },
+    ));
+    const oversized = await handlers.POST(jsonRequest(
+      'https://quoteplate.example/api/members/invitations',
+      'POST',
+      { email: 'member@example.com' },
+      { length: '20000' },
+    ));
+
+    expect(crossOrigin.status).toBe(403);
+    expect(nonJson.status).toBe(415);
+    expect(oversized.status).toBe(413);
+    [crossOrigin, nonJson, oversized].forEach(expectPrivate);
+    expect(create).not.toHaveBeenCalled();
+    expect(revoke).not.toHaveBeenCalled();
   });
 
   it('does not expose account lookup failures', async () => {
@@ -142,6 +205,7 @@ describe('member invitation route handlers', () => {
     );
 
     expect(response.status).toBe(503);
+    expectPrivate(response);
     await expect(response.json()).resolves.toEqual({
       type: 'about:blank',
       status: 503,
@@ -174,6 +238,7 @@ describe('member invitation route handlers', () => {
     }
 
     expect(response.status).toBe(503);
+    expectPrivate(response);
     expect(create).not.toHaveBeenCalled();
   });
 
@@ -201,6 +266,7 @@ describe('member invitation route handlers', () => {
     }
 
     expect(response.status).toBe(503);
+    expectPrivate(response);
     expect(create).not.toHaveBeenCalled();
   });
 });
@@ -214,6 +280,7 @@ describe('public invitation acceptance handler', () => {
     const handler = createInvitationAcceptHandler({
       accept,
       now: () => new Date('2026-08-28T10:00:00.000Z'),
+      clientRateLimit: jest.fn().mockResolvedValue({ allowed: true, retryAfterSeconds: 900 }),
     });
     const token = 'A'.repeat(43);
 
@@ -227,9 +294,48 @@ describe('public invitation acceptance handler', () => {
     );
 
     expect(response.status).toBe(201);
-    expect(response.headers.get('cache-control')).toBe('no-store');
-    expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+    expectPrivate(response);
     await expect(response.json()).resolves.toEqual({ ok: true });
+  });
+
+  it('rejects cross-origin acceptance before reading or consuming the invitation', async () => {
+    const accept = jest.fn();
+    const handler = createInvitationAcceptHandler({
+      accept,
+      now: () => new Date('2026-08-28T10:00:00.000Z'),
+      clientRateLimit: jest.fn().mockResolvedValue({ allowed: true, retryAfterSeconds: 900 }),
+    });
+
+    const response = await handler(jsonRequest(
+      'https://quoteplate.example/api/invitations/accept',
+      'POST',
+      { token: 'A'.repeat(43), email: 'member@example.com' },
+      { origin: 'https://evil.example' },
+    ));
+
+    expect(response.status).toBe(403);
+    expectPrivate(response);
+    expect(accept).not.toHaveBeenCalled();
+  });
+
+  it('rejects non-JSON acceptance before reading or consuming the invitation', async () => {
+    const accept = jest.fn();
+    const handler = createInvitationAcceptHandler({
+      accept,
+      now: () => new Date('2026-08-28T10:00:00.000Z'),
+      clientRateLimit: jest.fn().mockResolvedValue({ allowed: true, retryAfterSeconds: 900 }),
+    });
+
+    const response = await handler(jsonRequest(
+      'https://quoteplate.example/api/invitations/accept',
+      'POST',
+      { token: 'A'.repeat(43), email: 'member@example.com' },
+      { contentType: 'text/plain' },
+    ));
+
+    expect(response.status).toBe(415);
+    expectPrivate(response);
+    expect(accept).not.toHaveBeenCalled();
   });
 
   it('uses one 410 response for every unavailable invitation and rejects oversized bodies', async () => {
@@ -243,6 +349,7 @@ describe('public invitation acceptance handler', () => {
     const handler = createInvitationAcceptHandler({
       accept,
       now: () => new Date('2026-08-28T10:00:00.000Z'),
+      clientRateLimit: jest.fn().mockResolvedValue({ allowed: true, retryAfterSeconds: 900 }),
     });
     const token = 'A'.repeat(43);
     const gone = await handler(
@@ -256,14 +363,18 @@ describe('public invitation acceptance handler', () => {
     const oversized = await handler(
       new Request('https://quoteplate.example/api/invitations/accept', {
         method: 'POST',
-        headers: { 'content-length': '20000' },
+        headers: {
+          'content-length': '20000',
+          'content-type': 'application/json',
+          origin: 'https://quoteplate.example',
+          'sec-fetch-site': 'same-origin',
+        },
         body: '{}',
       }),
     );
 
     expect(gone.status).toBe(410);
-    expect(gone.headers.get('cache-control')).toBe('no-store');
-    expect(gone.headers.get('referrer-policy')).toBe('no-referrer');
+    expectPrivate(gone);
     await expect(gone.json()).resolves.toEqual({
       type: 'about:blank',
       status: 410,
@@ -285,6 +396,7 @@ describe('public invitation acceptance handler', () => {
     const handler = createInvitationAcceptHandler({
       accept,
       now: () => new Date('2026-08-28T10:00:00.000Z'),
+      clientRateLimit: jest.fn().mockResolvedValue({ allowed: true, retryAfterSeconds: 900 }),
     });
     const token = 'A'.repeat(43);
 
@@ -299,7 +411,7 @@ describe('public invitation acceptance handler', () => {
 
     expect(response.status).toBe(429);
     expect(response.headers.get('retry-after')).toBe('321');
-    expect(response.headers.get('cache-control')).toBe('no-store');
+    expectPrivate(response);
     await expect(response.json()).resolves.toEqual({
       type: 'about:blank',
       status: 429,
@@ -313,6 +425,7 @@ describe('public invitation acceptance handler', () => {
     const handler = createInvitationAcceptHandler({
       accept,
       now: () => new Date('2026-08-28T10:00:00.000Z'),
+      clientRateLimit: jest.fn().mockResolvedValue({ allowed: true, retryAfterSeconds: 900 }),
     });
     let pulls = 0;
     const stream = new ReadableStream<Uint8Array>(
@@ -332,6 +445,11 @@ describe('public invitation acceptance handler', () => {
       'https://quoteplate.example/api/invitations/accept',
       {
         method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          origin: 'https://quoteplate.example',
+          'sec-fetch-site': 'same-origin',
+        },
         body: stream,
         duplex: 'half',
       } as RequestInit & { duplex: 'half' },
@@ -340,6 +458,39 @@ describe('public invitation acceptance handler', () => {
     const response = await handler(request);
 
     expect(response.status).toBe(413);
+    expect(accept).not.toHaveBeenCalled();
+  });
+
+  it('limits a client before resolving an unknown invitation token', async () => {
+    const accept = jest.fn();
+    const clientRateLimit = jest.fn().mockResolvedValue({
+      allowed: false,
+      retryAfterSeconds: 120,
+    });
+    const handler = createInvitationAcceptHandler({
+      accept,
+      now: () => new Date('2026-08-28T10:00:00.000Z'),
+      clientRateLimit,
+    });
+    const acceptRequest = jsonRequest(
+      'https://quoteplate.example/api/invitations/accept',
+      'POST',
+      {
+        token: 'A'.repeat(43),
+        email: 'member@example.com',
+        name: 'Priya Shah',
+        password: 'correct horse battery staple',
+      },
+    );
+
+    const response = await handler(acceptRequest);
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get('retry-after')).toBe('120');
+    expect(clientRateLimit).toHaveBeenCalledWith({
+      request: acceptRequest,
+      now: new Date('2026-08-28T10:00:00.000Z'),
+    });
     expect(accept).not.toHaveBeenCalled();
   });
 });

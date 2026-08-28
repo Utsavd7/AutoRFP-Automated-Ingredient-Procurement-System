@@ -25,6 +25,24 @@ describe('auth rate-limit subjects', () => {
     );
   });
 
+  it('does not trust caller-controlled forwarding headers in production', () => {
+    expect(authClientIdentifier(
+      new Headers({
+        'cf-connecting-ip': '198.51.100.1',
+        'x-real-ip': '198.51.100.2',
+        'x-forwarded-for': '198.51.100.3',
+      }),
+      { NODE_ENV: 'production' },
+    )).toBe('production-unidentified');
+    expect(authClientIdentifier(
+      new Headers({
+        'x-nf-client-connection-ip': '203.0.113.20',
+        'cf-connecting-ip': '198.51.100.1',
+      }),
+      { NODE_ENV: 'production' },
+    )).toBe('203.0.113.20');
+  });
+
   it('consumes separate email and client buckets for workspace creation', async () => {
     const consume = jest.fn().mockResolvedValue({
       allowed: true,
@@ -60,11 +78,10 @@ describe('auth rate-limit subjects', () => {
     });
   });
 
-  it('denies credentials when either independently consumed bucket is exhausted', async () => {
+  it('stops before creating an email bucket when the client bucket is exhausted', async () => {
     const consume = jest
       .fn()
-      .mockResolvedValueOnce({ allowed: false, retryAfterSeconds: 240 })
-      .mockResolvedValueOnce({ allowed: true, retryAfterSeconds: 120 });
+      .mockResolvedValueOnce({ allowed: false, retryAfterSeconds: 240 });
 
     await expect(
       consumeCredentialsRateLimit(
@@ -76,10 +93,31 @@ describe('auth rate-limit subjects', () => {
         consume,
       ),
     ).resolves.toEqual({ allowed: false, retryAfterSeconds: 240 });
-    expect(consume).toHaveBeenCalledTimes(2);
+    expect(consume).toHaveBeenCalledTimes(1);
     expect(consume.mock.calls.map(([input]) => input.scope)).toEqual([
-      'auth-credentials-email',
       'auth-credentials-client',
+    ]);
+  });
+
+  it('consumes the email bucket only after the client bucket allows the attempt', async () => {
+    const consume = jest
+      .fn()
+      .mockResolvedValueOnce({ allowed: true, retryAfterSeconds: 120 })
+      .mockResolvedValueOnce({ allowed: true, retryAfterSeconds: 240 });
+
+    await expect(
+      consumeCredentialsRateLimit(
+        {
+          email: 'asha@example.com',
+          clientIdentifier: '203.0.113.9',
+          now,
+        },
+        consume,
+      ),
+    ).resolves.toEqual({ allowed: true, retryAfterSeconds: 240 });
+    expect(consume.mock.calls.map(([input]) => input.scope)).toEqual([
+      'auth-credentials-client',
+      'auth-credentials-email',
     ]);
   });
 });

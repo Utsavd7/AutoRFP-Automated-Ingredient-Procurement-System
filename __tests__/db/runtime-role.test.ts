@@ -7,6 +7,7 @@ function clientWithRole(input: {
   currentUser: string;
   rolsuper: boolean;
   rolbypassrls: boolean;
+  hasBypassMembership: boolean;
 }) {
   return {
     $queryRaw: jest.fn().mockResolvedValue([input]),
@@ -19,6 +20,7 @@ describe('runtime database role assertion', () => {
       currentUser: 'autorfp_app',
       rolsuper: false,
       rolbypassrls: false,
+      hasBypassMembership: false,
     });
 
     await expect(assertRuntimeDatabaseRole(client as never)).resolves.toBeUndefined();
@@ -28,8 +30,24 @@ describe('runtime database role assertion', () => {
 
   it('fails closed for an administrator or bypass role', async () => {
     for (const role of [
-      { currentUser: 'postgres', rolsuper: true, rolbypassrls: true },
-      { currentUser: 'autorfp_app', rolsuper: false, rolbypassrls: true },
+      {
+        currentUser: 'postgres',
+        rolsuper: true,
+        rolbypassrls: true,
+        hasBypassMembership: false,
+      },
+      {
+        currentUser: 'autorfp_app',
+        rolsuper: false,
+        rolbypassrls: true,
+        hasBypassMembership: false,
+      },
+      {
+        currentUser: 'autorfp_app',
+        rolsuper: false,
+        rolbypassrls: false,
+        hasBypassMembership: true,
+      },
     ]) {
       const client = clientWithRole(role);
       await expect(

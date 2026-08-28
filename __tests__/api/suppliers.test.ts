@@ -65,7 +65,11 @@ const body = {
 const jsonRequest = (url: string, method: string, value: unknown) =>
   new Request(url, {
     method,
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      Origin: new URL(url).origin,
+      'Sec-Fetch-Site': 'same-origin',
+    },
     body: JSON.stringify(value),
   });
 
@@ -150,6 +154,10 @@ describe('tenant supplier API', () => {
     const deactivated = await deactivateSupplierRoute(
       new Request('http://localhost/api/suppliers/supplier-a', {
         method: 'DELETE',
+        headers: {
+          Origin: 'http://localhost',
+          'Sec-Fetch-Site': 'same-origin',
+        },
       }),
       routeContext('supplier-a') as never,
     );
@@ -255,7 +263,11 @@ describe('tenant supplier API', () => {
     const response = await importSupplierRoute(
       new Request('http://localhost/api/suppliers/import', {
         method: 'POST',
-        headers: { 'content-type': 'text/csv' },
+        headers: {
+          'content-type': 'text/csv',
+          Origin: 'http://localhost',
+          'Sec-Fetch-Site': 'same-origin',
+        },
         body: csv,
       }),
     );
@@ -313,6 +325,72 @@ describe('tenant supplier API', () => {
     expect(unsupported.status).toBe(415);
     expect(oversized.status).toBe(413);
     expect(importSupplierRows).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['create JSON', () => createSupplierRoute(new Request('http://localhost/api/suppliers', {
+      method: 'POST',
+      headers: {
+        Origin: 'https://attacker.example',
+        'Sec-Fetch-Site': 'cross-site',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    }))],
+    ['update JSON', () => updateSupplierRoute(new Request('http://localhost/api/suppliers/supplier-a', {
+      method: 'PUT',
+      headers: {
+        Origin: 'https://attacker.example',
+        'Sec-Fetch-Site': 'cross-site',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    }), routeContext('supplier-a') as never)],
+    ['bodyless deactivate', () => deactivateSupplierRoute(new Request('http://localhost/api/suppliers/supplier-a', {
+      method: 'DELETE',
+      headers: {
+        Origin: 'https://attacker.example',
+        'Sec-Fetch-Site': 'cross-site',
+      },
+    }), routeContext('supplier-a') as never)],
+    ['CSV import', () => importSupplierRoute(new Request('http://localhost/api/suppliers/import', {
+      method: 'POST',
+      headers: {
+        Origin: 'https://attacker.example',
+        'Sec-Fetch-Site': 'cross-site',
+        'Content-Type': 'text/csv',
+      },
+      body: 'business_name\nVendor',
+    }))],
+  ])('rejects cross-origin %s before authentication or supplier work', async (_label, call) => {
+    jest.mocked(requireAccountContext).mockClear();
+    const response = await call();
+
+    expect(response.status).toBe(403);
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(requireAccountContext).not.toHaveBeenCalled();
+    expect(createSupplier).not.toHaveBeenCalled();
+    expect(updateSupplier).not.toHaveBeenCalled();
+    expect(deactivateSupplier).not.toHaveBeenCalled();
+    expect(importSupplierRows).not.toHaveBeenCalled();
+  });
+
+  it('rejects non-JSON supplier writes before authentication', async () => {
+    jest.mocked(requireAccountContext).mockClear();
+    const response = await createSupplierRoute(new Request('http://localhost/api/suppliers', {
+      method: 'POST',
+      headers: {
+        Origin: 'http://localhost',
+        'Sec-Fetch-Site': 'same-origin',
+        'Content-Type': 'text/plain',
+      },
+      body: '{}',
+    }));
+
+    expect(response.status).toBe(415);
+    expect(requireAccountContext).not.toHaveBeenCalled();
   });
 
   it('exports one bounded page with private download headers and a continuation cursor', async () => {

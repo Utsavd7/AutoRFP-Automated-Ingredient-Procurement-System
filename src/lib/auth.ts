@@ -13,12 +13,14 @@ import {
 } from '@/lib/auth/google-identity';
 import type { GoogleOnboarding } from '@/lib/auth/oauth-start';
 import { consumeCredentialsRateLimit } from '@/lib/auth/rate-limit';
+import { pilotEmailAllowed } from '@/lib/auth/pilot-access';
 
 export type AuthEnvironment = {
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
   NEXTAUTH_SECRET?: string;
   NODE_ENV?: string;
+  QUOTEPLATE_PILOT_EMAILS?: string;
 };
 
 type AuthOptionsInput = {
@@ -97,6 +99,7 @@ export function createAuthOptions(
             },
             profile: profile ?? {},
             onboarding: input.googleOnboarding ?? null,
+            pilotAccess: (email) => pilotEmailAllowed(email, env),
           },
           input.googleIdentityRepository,
         );

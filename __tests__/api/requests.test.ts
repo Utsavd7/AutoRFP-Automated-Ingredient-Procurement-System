@@ -79,7 +79,11 @@ const draft = {
 const jsonRequest = (url: string, method: string, value: unknown) =>
   new Request(url, {
     method,
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Origin: new URL(url).origin,
+      'Sec-Fetch-Site': 'same-origin',
+    },
     body: JSON.stringify(value),
   });
 
@@ -294,5 +298,50 @@ describe('procurement request API', () => {
     await expect(missing.json()).resolves.not.toHaveProperty('tenantId');
     expect(conflict.status).toBe(409);
     expect(unauthorized.status).toBe(401);
+  });
+
+  it.each([
+    ['create', (request: Request) => createRequest(request)],
+    ['update', (request: Request) => updateRequest(request, routeContext('request-a') as never)],
+    ['open', (request: Request) => openRequest(request, routeContext('request-a') as never)],
+    ['link', (request: Request) => changeLink(request, routeContext('request-a') as never)],
+  ])('rejects a cross-origin %s mutation before authentication or request work', async (operation, call) => {
+    jest.mocked(requireAccountContext).mockClear();
+    const suffix = operation === 'create' ? '' : operation === 'update' ? '/request-a' : `/request-a/${operation === 'link' ? 'links' : 'open'}`;
+    const response = await call(new Request(`http://localhost/api/requests${suffix}`, {
+      method: operation === 'update' ? 'PATCH' : 'POST',
+      headers: {
+        Origin: 'https://attacker.example',
+        'Sec-Fetch-Site': 'cross-site',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(operation === 'create' ? draft : { expectedVersion: 1 }),
+    }));
+
+    expect(response.status).toBe(403);
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(requireAccountContext).not.toHaveBeenCalled();
+    expect(createProcurementRequestDraft).not.toHaveBeenCalled();
+    expect(updateProcurementRequestDraft).not.toHaveBeenCalled();
+    expect(openProcurementRequest).not.toHaveBeenCalled();
+    expect(changeSupplierRequestLink).not.toHaveBeenCalled();
+  });
+
+  it('rejects non-JSON request writes before authentication', async () => {
+    jest.mocked(requireAccountContext).mockClear();
+    const response = await createRequest(new Request('http://localhost/api/requests', {
+      method: 'POST',
+      headers: {
+        Origin: 'http://localhost',
+        'Sec-Fetch-Site': 'same-origin',
+        'Content-Type': 'text/plain',
+      },
+      body: '{}',
+    }));
+
+    expect(response.status).toBe(415);
+    expect(requireAccountContext).not.toHaveBeenCalled();
   });
 });

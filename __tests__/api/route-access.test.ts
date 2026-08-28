@@ -69,12 +69,13 @@ describe('public route surface', () => {
     ).toBe(false);
   });
 
-  it('closes the mobile drawer before opening command search', () => {
+  it('closes the mobile drawer when navigating and supports an accessible escape action', () => {
     const source = readSource('app', '(app)', 'layout.tsx');
 
-    expect(source).toMatch(
-      /onClick=\{\(\) => \{\s*onNav\(\);\s*window\.dispatchEvent\(new KeyboardEvent/,
-    );
+    expect(source).toContain('onClick={onNav}');
+    expect(source).toContain("if (event.key === 'Escape') setMobileOpen(false)");
+    expect(source).toContain('aria-label="Open navigation"');
+    expect(source).toContain('aria-label="Close navigation"');
   });
 });
 
@@ -124,40 +125,36 @@ describe('production-safe workflow presentation', () => {
   });
 
   it('submits only persisted launch account fields and reports accepted saves', () => {
-    const source = readSource('app', '(app)', 'settings', 'page.tsx');
-    const bodyStart = source.indexOf('body: JSON.stringify({');
-    const bodyEnd = source.indexOf('}),', bodyStart);
-    const requestBody = source.slice(bodyStart, bodyEnd);
-    const responseGuard = source.indexOf('if (!res.ok)');
-    const savedState = source.indexOf('setSaved(true)');
+    const source = readSource('components', 'settings', 'SettingsWorkspace.tsx');
+    const saveStart = source.indexOf('async function save');
+    const saveEnd = source.indexOf('async function confirmAction', saveStart);
+    const saveFlow = source.slice(saveStart, saveEnd);
+    const responseGuard = saveFlow.indexOf('if (!response.ok)');
+    const savedState = saveFlow.indexOf('setSaved(true)');
 
     expect(source).not.toContain('localStorage');
     expect(source).not.toContain('readAccount');
     expect(source).not.toContain('saveAccount');
-    expect(requestBody).toContain('name');
-    expect(requestBody).toContain('email');
-    expect(requestBody).toContain('addressLine');
-    expect(requestBody).toContain('city');
-    expect(requestBody).toContain('state');
-    expect(requestBody).toContain('pin');
-    expect(requestBody).toContain('phone');
-    expect(requestBody).not.toMatch(
+    expect(saveFlow).toContain("fetch('/api/settings'");
+    expect(saveFlow).toContain("method: 'PATCH'");
+    expect(saveFlow).toContain('body: JSON.stringify({ details: form })');
+    expect(source).toContain("setField('name'");
+    expect(source).not.toContain("setField('contactEmail'");
+    expect(source).toContain("setField('addressLine'");
+    expect(source).toContain("setField('city'");
+    expect(source).toContain("setField('state'");
+    expect(source).toContain("setField('pin'");
+    expect(source).toContain("setField('phone'");
+    expect(source).toContain("setField('gstin'");
+    expect(saveFlow).not.toMatch(
       /cuisineType|preferredSuppliers|monthlyBudgetTarget|savingsTargetPct/,
     );
     expect(source).not.toMatch(
       /AI & Data Integrations|Ollama|Groq|Market Data|ChromaDB|LangGraph|Inngest|Sentry/,
     );
-    expect(source.slice(responseGuard, savedState)).toContain('throw new Error');
+    expect(saveFlow.slice(responseGuard, savedState)).toContain('throw new Error');
     expect(responseGuard).toBeGreaterThanOrEqual(0);
     expect(savedState).toBeGreaterThan(responseGuard);
-  });
-
-  it('offers only currently available actions in the command palette', () => {
-    const source = readSource('components', 'CommandPalette.tsx');
-
-    expect(source).toContain("label: 'Create menu draft'");
-    expect(source).not.toContain('Run AI Pipeline');
-    expect(source).not.toContain('View Quotes');
   });
 
   it('keeps removed workflow endpoints out of every live UI module', () => {
@@ -168,12 +165,10 @@ describe('production-safe workflow presentation', () => {
       readSource('app', '(app)', 'intelligence', 'page.tsx'),
       readSource('app', '(app)', 'procurement', 'page.tsx'),
       readSource('app', '(app)', 'settings', 'page.tsx'),
-      readSource('components', 'CommandPalette.tsx'),
     ].join('\n');
 
     for (const endpoint of [
       '/api/dashboard',
-      '/api/history',
       '/api/pricing',
       '/api/distributors',
       '/api/send-rfp',
@@ -197,21 +192,20 @@ describe('production-safe workflow presentation', () => {
     expect(source).not.toContain('$extends');
   });
 
-  test.each([
-    ['dashboard', 'Dashboard'],
-    ['history', 'Procurement history'],
-    ['intelligence', 'Procurement intelligence'],
-  ] as const)('keeps %s as a truthful launch placeholder', (route, title) => {
-    const source = readSource('app', '(app)', route, 'page.tsx');
+  it('connects overview, history, and insights to factual launch workspaces', () => {
+    const dashboard = readSource('app', '(app)', 'dashboard', 'page.tsx');
+    const history = readSource('app', '(app)', 'history', 'page.tsx');
+    const intelligence = readSource('app', '(app)', 'intelligence', 'page.tsx');
+    const insights = readSource('components', 'reporting', 'InsightsWorkspace.tsx');
 
-    expect(source).toContain(title);
-    expect(source).toContain('Coming in the launch workflow');
-    expect(source).toContain('href="/procurement"');
-    expect(source).not.toContain('fetch(');
-    expect(source).not.toContain('localStorage');
-    expect(source).not.toContain('/api/dashboard');
-    expect(source).not.toContain('/api/history');
-    expect(source).not.toMatch(/savings|live pricing|AI negotiation|supplier scor/i);
+    expect(dashboard).toContain('<OverviewWorkspace');
+    expect(history).toContain('<HistoryWorkspace');
+    expect(intelligence).toContain("redirect('/insights')");
+    expect(insights).toContain("fetch('/api/insights'");
+    expect(insights).toContain('Submitted facts only');
+    expect([dashboard, history, intelligence, insights].join('\n')).not.toContain('Coming in the launch workflow');
+    expect([dashboard, history, intelligence, insights].join('\n')).not.toContain('localStorage');
+    expect(insights).not.toMatch(/guaranteed savings|live pricing|AI negotiation|supplier score/i);
   });
 
   it('keeps shell account state server-backed and removes false platform claims', () => {
@@ -237,14 +231,18 @@ describe('production-safe workflow presentation', () => {
     expect(source).not.toContain('verifyPassword');
   });
 
-  it('limits procurement to a saved deterministic menu draft', () => {
-    const source = readSource('app', '(app)', 'procurement', 'page.tsx');
+  it('connects procurement to reviewed menus and real request APIs only', () => {
+    const source = [
+      readSource('app', '(app)', 'procurement', 'page.tsx'),
+      readSource('components', 'procurement', 'ProcurementWorkspace.tsx'),
+      readSource('components', 'procurement', 'NewRequestForm.tsx'),
+    ].join('\n');
 
-    expect(source).toContain("fetch('/api/parse-menu'");
-    expect(source).toContain('Menu draft saved for review');
-    expect(source).toContain(
-      'Your menu and extracted dish names are saved; nothing has been sent to suppliers.',
-    );
+    expect(source).toContain("new URLSearchParams({ limit: '50' })");
+    expect(source).toContain('fetch(`/api/requests?${params}`');
+    expect(source).toContain("fetch('/api/menus?limit=50'");
+    expect(source).toContain("fetch('/api/suppliers?active=true&limit=50'");
+    expect(source).toContain('Nothing is shared yet');
     for (const endpoint of [
       '/api/pricing',
       '/api/distributors',
@@ -259,21 +257,27 @@ describe('production-safe workflow presentation', () => {
     expect(source).not.toContain('AUTORFP_ENABLE_LEGACY_DEMO');
   });
 
-  it('keeps the public quote portal static until launch quote APIs exist', () => {
-    const source = readSource('app', 'quote', '[rfpId]', 'page.tsx');
+  it('keeps supplier entry on the fragment-authorized quote route', () => {
+    const page = readSource('app', 'quote', 'page.tsx');
+    const accessClient = readSource('app', 'quote', 'QuoteAccessClient.tsx');
 
-    expect(source).toContain('Supplier quote portal unavailable');
-    expect(source).not.toContain('fetch(');
-    expect(source).not.toContain('LegacyQuoteSubmissionPage');
-    expect(source).not.toContain('AUTORFP_ENABLE_LEGACY_DEMO');
-    expect(source).not.toContain('Submit Official Quote');
+    expect(existsSync(sourcePath('app', 'quote', '[rfpId]', 'page.tsx'))).toBe(false);
+    expect(page).toContain('<QuoteAccessClient />');
+    expect(accessClient).toContain('window.location.hash.slice(1)');
+    expect(accessClient).toContain("window.history.replaceState(null, '', '/quote')");
+    expect(accessClient).toContain("fetch('/api/public/quote/access'");
   });
 
-  it('labels the documented application tree by its production-safe surface', () => {
+  it('documents the complete launch surface without legacy prototype claims', () => {
     const readme = readFileSync(join(process.cwd(), 'README.md'), 'utf8');
 
-    expect(readme).toContain('Current production-safe application surface:');
-    expect(readme).toContain('Quarantined prototype modules:');
+    expect(readme).toContain('## Product status');
+    expect(readme).toContain('## What a restaurant can do');
+    expect(readme).toContain('## Repository map');
+    expect(readme).toContain('src/app/');
+    expect(readme).toContain('src/lib/');
+    expect(readme).toContain('prisma/migrations/');
+    expect(readme).not.toContain('Quarantined prototype modules:');
     expect(readme).not.toContain(
       'procurement/page.tsx           New procurement workflow (6-step)',
     );

@@ -6,6 +6,7 @@ import {
   authenticateCredentials,
   createPrismaCredentialsRepository,
 } from '@/lib/auth/credentials';
+import { consumeCredentialsRateLimit } from '@/lib/auth/rate-limit';
 import {
   createPrismaCurrentUserStore,
   loadCurrentUser,
@@ -18,6 +19,7 @@ import {
   createPrismaGoogleIdentityRepository,
   resolveGoogleIdentity,
 } from '@/lib/auth/google-identity';
+import { consumeDigestRateLimit } from '@/lib/security/rate-limit';
 
 import { withMigratedPostgres } from './setup/postgres';
 
@@ -176,6 +178,15 @@ test('restricted runtime role safely bootstraps email and Google identity around
             password: emailSignup.password,
           },
           credentialsRepository,
+          {
+            clientIdentifier: '203.0.113.9',
+            now: new Date('2026-08-28T00:00:00.000Z'),
+            rateLimit: (input) =>
+              consumeCredentialsRateLimit(
+                input,
+                (attempt) => consumeDigestRateLimit(attempt, app!),
+              ),
+          },
         ),
       ).resolves.toEqual(
         expect.objectContaining({

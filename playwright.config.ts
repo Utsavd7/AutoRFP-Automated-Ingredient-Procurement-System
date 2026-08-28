@@ -38,5 +38,13 @@ export default defineConfig({
         browserName: 'chromium',
       },
     },
+    {
+      name: 'tablet-chromium',
+      testMatch: /product-workspace\.spec\.ts/,
+      use: {
+        ...devices['iPad Pro 11'],
+        browserName: 'chromium',
+      },
+    },
   ],
 });

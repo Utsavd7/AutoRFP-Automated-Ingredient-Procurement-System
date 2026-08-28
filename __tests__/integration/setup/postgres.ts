@@ -25,11 +25,20 @@ const migrationOrder = [
   '20260827000300_forced_rls',
   '20260827000400_member_invitations',
   '20260827000500_menu_recipe_retirement',
+  '20260827000600_public_supplier_grants',
+  '20260827000700_quote_integrity',
+  '20260827000800_award_snapshot_capacity',
+  '20260827000900_minimal_launch_columns',
+  '20260827001000_backup_role',
 ] as const;
 
 export type PostgresHarness = {
   databaseUrl: string;
   migrateTo: (migrationName: (typeof migrationOrder)[number]) => Promise<void>;
+  applyMigrationAs: (
+    migrationName: (typeof migrationOrder)[number],
+    databaseUrl: string,
+  ) => Promise<void>;
 };
 
 function runPrisma(args: string[], databaseUrl: string): Promise<void> {
@@ -110,6 +119,18 @@ function createHarness(databaseUrl: string): PostgresHarness {
 
   return {
     databaseUrl,
+    async applyMigrationAs(migrationName, roleDatabaseUrl) {
+      const migrationPath = path.join(
+        projectRoot,
+        'prisma/migrations',
+        migrationName,
+        'migration.sql',
+      );
+      await runPrisma(
+        ['db', 'execute', '--url', roleDatabaseUrl, '--file', migrationPath],
+        roleDatabaseUrl,
+      );
+    },
     async migrateTo(migrationName) {
       const targetIndex = migrationOrder.indexOf(migrationName);
       if (targetIndex < migratedThrough) {

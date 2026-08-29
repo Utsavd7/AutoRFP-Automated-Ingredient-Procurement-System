@@ -2,7 +2,7 @@
 
 Rollback is a human decision and must not bypass the production release gate.
 
-1. Confirm the issue and record the currently deployed SHA and Netlify deploy ID.
+1. Confirm the issue and record the currently deployed SHA and Vercel deployment ID.
 2. Contain exposure first. Revoke affected supplier links or pause onboarding when appropriate; do not solve an incident by enabling paid capacity.
 3. Choose the latest previously verified commit. Confirm its CI result, schema compatibility, and whether its application code can read the current database.
 4. If the rollback needs a database restore, stop and follow [backup and restore](backup-restore.md). Do not mix an application rollback with an unreviewed data rollback.

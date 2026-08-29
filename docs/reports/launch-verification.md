@@ -7,14 +7,14 @@ This is the evidence record for the launch gate. A row is `PASS` only after the 
 | Gate | Status | Evidence |
 |---|---|---|
 | Unit and API tests | PASS (local) | `npm test` — 83 suites / 559 tests passed on 2026-08-28. |
-| Real PostgreSQL integration suite | PASS (local) | `npm run test:integration` — 22 suites / 38 tests passed against disposable PostgreSQL on 2026-08-28. |
+| Real PostgreSQL integration suite | PASS (local) | `npm run test:integration` — 22 suites / 39 tests passed against disposable PostgreSQL on 2026-08-29. |
 | Clean migration from an empty database | PASS (local) | Covered by `__tests__/integration/migrations.test.ts`; every committed migration deployed without drift. |
 | Forced-RLS two-tenant isolation matrix | PASS (local) | Covered by the real-role integration suite, including unsafe-role rejection, cross-tenant denial, table grants and private-function grants. |
 | Complete restaurant-to-supplier procurement journey | PASS (local) | `npm run test:e2e` — 39 passed / 3 intentional skips across desktop, phone and tablet, including menu, request, public quote, comparison, award and export. |
 | Encrypted backup restore verification | PENDING (provider) | Script safety, ACL preservation, disposable-target refusal and repeat-cleanup tests pass; a real encrypted provider restore requires the cardless backup environment. |
 | Dependency, licence, and secret checks | PASS (local) | Production audit found 0 vulnerabilities; installed licences are open-source/permissive or documented optional LGPL components; secret-pattern review found only fixtures, placeholders and generated local test credentials. |
 | Lint and TypeScript | PASS (local) | `npm run lint` and `npm run typecheck` passed on 2026-08-28. |
-| Production build | PASS (local) | `npm run build` and `npx --no-install netlify build --offline` completed; Netlify packaged the server function with runtime v5.15.13. |
+| Production build | PASS (local and Vercel) | `npm run build` completed locally and Vercel built the merged commit successfully on Hobby. |
 | 20-organization bounded load profile | PASS (local) | `npx playwright test tests/e2e/load-profile.spec.ts --project=desktop-chromium` — 1/1 passed on 2026-08-28 against a disposable PostgreSQL fixture. |
 | Load-runner safety and threshold unit tests | PASS | `node --test tests/load/organizations.test.js` — 6/6 passed on 2026-08-28. |
 
@@ -180,7 +180,7 @@ Recorded local evidence:
 - Dependency audit command/result: **PASS**, 0 production vulnerabilities.
 - Licence scan command/result: **PASS** for the installed dependency tree; fonts retain their OFL licence file.
 - Secret scan command/result: **PASS** for repository source; matches were test fixtures, explicit placeholders or runtime-generated local credentials.
-- Production build result: **PASS**, including Netlify offline packaging.
+- Production build result: **PASS**, including the Vercel Hobby build.
 
 ## Final sign-off
 

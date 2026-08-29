@@ -85,4 +85,4 @@ jobs:
           npx prisma migrate deploy --schema prisma/schema.prisma
 
       - name: Confirm no site was published
-        run: printf '%s\n' 'Database migration complete. No Netlify deploy was attempted.'
+        run: printf '%s\n' 'Database migration complete. No hosting deploy was attempted.'

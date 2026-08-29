@@ -50,9 +50,6 @@ BEGIN
 END
 $runtime_role$;
 
-ALTER ROLE autorfp_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
-    NOINHERIT NOREPLICATION NOBYPASSRLS;
-
 DO $runtime_role_membership$
 BEGIN
     IF EXISTS (
@@ -69,6 +66,27 @@ BEGIN
     END IF;
 END
 $runtime_role_membership$;
+
+DO $runtime_role_attributes$
+DECLARE
+    runtime_role_is_safe BOOLEAN;
+BEGIN
+    SELECT role.rolcanlogin
+           AND NOT role.rolsuper
+           AND NOT role.rolcreatedb
+           AND NOT role.rolcreaterole
+           AND NOT role.rolinherit
+           AND NOT role.rolreplication
+           AND NOT role.rolbypassrls
+    INTO runtime_role_is_safe
+    FROM pg_catalog.pg_roles AS role
+    WHERE role.rolname = 'autorfp_app';
+
+    IF COALESCE(runtime_role_is_safe, false) = false THEN
+        RAISE EXCEPTION 'autorfp_app has unsafe role attributes';
+    END IF;
+END
+$runtime_role_attributes$;
 
 REVOKE ALL PRIVILEGES ON SCHEMA public FROM PUBLIC, autorfp_app;
 CREATE SCHEMA autorfp_private;

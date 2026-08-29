@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import {
   chmodSync,
+  existsSync,
   mkdtempSync,
   readFileSync,
   writeFileSync,
@@ -111,45 +112,24 @@ describe('free-first operations policy', () => {
     expect(workflow.match(/npm run build/g)).toHaveLength(1);
   });
 
-  it('permits production deployment only from a confirmed manual release gate', () => {
-    const workflow = read('.github/workflows/deploy-netlify.yml');
-    const config = read('netlify.toml');
+  it('keeps one cardless Vercel hosting path and removes obsolete Netlify tooling', () => {
+    const runbook = read('docs/runbooks/deployment.md');
+    const readme = read('README.md');
     const packageManifest = JSON.parse(read('package.json')) as {
       name: string;
       devDependencies: Record<string, string>;
     };
 
     expect(packageManifest.name).toBe('quoteplate');
-    expect(packageManifest.devDependencies['@netlify/plugin-nextjs']).toBe('5.15.13');
-    expect(packageManifest.devDependencies['netlify-cli']).toBe('27.4.0');
-    expect(workflow).toMatch(/workflow_dispatch\s*:/);
-    expect(workflow).not.toMatch(/\b(push|pull_request|schedule)\s*:/);
-    expect(workflow).toContain('environment: production');
-    expect(workflow).toContain('DEPLOY_QUOTEPLATE_FREE_ONLY');
-    expect(workflow).toContain('QUOTEPLATE_APPROVED_RELEASE: "1"');
-    expect(workflow).toContain('--prod');
-    expect(workflow).toContain('${{ secrets.NETLIFY_AUTH_TOKEN }}');
-    expect(workflow).toContain('${{ secrets.NETLIFY_SITE_ID }}');
-    expect(workflow).toContain('actions: read');
-    expect(workflow).toContain('fetch-depth: 0');
-    expect(workflow).toContain('git merge-base --is-ancestor "$RELEASE_SHA" "origin/main"');
-    expect(workflow).toContain('/actions/workflows/ci.yml/runs');
-    expect(workflow).toContain('| first | .conclusion');
-    expect(workflow).toContain('test "$ci_conclusion" = "success"');
-    expect(workflow).toContain('npx prisma migrate deploy');
-    expect(workflow.match(/^\s+DIRECT_URL:/gm)).toHaveLength(1);
-    expect(workflow.match(/^\s+DATABASE_URL:/gm)).toHaveLength(1);
-    expect(workflow).toContain('${{ secrets.NEON_DIRECT_DATABASE_URL }}');
-    expect(workflow).toContain('test -n "$PRODUCTION_URL"');
-    expect(workflow).not.toMatch(/\n\s+if:.*PRODUCTION_URL/);
-    expect(workflow).toContain('CANARY_BASE_URL: ${{ vars.PRODUCTION_URL }}');
-    expect(workflow).toContain('node-version: 20.18.1');
-    expect(workflow).toContain('npm ci --omit=peer');
-    expect(workflow).toContain('npx --no-install netlify deploy');
-    expect(workflow).not.toMatch(/npx\s+(?:--yes\s+)?netlify(?:@|\s)/);
-    expect(config).toContain('NPM_FLAGS = "--omit=peer"');
-    expect(config).toContain('QUOTEPLATE_APPROVED_RELEASE');
-    expect(config).toContain("CONTEXT === 'production'");
+    expect(packageManifest.devDependencies).not.toHaveProperty('@netlify/plugin-nextjs');
+    expect(packageManifest.devDependencies).not.toHaveProperty('netlify-cli');
+    expect(existsSync(join(root, 'netlify.toml'))).toBe(false);
+    expect(existsSync(join(root, '.github/workflows/deploy-netlify.yml'))).toBe(false);
+    expect(readme).toContain('Vercel Hobby (cardless)');
+    expect(runbook).toContain('Vercel Hobby');
+    expect(runbook).toContain('Deployment protection stays enabled');
+    expect(runbook).toContain('Do not accept an upgrade, add a card');
+    expect(runbook).toContain('exact verified commit');
   });
 
   it('bootstraps the production database separately without publishing a site', () => {
@@ -173,7 +153,6 @@ describe('free-first operations policy', () => {
 
   it('keeps workflow credentials in protected GitHub environments', () => {
     for (const relativePath of [
-      '.github/workflows/deploy-netlify.yml',
       '.github/workflows/bootstrap-production-database.yml',
       '.github/workflows/backup-postgres.yml',
     ]) {

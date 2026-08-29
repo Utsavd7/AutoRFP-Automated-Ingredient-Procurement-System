@@ -3,7 +3,7 @@
 ## Triage
 
 1. Record UTC time, reporter, affected route, tenant scope, and the last successful canary. Do not copy credentials, cookies, database URLs, or supplier-token paths into tickets or chat.
-2. Check Netlify status and credits, Neon status/storage/compute/transfer, the readiness endpoint, and the latest CI/deploy/backup runs.
+2. Check Vercel status and Hobby usage, Neon status/storage/compute/transfer, the readiness endpoint, and the latest CI/deploy/backup runs.
 3. Classify the incident: availability, authentication, tenant isolation, public-link exposure, incorrect commercial record, or backup failure.
 
 ## Containment

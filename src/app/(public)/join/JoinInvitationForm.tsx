@@ -7,7 +7,7 @@ import styles from './join.module.css';
 
 export function JoinInvitationForm() {
   const tokenRef = useRef('');
-  const [linkReady, setLinkReady] = useState(false);
+  const [linkState, setLinkState] = useState<'checking' | 'ready' | 'invalid'>('checking');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [accepted, setAccepted] = useState(false);
@@ -17,10 +17,10 @@ export function JoinInvitationForm() {
     const fragmentToken = params.get('token') ?? '';
     window.history.replaceState(null, '', '/join');
     tokenRef.current = fragmentToken;
-    setLinkReady(true);
-    if (!fragmentToken) {
-      setError('This invitation link is incomplete. Ask your restaurant to send it again.');
-    }
+    // The invitation secret exists only in the browser URL fragment, so its
+    // availability cannot be derived during server rendering.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLinkState(fragmentToken ? 'ready' : 'invalid');
   }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -75,7 +75,10 @@ export function JoinInvitationForm() {
     }
   }
 
-  const disabled = !linkReady || !tokenRef.current || submitting || accepted;
+  const disabled = linkState !== 'ready' || submitting || accepted;
+  const visibleError = linkState === 'invalid'
+    ? 'This invitation link is incomplete. Ask your restaurant to send it again.'
+    : error;
 
   return (
     <form className={styles.form} onSubmit={submit} aria-busy={submitting}>
@@ -122,10 +125,10 @@ export function JoinInvitationForm() {
       </div>
 
       <div className={styles.message} role="status" aria-live="polite">
-        {error}
+        {visibleError}
       </div>
       <button className={styles.submit} type="submit" disabled={disabled}>
-        {!linkReady
+        {linkState === 'checking'
           ? 'Checking invitation…'
           : submitting
             ? 'Joining workspace…'

@@ -1,45 +1,36 @@
 # Deployment runbook
 
-QuotePlate production is Netlify Free only. Repository-linked deploy previews may run for review, but an automatic production Git build is blocked by `netlify.toml`. Production publishing is available only through the manually dispatched GitHub workflow and the protected **GitHub production environment**.
+QuotePlate production uses Vercel Hobby and Neon Free. The Vercel account is cardless, auto-recharge is unavailable, and no paid add-on or upgrade is authorized. Deployment protection stays enabled until the production database, Google sign-in, startup validation, and live canary all pass.
 
 ## One-time setup
 
-1. Create a cardless Netlify Free site and confirm the account has no payment method, auto-recharge, paid overage, or paid add-on.
-2. Disable repository-driven production publishing. Keep deploy previews only if the free-credit budget allows them.
-3. Configure Google OAuth with the exact authorized redirect URI `${NEXTAUTH_URL}/api/auth/callback/google` (for example, `https://quoteplate.example/api/auth/callback/google`). Production pilot activation requires both `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`; it is not an optional launch path. The verified Google email must exactly match one of the addresses in `QUOTEPLATE_PILOT_EMAILS`.
-4. Create a GitHub environment named `production`, require an operator reviewer, prevent self-review where available, and restrict it to `main`.
-5. Store `NETLIFY_AUTH_TOKEN`, `NETLIFY_SITE_ID`, and the **migration-only owner secret** `NEON_DIRECT_DATABASE_URL` only as secrets of that GitHub environment. Set a non-empty HTTPS `PRODUCTION_URL` as an environment variable. Never put the owner connection in Netlify or any running application environment; the workflow maps it to Prisma variables for the migration step only.
-6. Confirm Neon uses its Free plan, pooled runtime endpoint, smallest compute, and five-minute scale-to-zero. Migrations use the direct endpoint.
+1. Confirm the Vercel team still says **Hobby**, has no payment method, and has no paid add-on or external integration that can create charges.
+2. Keep the Vercel project linked to the repository's `main` branch. Use the stable free `quoteplate.vercel.app` address when available.
+3. Configure Google OAuth with the exact authorized redirect URI `${NEXTAUTH_URL}/api/auth/callback/google`. The verified Google email must exactly match an address in `QUOTEPLATE_PILOT_EMAILS`.
+4. Keep the migration-only owner secret in the protected GitHub production environment as `NEON_DIRECT_DATABASE_URL`. Never put that owner connection in Vercel or any running application environment.
+5. Confirm Neon says **Free**, uses the Singapore project, the smallest autoscaling range, and scale-to-zero. Migrations use the direct endpoint; the application uses the pooled endpoint.
 
-## One-time runtime-role password bootstrap
+## Database bootstrap and runtime role
 
-Do this once before the first site publish. Confirm the chosen commit is on `main` with successful CI, then manually dispatch **Bootstrap QuotePlate production database** with that full SHA and type `BOOTSTRAP_QUOTEPLATE_DATABASE_ONLY`. Approve the protected production environment. This workflow applies migrations and cannot call Netlify or publish a site.
+Confirm the chosen commit is on `main` with successful CI, then manually dispatch **Bootstrap QuotePlate production database** with that full SHA and type `BOOTSTRAP_QUOTEPLATE_DATABASE_ONLY`. The workflow applies migrations and cannot publish the website.
 
-The first production migration creates `autorfp_app` directly in SQL with restricted attributes and intentionally does not embed a password. Do not create this role in the Neon Console, CLI, or API: provider-created roles can belong to `neon_superuser`, and the migration and application intentionally reject any runtime role with privileged membership. After the database-only workflow succeeds, connect interactively as the Neon owner without putting either password in the command line. Use non-secret host and user values in the connection options and let `psql` prompt for the owner password:
+The migration creates `autorfp_app` with restricted attributes and no embedded password. Connect interactively as the Neon owner without putting either password in the command line:
 
 ```sh
 psql "host=YOUR_DIRECT_NEON_HOST dbname=neondb user=YOUR_NEON_OWNER sslmode=require"
 ```
 
-At the `psql` prompt, run:
+At the `psql` prompt, run `\password autorfp_app`, enter a random password twice at the hidden prompts, and exit with `\q`. The password never appears in shell history, process arguments, or a committed file.
 
-```text
-\password autorfp_app
-```
-
-Enter a new random password twice at the hidden prompts, then use `\q`. The runtime password never appears in shell history, SQL history, process arguments, or the migration files. Do not use `ALTER ROLE ... PASSWORD '...'`, `PGPASSWORD`, or a URL containing the password on the command line.
-
-Store that password only in the Netlify production secret for the restricted, pooled `DATABASE_URL` (`autorfp_app` plus the `-pooler` host). Add the runtime values `NEXTAUTH_URL`, `NEXTAUTH_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `QUOTEPLATE_PILOT_EMAILS` (one to four comma-separated, approved owner emails that exactly match their verified Google identities). Set `QUOTEPLATE_RUNTIME_STARTUP_CHECK=1` in the production Functions/runtime scope, not the Build scope. A secret-free public build must remain possible. The direct owner credential remains migration-only and is never used by the running application.
-
-Do not dispatch the site deployment until the database-only workflow, interactive password step, pooled `DATABASE_URL`, Google credentials, and pilot allowlist are all complete. This prevents spending a free-tier production publish on a guaranteed failed canary.
+Store only the restricted `autorfp_app` connection as the Vercel pooled `DATABASE_URL`. Add `NEXTAUTH_URL`, `NEXTAUTH_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `QUOTEPLATE_PILOT_EMAILS`, and `QUOTEPLATE_RUNTIME_STARTUP_CHECK=1`. Apply secrets to Production only unless a preview explicitly needs isolated test credentials.
 
 ## Release
 
-1. Confirm CI is green on the full 40-character commit SHA and the preview has been reviewed. The workflow independently proves that the SHA is reachable from `main` and that the `CI` workflow has a successful `push` run for that exact SHA.
-2. Recheck the [cost boundary](cost-boundaries.md). Stop if any provider requests a card, billing link, auto-recharge, paid overage, or upgrade.
-3. Dispatch **Deploy approved release to Netlify** with that SHA and type `DEPLOY_QUOTEPLATE_FREE_ONLY`.
-4. Approve the protected `production` environment review.
-5. The workflow checks out the exact SHA, verifies main and CI, applies pending migrations with the step-only owner credential, publishes once, and always runs the canary against the required production URL.
-6. Record the SHA, Netlify deploy ID, operator, time, and canary result in the release notes.
+1. Confirm CI is green for the exact `main` commit and recheck the [cost boundary](cost-boundaries.md).
+2. Confirm the database bootstrap succeeded and the runtime connection uses `autorfp_app`, never the Neon owner.
+3. Redeploy the exact verified commit from Vercel. Do not accept an upgrade, add a card, or enable a paid integration.
+4. While deployment protection is still enabled, verify `/api/health/live`, `/api/health/ready`, Google sign-in, sign-out, one tenant-scoped page, and one supplier quote link.
+5. Run `CANARY_BASE_URL=https://quoteplate.vercel.app scripts/canary.sh`.
+6. Remove deployment protection only after every check passes, then record the commit SHA, deployment ID, operator, time, and canary result.
 
-Never rerun a production deploy only to investigate a failure: each publish consumes Free-plan credits. Diagnose first, then dispatch one approved correction.
+If any provider asks for payment, billing details, an upgrade, or auto-recharge, stop. Reaching a free limit pauses onboarding or availability; it does not authorize spending.

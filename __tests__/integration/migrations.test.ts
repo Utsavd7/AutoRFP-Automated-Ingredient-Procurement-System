@@ -165,6 +165,73 @@ test('early owner guards accept inherited bypass capability without provider use
   });
 });
 
+test('forced-RLS migration runs as a managed Postgres owner without true superuser', async () => {
+  await withPostgres(async ({ databaseUrl, migrateTo, applyMigrationAs }) => {
+    await migrateTo('20260827000200_launch_schema');
+    const admin = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
+    const password = 'managed_owner_test_password';
+    const managedOwnerUrl = new URL(databaseUrl);
+    managedOwnerUrl.username = 'managed_migration_owner';
+    managedOwnerUrl.password = password;
+
+    try {
+      await admin.$executeRawUnsafe(
+        `CREATE ROLE managed_migration_owner LOGIN NOSUPERUSER NOCREATEDB CREATEROLE INHERIT NOREPLICATION BYPASSRLS PASSWORD '${password}'`,
+      );
+      await admin.$executeRawUnsafe(
+        'ALTER SCHEMA public OWNER TO managed_migration_owner',
+      );
+      const [{ database_name }] = await admin.$queryRaw<
+        Array<{ database_name: string }>
+      >`SELECT current_database() AS database_name`;
+      await admin.$executeRawUnsafe(
+        `GRANT CREATE ON DATABASE "${database_name.replaceAll('"', '""')}" TO managed_migration_owner`,
+      );
+      for (const table of expectedTables) {
+        await admin.$executeRawUnsafe(
+          `ALTER TABLE public."${table}" OWNER TO managed_migration_owner`,
+        );
+      }
+
+      await expect(
+        applyMigrationAs(
+          '20260827000300_forced_rls',
+          managedOwnerUrl.toString(),
+        ),
+      ).resolves.toBeUndefined();
+
+      const [runtimeRole] = await admin.$queryRaw<
+        Array<{
+          rolcanlogin: boolean;
+          rolsuper: boolean;
+          rolcreatedb: boolean;
+          rolcreaterole: boolean;
+          rolinherit: boolean;
+          rolreplication: boolean;
+          rolbypassrls: boolean;
+        }>
+      >`
+        SELECT rolcanlogin, rolsuper, rolcreatedb, rolcreaterole, rolinherit,
+               rolreplication, rolbypassrls
+        FROM pg_catalog.pg_roles
+        WHERE rolname = 'autorfp_app'
+      `;
+
+      expect(runtimeRole).toEqual({
+        rolcanlogin: true,
+        rolsuper: false,
+        rolcreatedb: false,
+        rolcreaterole: false,
+        rolinherit: false,
+        rolreplication: false,
+        rolbypassrls: false,
+      });
+    } finally {
+      await admin.$disconnect();
+    }
+  });
+});
+
 test('forced-RLS migration rejects a pre-created runtime role with privileged membership', async () => {
   await withPostgres(async ({ databaseUrl, migrateTo }) => {
     await migrateTo('20260827000200_launch_schema');

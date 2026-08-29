@@ -4,13 +4,13 @@
 
 QuotePlate is an India-first restaurant procurement workspace. A restaurant can prepare an ingredient request, collect quotes from its own suppliers without asking them to create accounts, compare the real landed cost, record a whole or split award, and keep the complete commercial history for the next buying cycle.
 
-Built by [Utsav Doshi](https://github.com/Utsavd7) · [View the repository](https://github.com/Utsavd7/AutoRFP-Automated-Ingredient-Procurement-System)
+Built by [Utsav Doshi](https://github.com/Utsavd7) · [View the repository](https://github.com/Utsavd7/QuotePlate)
 
 ![QuotePlate wordmark](public/brand/wordmark-horizontal.svg)
 
 ## Product status
 
-The complete launch workflow is implemented and passes the local release gate. Unit, integration, responsive browser, accessibility, migration, tenant-isolation, production-build, and bounded 20-restaurant load checks pass. Production provider setup, one encrypted remote restore, and the live canary remain intentionally pending; none of those steps may add a card, enable billing, or accept a paid upgrade.
+The complete launch workflow is implemented and passes the local release gate. Unit, integration, responsive browser, accessibility, migration, tenant-isolation, production-build, and bounded 20-restaurant load checks pass. The application builds successfully on Vercel Hobby and remains deployment-protected while the production database and Google sign-in are configured. No launch step may add a card, enable billing, or accept a paid upgrade.
 
 The controlled launch is sized for **one to four restaurants** on cardless free plans. The code and test profile already cover **20 isolated restaurant workspaces** so the application can grow without a rewrite.
 
@@ -53,10 +53,10 @@ Direct supplier relationships are expected, not blocked. The lasting value is th
 | Database | PostgreSQL with Prisma 5 |
 | Authentication | NextAuth, Google OAuth, Argon2 local credentials |
 | Documents | CSV, QR code PNG, and PDF generated inside the application |
-| Production host | Netlify Free |
+| Production host | Vercel Hobby (cardless) |
 | Production database | Neon Postgres Free |
 | Automation | GitHub Actions with manual production approval |
-| Production backup | Encrypted Backblaze B2 Free storage |
+| Production backup | Encrypted S3-compatible storage, only when a cardless free provider is configured |
 | Self-hosting option | Multi-stage, non-root Docker image |
 
 All production dependencies are open source. There is no LLM, vector database, background-job platform, paid monitoring service, transactional-email vendor, or usage-priced API in the runtime.
@@ -97,8 +97,8 @@ The canonical schema-only reference lists every retained table and field: [docs/
 Install the exact dependency tree:
 
 ```sh
-git clone https://github.com/Utsavd7/AutoRFP-Automated-Ingredient-Procurement-System.git
-cd AutoRFP-Automated-Ingredient-Procurement-System
+git clone https://github.com/Utsavd7/QuotePlate.git
+cd QuotePlate
 npm ci --omit=peer
 cp .env.sample .env
 ```
@@ -154,28 +154,28 @@ The pull-request workflow repeats lint, type checks, unit tests, real PostgreSQL
 | Gate | Result |
 | --- | --- |
 | Unit and API tests | 83 suites, 559 tests passed |
-| Real PostgreSQL integration | 22 suites, 38 tests passed |
+| Real PostgreSQL integration | 22 suites, 39 tests passed |
 | Responsive end-to-end journeys | 39 passed across desktop, phone and tablet; 3 intentional provider/duplicate-flow skips |
 | Empty-database migrations and forced-RLS isolation | Passed |
 | Bounded 20-restaurant profile | Passed with zero errors or tenant mismatches |
 | Production dependency audit | 0 vulnerabilities |
 | Lint, TypeScript, Next.js build | Passed |
-| Offline Netlify production packaging | Passed |
+| Vercel-compatible Next.js production build | Passed |
 
 See [docs/reports/launch-verification.md](docs/reports/launch-verification.md) for the evidence and remaining provider gates.
 
 ## Free-only production release
 
-Production is intentionally not published on every push. The release workflow accepts only an exact commit already on `main`, requires successful CI for that commit, waits for approval in the protected GitHub `production` environment, applies migrations with a step-scoped owner credential, publishes once, and runs a canary.
+The database bootstrap is intentionally separate from hosting. It accepts only an exact commit already on `main`, requires successful CI for that commit, and applies migrations with a step-scoped owner credential. Vercel deploys the same reviewed `main` commit; deployment protection stays enabled until the database, Google OAuth, runtime checks, and canary are ready.
 
 Before a first release:
 
-1. Confirm Netlify, Neon, GitHub, Google, and Backblaze B2 are cardless Free accounts with no paid overage or auto-recharge.
+1. Confirm Vercel Hobby, Neon Free, GitHub, Google, and any optional backup provider are cardless with no paid overage or auto-recharge.
 2. Configure Google OAuth with the exact callback `${NEXTAUTH_URL}/api/auth/callback/google`; every production owner email must be Google-verified and exactly listed in `QUOTEPLATE_PILOT_EMAILS`.
 3. Run the database-only bootstrap workflow for the approved `main` commit.
-4. Set the runtime-role password interactively and store only the restricted pooled URL in Netlify.
+4. Set the runtime-role password interactively and store only the restricted pooled URL in Vercel.
 5. Configure the dedicated read-only backup role and complete one real encrypted restore using the cardless backup environment.
-6. Run the manually approved Netlify release workflow. Stop immediately if any provider asks for payment or an upgrade.
+6. Redeploy the verified `main` commit on Vercel Hobby, run the live canary, and only then remove deployment protection. Stop immediately if any provider asks for payment or an upgrade.
 
 Operational instructions:
 

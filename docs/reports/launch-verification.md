@@ -7,7 +7,7 @@ This is the evidence record for the launch gate. A row is `PASS` only after the 
 | Gate | Status | Evidence |
 |---|---|---|
 | Unit and API tests | PASS (local) | `npm test` — 83 suites / 559 tests passed on 2026-08-28. |
-| Real PostgreSQL integration suite | PASS (local) | `npm run test:integration` — 22 suites / 39 tests passed against disposable PostgreSQL on 2026-08-29. |
+| Real PostgreSQL integration suite | PASS (local) | `npm run test:integration` — 22 suites / 40 tests passed against disposable PostgreSQL on 2026-08-29. |
 | Clean migration from an empty database | PASS (local) | Covered by `__tests__/integration/migrations.test.ts`; every committed migration deployed without drift. |
 | Forced-RLS two-tenant isolation matrix | PASS (local) | Covered by the real-role integration suite, including unsafe-role rejection, cross-tenant denial, table grants and private-function grants. |
 | Complete restaurant-to-supplier procurement journey | PASS (local) | `npm run test:e2e` — 39 passed / 3 intentional skips across desktop, phone and tablet, including menu, request, public quote, comparison, award and export. |

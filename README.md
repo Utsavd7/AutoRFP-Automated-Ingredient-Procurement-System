@@ -154,7 +154,7 @@ The pull-request workflow repeats lint, type checks, unit tests, real PostgreSQL
 | Gate | Result |
 | --- | --- |
 | Unit and API tests | 83 suites, 559 tests passed |
-| Real PostgreSQL integration | 22 suites, 39 tests passed |
+| Real PostgreSQL integration | 22 suites, 40 tests passed |
 | Responsive end-to-end journeys | 39 passed across desktop, phone and tablet; 3 intentional provider/duplicate-flow skips |
 | Empty-database migrations and forced-RLS isolation | Passed |
 | Bounded 20-restaurant profile | Passed with zero errors or tenant mismatches |

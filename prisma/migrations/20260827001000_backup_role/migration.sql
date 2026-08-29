@@ -13,9 +13,6 @@ BEGIN
 END
 $backup_role$;
 
-ALTER ROLE autorfp_backup LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
-    NOINHERIT NOREPLICATION BYPASSRLS;
-
 DO $backup_role_membership$
 BEGIN
     IF EXISTS (
@@ -30,6 +27,27 @@ BEGIN
     END IF;
 END
 $backup_role_membership$;
+
+DO $backup_role_attributes$
+DECLARE
+    backup_role_is_safe BOOLEAN;
+BEGIN
+    SELECT role.rolcanlogin
+           AND NOT role.rolsuper
+           AND NOT role.rolcreatedb
+           AND NOT role.rolcreaterole
+           AND NOT role.rolinherit
+           AND NOT role.rolreplication
+           AND role.rolbypassrls
+    INTO backup_role_is_safe
+    FROM pg_catalog.pg_roles AS role
+    WHERE role.rolname = 'autorfp_backup';
+
+    IF COALESCE(backup_role_is_safe, false) = false THEN
+        RAISE EXCEPTION 'autorfp_backup has unsafe role attributes';
+    END IF;
+END
+$backup_role_attributes$;
 
 DO $backup_database_access$
 BEGIN

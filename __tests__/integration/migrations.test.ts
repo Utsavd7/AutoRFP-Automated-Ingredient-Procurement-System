@@ -232,6 +232,93 @@ test('forced-RLS migration runs as a managed Postgres owner without true superus
   });
 });
 
+test('all migrations run as a managed Postgres database owner without true superuser', async () => {
+  await withPostgres(async ({ databaseUrl, applyMigrationAs }) => {
+    const admin = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
+    const password = 'managed_database_owner_test_password';
+    const managedOwnerUrl = new URL(databaseUrl);
+    managedOwnerUrl.username = 'managed_database_owner';
+    managedOwnerUrl.password = password;
+
+    try {
+      await admin.$executeRawUnsafe(
+        `CREATE ROLE managed_database_owner LOGIN NOSUPERUSER NOCREATEDB CREATEROLE INHERIT NOREPLICATION BYPASSRLS PASSWORD '${password}'`,
+      );
+      await admin.$executeRawUnsafe(
+        'CREATE ROLE autorfp_backup LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION BYPASSRLS',
+      );
+      await admin.$executeRawUnsafe(
+        'GRANT autorfp_backup TO managed_database_owner WITH ADMIN OPTION',
+      );
+      const [{ database_name }] = await admin.$queryRaw<
+        Array<{ database_name: string }>
+      >`SELECT current_database() AS database_name`;
+      await admin.$executeRawUnsafe(
+        `ALTER DATABASE "${database_name.replaceAll('"', '""')}" OWNER TO managed_database_owner`,
+      );
+
+      for (const migration of [
+        '20260827000100_lean_baseline',
+        '20260827000200_launch_schema',
+        '20260827000300_forced_rls',
+        '20260827000400_member_invitations',
+        '20260827000500_menu_recipe_retirement',
+        '20260827000600_public_supplier_grants',
+        '20260827000700_quote_integrity',
+        '20260827000800_award_snapshot_capacity',
+        '20260827000900_minimal_launch_columns',
+        '20260827001000_backup_role',
+      ] as const) {
+        await applyMigrationAs(migration, managedOwnerUrl.toString());
+      }
+
+      const roles = await admin.$queryRaw<
+        Array<{
+          rolname: string;
+          rolcanlogin: boolean;
+          rolsuper: boolean;
+          rolcreatedb: boolean;
+          rolcreaterole: boolean;
+          rolinherit: boolean;
+          rolreplication: boolean;
+          rolbypassrls: boolean;
+        }>
+      >`
+        SELECT rolname, rolcanlogin, rolsuper, rolcreatedb, rolcreaterole,
+               rolinherit, rolreplication, rolbypassrls
+        FROM pg_catalog.pg_roles
+        WHERE rolname IN ('autorfp_app', 'autorfp_backup')
+        ORDER BY rolname
+      `;
+
+      expect(roles).toEqual([
+        {
+          rolname: 'autorfp_app',
+          rolcanlogin: true,
+          rolsuper: false,
+          rolcreatedb: false,
+          rolcreaterole: false,
+          rolinherit: false,
+          rolreplication: false,
+          rolbypassrls: false,
+        },
+        {
+          rolname: 'autorfp_backup',
+          rolcanlogin: true,
+          rolsuper: false,
+          rolcreatedb: false,
+          rolcreaterole: false,
+          rolinherit: false,
+          rolreplication: false,
+          rolbypassrls: true,
+        },
+      ]);
+    } finally {
+      await admin.$disconnect();
+    }
+  });
+});
+
 test('forced-RLS migration rejects a pre-created runtime role with privileged membership', async () => {
   await withPostgres(async ({ databaseUrl, migrateTo }) => {
     await migrateTo('20260827000200_launch_schema');

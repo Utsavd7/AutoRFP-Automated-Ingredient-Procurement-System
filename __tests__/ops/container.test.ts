@@ -10,7 +10,7 @@ describe('production container', () => {
     const dockerfile = read('Dockerfile');
 
     expect(nextConfig).toContain("output: 'standalone'");
-    expect(dockerfile).toContain('FROM node:20-bookworm-slim AS dependencies');
+    expect(dockerfile).toContain('FROM node:24-bookworm-slim AS dependencies');
     expect(dockerfile).toContain('RUN npm ci --omit=peer');
     expect(dockerfile).toContain('/app/.next/standalone');
     expect(dockerfile).toContain('USER nextjs');

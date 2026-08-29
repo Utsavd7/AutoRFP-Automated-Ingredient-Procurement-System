@@ -89,7 +89,7 @@ The canonical schema-only reference lists every retained table and field: [docs/
 
 ### Requirements
 
-- Node.js `20.18.1` through `24.x`
+- Node.js `24.x`
 - npm
 - PostgreSQL 15 or newer for manual development
 - Docker, or complete local PostgreSQL server binaries (`initdb`, `postgres`, `createdb`, `psql`), for the integration and browser suites

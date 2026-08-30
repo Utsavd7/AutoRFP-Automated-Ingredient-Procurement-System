@@ -10,9 +10,17 @@ Built by [Utsav Doshi](https://github.com/Utsavd7) · [Open QuotePlate](https://
 
 ## Product status
 
-The complete launch workflow is implemented and passes the release gate. Unit, integration, responsive browser, accessibility, migration, tenant-isolation, production-build, and bounded 20-restaurant load checks pass locally and in GitHub Actions. The free production address is [quoteplate.vercel.app](https://quoteplate.vercel.app), and the Neon Free database is bootstrapped in Singapore. The release remains fail-closed until the restricted runtime connection, Google sign-in, readiness check, and live canary all pass. No launch step may add a card, enable billing, or accept a paid upgrade.
+The complete launch workflow is implemented. Unit, integration, responsive browser, accessibility, migration, tenant-isolation, production-build, and bounded 20-restaurant load checks pass locally on this branch. The configured production target remains [quoteplate.vercel.app](https://quoteplate.vercel.app); this branch was not redeployed or reverified there as part of the local product-polish work. The release remains fail-closed until the restricted runtime connection, Google sign-in, readiness check, and live canary all pass. No launch step may add a card, enable billing, or accept a paid upgrade.
 
 The controlled launch is sized for **one to four restaurants** on cardless free plans. The code and test profile already cover **20 isolated restaurant workspaces** so the application can grow without a rewrite.
+
+## Product experience
+
+The public site keeps the approved professional header and leads with a rendered sample quote comparison: supplier totals, coverage, terms, and the requirement for a human decision are visible before sign-in. Every example is labelled as sample or illustrative data, including a clear notice that displayed prices are not live market data.
+
+The product tour follows the same request, supplier-response, comparison, and human-award flow as the signed-in workspace. The shared QuotePlate visual system continues through the tour, authentication, app shell, and overview. Browser checks cover the public journey at phone, tablet, and laptop widths, including contained comparison scrolling and no page-level horizontal overflow.
+
+The controlled pilot is limited to approved restaurant workspaces. The onboarding terms state the boundary plainly: no payment card and no billing.
 
 ## What a restaurant can do
 
@@ -60,21 +68,6 @@ Direct supplier relationships are expected, not blocked. The lasting value is th
 | Self-hosting option | Multi-stage, non-root Docker image |
 
 All production dependencies are open source. There is no LLM, vector database, background-job platform, paid monitoring service, transactional-email vendor, or usage-priced API in the runtime.
-
-## Lean database
-
-The launch schema has **17 tables and 169 scalar fields**. It is deliberately normalized: identity, invitations, quote revisions, award lines, and the audit trail remain separate because merging them would weaken security or destroy useful history while saving negligible storage.
-
-Six unsupported, redundant, or pre-launch compatibility fields were removed across the minimal-column migrations:
-
-- recipe retirement timestamp;
-- duplicate request-item source reference;
-- supplier verification timestamp;
-- supplier verifier reference;
-- rate-limit housekeeping timestamp, because expiry already defines the bucket lifecycle;
-- legacy password salt, because QuotePlate has no pre-launch user accounts and accepts Argon2id credentials only.
-
-The canonical schema-only reference lists every retained table and field: [docs/database-schema.md](docs/database-schema.md).
 
 ## Security model
 
@@ -155,9 +148,9 @@ The pull-request workflow repeats lint, type checks, unit tests, real PostgreSQL
 
 | Gate | Result |
 | --- | --- |
-| Unit and API tests | 82 suites, 527 tests passed |
+| Unit and API tests | 82 suites, 533 tests passed |
 | Real PostgreSQL integration | 21 suites, 37 tests passed |
-| Responsive end-to-end journeys | 39 passed across desktop, phone and tablet; 3 intentional provider/duplicate-flow skips |
+| Responsive end-to-end journeys | 49 passed across desktop, phone and tablet; 3 intentional live-provider/bounded-profile skips |
 | Empty-database migrations and forced-RLS isolation | Passed |
 | Bounded 20-restaurant profile | Passed with zero errors or tenant mismatches |
 | Production dependency audit | 0 vulnerabilities |
@@ -200,13 +193,12 @@ tests/load/              bounded 20-restaurant launch profile
 __tests__/integration/   real PostgreSQL migration and isolation checks
 scripts/                 canary, backup, restore, and operational safeguards
 public/brand/            canonical SVG logo, app icon, and social card
-docs/                    schema, research, verification, brand, and runbooks
+docs/                    research, verification, brand, and runbooks
 ```
 
 ## Design and research
 
 - [Brand kit and canonical SVG assets](docs/brand/README.md)
 - [India restaurant procurement competitive review](docs/research/india-restaurant-procurement-competitive-review.md)
-- [Schema-only database reference](docs/database-schema.md)
 
 **QuotePlate** combines the two sides of the product: supplier **quotes** and the restaurant **plate** those purchases ultimately serve. The two document forms in the mark represent a request and a quote moving toward one recorded decision. The product and company names remain provisional until formal trademark, company-name, and domain clearance is completed.

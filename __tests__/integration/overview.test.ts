@@ -99,6 +99,7 @@ async function seedTenantWork(
       deliveryDetails: { addressLine: '1 Market Road' },
       deliveryDate: new Date('2026-09-04T00:00:00.000Z'),
       quoteDeadline: new Date('2026-09-02T08:00:00.000Z'),
+      createdAt: new Date('2026-08-28T06:00:00.000Z'),
       createdByUserId: input.userId,
     },
   });
@@ -112,6 +113,7 @@ async function seedTenantWork(
       deliveryDate: new Date('2026-09-03T00:00:00.000Z'),
       quoteDeadline: new Date('2026-09-01T08:00:00.000Z'),
       openedAt: new Date('2026-08-28T08:00:00.000Z'),
+      createdAt: new Date('2026-08-28T07:00:00.000Z'),
       createdByUserId: input.userId,
       supplierRequests: {
         create: {
@@ -151,6 +153,7 @@ async function seedTenantWork(
       deliveryDate: new Date('2026-08-31T00:00:00.000Z'),
       quoteDeadline: new Date('2026-08-29T08:00:00.000Z'),
       awardedAt: new Date('2026-08-28T10:00:00.000Z'),
+      createdAt: new Date('2026-08-28T08:00:00.000Z'),
       createdByUserId: input.userId,
     },
   });

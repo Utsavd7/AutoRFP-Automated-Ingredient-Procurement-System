@@ -71,13 +71,11 @@ All production dependencies are open source. There is no LLM, vector database, b
 
 ## Security model
 
-- Every restaurant-owned table has forced PostgreSQL row-level security.
-- The running application uses a restricted `autorfp_app` role with no superuser, database-creation, role-creation, replication, inherited privilege, or RLS-bypass capability.
-- Tenant context is set inside transactions; cross-restaurant reads and writes are tested against real PostgreSQL.
+- Restaurant data isolation and least-privilege runtime access are enforced and covered by database-backed tests.
 - Supplier and invitation secrets are random opaque tokens; only their digests are stored.
 - Supplier links expire and can be revoked or rotated. Quote revisions and final awards are immutable records.
 - Browser mutations require a same-origin check, and public/auth endpoints use bounded bodies and persistent rate limits.
-- Authentication responses avoid account-discovery details. The deployment runbook requires `QUOTEPLATE_RUNTIME_STARTUP_CHECK=1`, which makes production startup and readiness fail closed on unsafe configuration.
+- Authentication responses avoid account-discovery details, and production startup fails closed on unsafe configuration.
 - Security headers, private database functions, owner/member authorization, bounded exports, and cursor pagination are verified in automated tests.
 
 ## Run locally
@@ -87,7 +85,7 @@ All production dependencies are open source. There is no LLM, vector database, b
 - Node.js `24.x`
 - npm
 - PostgreSQL 15 or newer for manual development
-- Docker, or complete local PostgreSQL server binaries (`initdb`, `postgres`, `createdb`, `psql`), for the integration and browser suites
+- Docker or a local PostgreSQL installation for the integration and browser suites
 
 Install the exact dependency tree:
 
@@ -98,36 +96,14 @@ npm ci --omit=peer
 cp .env.sample .env
 ```
 
-Create a local database with your PostgreSQL owner account, then apply the committed migrations. Replace `YOUR_LOCAL_OWNER` with that local PostgreSQL username. Do not use `prisma db push`.
+Set the local values documented in `.env.sample`, create an empty development database, and apply the committed migrations. Do not use `prisma db push`.
 
 ```sh
-createdb --username YOUR_LOCAL_OWNER quoteplate
-QUOTEPLATE_OWNER_URL='postgresql://YOUR_LOCAL_OWNER@127.0.0.1:5432/quoteplate?schema=public'
-DATABASE_URL="$QUOTEPLATE_OWNER_URL" DIRECT_URL="$QUOTEPLATE_OWNER_URL" npx prisma migrate deploy
-psql "$QUOTEPLATE_OWNER_URL"
-```
-
-At the interactive PostgreSQL prompt, give the restricted application role a local password:
-
-```text
-\password autorfp_app
-\q
-```
-
-Then set these values in `.env`; URL-encode the application password if it contains reserved URL characters. Keep the owner URL out of `.env` because it is needed only while applying migrations.
-
-```dotenv
-DATABASE_URL="postgresql://autorfp_app:URL_ENCODED_LOCAL_APP_PASSWORD@127.0.0.1:5432/quoteplate?schema=public"
-NEXTAUTH_URL="http://localhost:3000"
-NEXTAUTH_SECRET="REPLACE_WITH_AT_LEAST_32_RANDOM_CHARACTERS"
-QUOTEPLATE_PILOT_EMAILS="owner@example.com"
-```
-
-Google OAuth is optional locally. Add both Google values from `.env.sample` only when you want to exercise the real provider, then start the application:
-
-```sh
+npx prisma migrate deploy
 npm run dev
 ```
+
+Google OAuth is optional locally. Add its values from `.env.sample` only when you want to exercise the real provider. Never commit a populated `.env` file.
 
 For the fastest clean review, `npm run test:integration` and `npm run test:e2e` create and remove their own disposable local PostgreSQL environments; they do not use a remote database or paid service.
 
@@ -186,8 +162,6 @@ Operational instructions:
 src/app/                 public pages, authenticated screens, and route handlers
 src/components/          product workspaces and responsive UI
 src/lib/                 auth, tenancy, procurement, quotes, awards, exports, reporting
-prisma/schema.prisma     canonical database model
-prisma/migrations/       reviewed, forward-only PostgreSQL migrations
 tests/e2e/               complete desktop, phone, and tablet product journeys
 tests/load/              bounded 20-restaurant launch profile
 __tests__/integration/   real PostgreSQL migration and isolation checks

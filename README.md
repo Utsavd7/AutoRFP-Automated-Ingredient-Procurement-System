@@ -10,7 +10,7 @@ Built by [Utsav Doshi](https://github.com/Utsavd7) · [Open QuotePlate](https://
 
 ## Product status
 
-The complete launch workflow is implemented. Unit, integration, responsive browser, accessibility, migration, tenant-isolation, production-build, and bounded 20-restaurant load checks pass locally on this branch. The configured production target remains [quoteplate.vercel.app](https://quoteplate.vercel.app); this branch was not redeployed or reverified there as part of the local product-polish work. The release remains fail-closed until the restricted runtime connection, Google sign-in, readiness check, and live canary all pass. No launch step may add a card, enable billing, or accept a paid upgrade.
+The complete launch workflow is implemented. Unit, integration, responsive browser, accessibility, migration, tenant-isolation, production-build, and bounded 20-restaurant load checks pass. The merged product is live at [quoteplate.vercel.app](https://quoteplate.vercel.app); the public homepage, product tour, liveness check, and restricted production database connection have been reverified. Readiness allows a bounded five seconds for a cardless Neon Free database to wake from an idle state. The controlled release remains fail-closed unless Google sign-in, readiness, and the live canary pass. No launch step may add a card, enable billing, or accept a paid upgrade.
 
 The controlled launch is sized for **one to four restaurants** on cardless free plans. The code and test profile already cover **20 isolated restaurant workspaces** so the application can grow without a rewrite.
 

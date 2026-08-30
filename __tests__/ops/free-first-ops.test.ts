@@ -225,6 +225,7 @@ describe('free-first operations policy', () => {
     const boundaries = read('docs/runbooks/cost-boundaries.md');
     const deployment = read('docs/runbooks/deployment.md');
     const backup = read('docs/runbooks/backup-restore.md');
+    const restore = read('scripts/restore-verify.sh');
 
     for (const phrase of [
       'No payment method',
@@ -245,7 +246,7 @@ describe('free-first operations policy', () => {
     expect(backup).toContain('seven daily');
     expect(backup).toContain('four monthly');
     expect(backup).toContain('preserves PostgreSQL ACLs');
-    expect(backup).toContain('SET LOCAL ROLE autorfp_app');
+    expect(restore).toContain('SET LOCAL ROLE autorfp_app');
   });
 });
 

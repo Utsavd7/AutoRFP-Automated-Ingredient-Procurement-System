@@ -53,7 +53,7 @@ Direct supplier relationships are expected, not blocked. The lasting value is th
 | Database | PostgreSQL with Prisma 5 |
 | Authentication | NextAuth, Google OAuth, Argon2 local credentials |
 | Documents | CSV, QR code PNG, and PDF generated inside the application |
-| Production host | [Vercel Hobby](https://quoteplate.vercel.app) (cardless) |
+| Production host | Vercel Hobby (cardless) — [production address](https://quoteplate.vercel.app) |
 | Production database | Neon Postgres Free |
 | Automation | GitHub Actions with manual production approval |
 | Production backup | Encrypted S3-compatible storage, only when a cardless free provider is configured |

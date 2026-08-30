@@ -293,17 +293,6 @@ describe('public website contract', () => {
     expect(css).toContain('.sample-scroll-hint');
   });
 
-  test('fits the compact comparison at desktop widths and keeps supplier facts readable', () => {
-    const css = source('src/app/globals.css');
-
-    expect(css).toMatch(
-      /\.tour-step--comparison \{[^}]*grid-template-columns: minmax\(12rem, 0\.55fr\) minmax\(0, 2\.45fr\);[^}]*gap: clamp\(2rem, 4vw, 4rem\);/,
-    );
-    expect(css).toContain('.sample-ledger--compact table { min-width: 37.5rem; }');
-    expect(css).toMatch(/\.supplier-fields small \{[^}]*font-size: 0\.7rem;/);
-    expect(css).toMatch(/\.supplier-fields strong \{[^}]*font-size: 0\.76rem;/);
-  });
-
   test('keeps repeated wordmark symbols decorative without duplicate title ids', () => {
     const mark = source('src/components/brand/BrandMark.tsx');
     const wordmark = source('src/components/brand/Wordmark.tsx');

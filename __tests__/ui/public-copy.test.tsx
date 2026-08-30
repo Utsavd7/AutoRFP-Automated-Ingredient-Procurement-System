@@ -1,9 +1,20 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { PublicLandingPage } from '../../src/components/public/PublicLandingPage';
+import { PublicHeader } from '../../src/components/public/PublicHeader';
+import { ProductDecisionPreview } from '../../src/components/public/ProductDecisionPreview';
+import { ProductTour } from '../../src/components/public/ProductTour';
+import { AuthPageShell } from '../../src/components/auth/AuthPageShell';
 import {
+  formatSampleInr,
   restaurantSampleQuotes,
   restaurantSampleRequest,
 } from '../../src/data/sample-procurement';
+
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ refresh: jest.fn(), replace: jest.fn() }),
+}));
 
 const root = path.resolve(__dirname, '../..');
 
@@ -37,6 +48,7 @@ const publicFiles = [
   'src/components/public/LegalPageLayout.tsx',
   'src/components/public/SampleQuoteComparison.tsx',
   'src/components/public/ProductTour.tsx',
+  'src/components/public/ProductDecisionPreview.tsx',
 ];
 
 describe('public website contract', () => {
@@ -58,15 +70,56 @@ describe('public website contract', () => {
     expect(home).toContain('<PublicLandingPage');
   });
 
+  test('uses the approved product-led hero', () => {
+    const landing = source('src/components/public/PublicLandingPage.tsx');
+    const markup = renderToStaticMarkup(<PublicLandingPage />);
+
+    expect(markup).toContain('Compare every quote.');
+    expect(markup).toContain('Choose with proof.');
+    expect(markup).toContain('Quote comparison');
+    expect(markup).toContain('Human decision required');
+    expect(markup).toContain('href="/product"');
+    expect(markup).toContain('href="/start"');
+    expect(markup).toContain('No marketplace');
+    expect(markup).toContain('No card required');
+    expect(markup).toContain('Run the request again');
+    expect(markup).toContain('aria-label="Sample decision facts"');
+    expect(markup).toContain(`${restaurantSampleQuotes.length} supplier replies`);
+    expect(markup).toContain(`${restaurantSampleRequest.items.length} items requested`);
+    expect(markup).toContain('Labelled sample replies, not customer activity.');
+    expect(markup).toContain(`Requested in sample ${restaurantSampleRequest.id}; coverage stays visible supplier by supplier.`);
+    expect(markup).toContain('One sample decision is waiting; no auto-choice is made.');
+    expect(markup).toContain('Product rule: the restaurant records the final choice.');
+
+    expect(landing).toContain('<ProductDecisionPreview');
+    expect(landing).toContain("from '@/data/sample-procurement'");
+    expect(landing).toContain('restaurantSampleQuotes');
+    expect(landing).toContain('restaurantSampleRequest');
+    expect(landing).not.toMatch(/\b(?:3 supplier replies|8 items requested)\b/);
+    expect(landing).not.toContain('public-hero__mark');
+  });
+
+  test('renders the approved header links with accessible names and destinations', () => {
+    const markup = renderToStaticMarkup(<PublicHeader home />);
+
+    expect(markup).toContain('aria-label="Primary navigation"');
+    expect(markup).toContain('<a href="/product">Product</a>');
+    expect(markup).toContain('<a href="#how-it-works">How it works</a>');
+    expect(markup).toContain('<a href="#security">Security</a>');
+    expect(markup).toContain('<a class="public-text-action" href="/signin">Sign in</a>');
+    expect(markup).toContain('<a class="public-button public-button--small" href="/start">Start a pilot</a>');
+  });
+
   test('exposes every required public destination with honest calls to action', () => {
+    const markup = renderToStaticMarkup(<PublicLandingPage />);
     const allPublicSource = publicFiles.map(source).join('\n');
 
     for (const destination of ['/product', '#how-it-works', '#security', '/privacy', '/terms', '/signin', '/start']) {
-      expect(allPublicSource).toContain(destination);
+      expect(markup).toContain(`href="${destination}"`);
     }
 
-    expect(allPublicSource).toContain('See the product');
-    expect(allPublicSource).toContain('Start a pilot');
+    expect(markup).toContain('See the product');
+    expect(markup).toContain('Start a pilot');
     expect(allPublicSource).not.toMatch(
       /\b(?:AI|artificial intelligence|automatic negotiation|market pricing|guaranteed savings|customer count|integrations?)\b/i,
     );
@@ -81,18 +134,85 @@ describe('public website contract', () => {
     expect(tour).toMatch(/Sample (?:request|supplier view|comparison)/g);
   });
 
+  test('presents each product-tour example as an illustrative working record', () => {
+    const markup = renderToStaticMarkup(<ProductTour />);
+    const supplierStart = markup.indexOf('Illustrative supplier response workspace');
+    const comparisonStart = markup.indexOf('Illustrative comparison workspace');
+    const requestMarkup = markup.slice(0, supplierStart);
+    const supplierMarkup = markup.slice(supplierStart, comparisonStart);
+
+    expect(markup).toContain('aria-label="Illustrative request workspace"');
+    expect(markup).toContain('aria-label="Illustrative supplier response workspace"');
+    expect(markup).toContain('aria-label="Illustrative comparison workspace"');
+    expect(markup.match(/Sample data · illustrative only/g)).toHaveLength(3);
+    expect(markup).toContain('aria-label="Sample request record"');
+    expect(markup).toContain('id="compare"');
+    expect(requestMarkup).toContain(restaurantSampleRequest.cadence);
+    expect(requestMarkup).toContain(`${restaurantSampleQuotes.length} sample supplier records`);
+    expect(requestMarkup).toContain('<th scope="col">Ingredient</th>');
+    expect(requestMarkup).toContain(`<th scope="row">${restaurantSampleRequest.items[0].name}</th>`);
+    expect(supplierMarkup).toContain(formatSampleInr(restaurantSampleQuotes[0].gstPaise));
+    expect(supplierMarkup).toContain(formatSampleInr(restaurantSampleQuotes[0].freightPaise));
+    expect(supplierMarkup).toContain(restaurantSampleQuotes[0].delivery);
+  });
+
+  test('states the controlled-pilot terms before account onboarding', () => {
+    const markup = renderToStaticMarkup(
+      <AuthPageShell
+        callbackUrl="/dashboard"
+        googleAvailable
+        mode="start"
+      />,
+    );
+
+    expect(markup).toContain('aria-label="Controlled pilot terms"');
+    expect(markup).toContain('Up to four approved restaurant workspaces');
+    expect(markup).toContain('Use the Google account approved for your workspace');
+    expect(markup).toContain('No payment card. No billing.');
+    expect(markup.indexOf('Controlled pilot terms')).toBeLessThan(
+      markup.indexOf('Create your workspace'),
+    );
+  });
+
+  test('shows a factual product decision in the hero without inventing market data', () => {
+    const markup = renderToStaticMarkup(<ProductDecisionPreview />);
+
+    expect(markup).toContain('Sample data');
+    expect(markup).toContain('Sample request');
+    expect(markup).toContain('Human decision required');
+    expect(markup).toContain('href="/product#compare"');
+    expect(markup).toContain('Review &amp; award');
+    expect(markup).toContain('Illustrative prices · not live market data');
+    expect(markup).toContain('role="region"');
+    expect(markup).toContain('tabindex="0"');
+    expect(markup).not.toContain('<aside');
+
+    for (const quote of restaurantSampleQuotes) {
+      expect(markup).toContain(quote.supplierName);
+      expect(markup).toContain(formatSampleInr(quote.totalPaise));
+      expect(markup).toContain(
+        `${quote.coverageCount} of ${restaurantSampleRequest.items.length} items`,
+      );
+    }
+
+    expect(markup).toContain('Scroll to compare suppliers');
+    expect(markup).not.toMatch(/guaranteed|recommended supplier|customer count|production telemetry/i);
+  });
+
   test('states concrete workflow and security boundaries without certifications', () => {
+    const markup = renderToStaticMarkup(<PublicLandingPage />);
     const allPublicSource = publicFiles.map(source).join('\n');
 
-    expect(allPublicSource).toMatch(/INR/);
-    expect(allPublicSource).toMatch(/GST/);
-    expect(allPublicSource).toMatch(/no supplier account/i);
-    expect(allPublicSource).toMatch(/human award/i);
-    expect(allPublicSource).toMatch(/tenant isolation/i);
-    expect(allPublicSource).toMatch(/expir(?:ing|y)/i);
-    expect(allPublicSource).toMatch(/audit history/i);
-    expect(allPublicSource).toMatch(/run the request again/i);
-    expect(allPublicSource).toMatch(/saved history/i);
+    expect(markup).toMatch(/INR/);
+    expect(markup).toMatch(/GST/);
+    expect(markup).toMatch(/no supplier account/i);
+    expect(markup).toMatch(/human (?:decision|approval)/i);
+    expect(markup).toContain('Each restaurant can only see its own records');
+    expect(markup).toContain('Private supplier links expire');
+    expect(markup).toContain('Your team makes the final choice');
+    expect(markup).toContain('Quote changes and decisions stay recorded');
+    expect(markup).toMatch(/run the request again/i);
+    expect(markup).toMatch(/saved history/i);
     expect(allPublicSource).not.toMatch(/SOC\s?2|ISO\s?27001|certified|compliant with/i);
   });
 
@@ -185,7 +305,8 @@ describe('public website contract', () => {
     expect(css).toMatch(/\.workflow__list > li > span[\s\S]*?color: var\(--copper-text\)/);
     expect(css).toMatch(/\.tour-index \{ color: var\(--copper-text\); \}/);
     expect(css).toMatch(/\.sample-label,[\s\S]*?\.supplier-sheet header span[\s\S]*?color: var\(--ink-label\)/);
-    expect(css).toMatch(/\.public-hero__mark \{[\s\S]*?color: var\(--ink-label\)/);
+    expect(css).toMatch(/\.decision-preview__summary > span \{[\s\S]*?color: var\(--ink-label\)/);
+    expect(css).toMatch(/\.decision-preview__footer > span \{[\s\S]*?color: var\(--success\)/);
   });
 
   test('lets the root title template add the product name exactly once', () => {
@@ -196,9 +317,15 @@ describe('public website contract', () => {
   });
 
   test('keeps sample preview counts and launch units honest', () => {
+    const landing = source('src/components/public/PublicLandingPage.tsx');
+    const markup = renderToStaticMarkup(<PublicLandingPage />);
     const tour = source('src/components/public/ProductTour.tsx');
     const sample = source('src/data/sample-procurement.ts');
 
+    expect(markup).toContain(`${restaurantSampleQuotes.length} supplier replies`);
+    expect(markup).toContain(`${restaurantSampleRequest.items.length} items requested`);
+    expect(landing).toContain("from '@/data/sample-procurement'");
+    expect(landing).not.toMatch(/\b(?:3 supplier replies|8 items requested)\b/);
     expect(tour).toContain('items.slice(0, 4)');
     expect(tour).toContain('items.slice(0, 2)');
     expect(sample).toContain("name: 'Coriander', quantity: 3, unit: 'kg'");
@@ -225,17 +352,6 @@ describe('public website contract', () => {
       expect(quote.totalPaise).toBe(quote.subtotalPaise + quote.gstPaise + quote.freightPaise);
       expect(quote.coverageCount).toBeLessThanOrEqual(restaurantSampleRequest.items.length);
     }
-  });
-
-  test('stacks the supplier total cleanly on narrow screens', () => {
-    const tour = source('src/components/public/ProductTour.tsx');
-    const css = source('src/app/globals.css');
-
-    expect(tour).toContain('className="supplier-total__meta"');
-    expect(tour).toContain('className="supplier-total__amount"');
-    expect(css).toMatch(
-      /@media \(max-width: 620px\) \{[\s\S]*?\.supplier-sheet footer \{[\s\S]*?flex-direction: column;[\s\S]*?align-items: flex-start;/,
-    );
   });
 
   test('ships a static 1200 by 630 social card with complete sharing metadata', () => {

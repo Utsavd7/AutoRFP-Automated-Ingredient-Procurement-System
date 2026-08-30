@@ -10,8 +10,8 @@ const siteUrls = resolveSiteMetadataUrls();
 export const metadata: Metadata = {
   metadataBase: siteUrls.metadataBase,
   title: {
-    default: `${brand.productName} — ${brand.tagline}`,
-    template: `%s — ${brand.productName}`,
+    default: `${brand.productName}: ${brand.tagline}`,
+    template: `%s | ${brand.productName}`,
   },
   description: brand.description,
   applicationName: brand.productName,
@@ -22,20 +22,20 @@ export const metadata: Metadata = {
     type: "website",
     locale: "en_IN",
     siteName: brand.productName,
-    title: `${brand.productName} — ${brand.tagline}`,
+    title: `${brand.productName}: ${brand.tagline}`,
     description: brand.description,
     images: [
       {
         url: siteUrls.socialImageUrl,
         width: 1200,
         height: 630,
-        alt: `${brand.productName} — ${brand.tagline}`,
+        alt: `${brand.productName}: ${brand.tagline}`,
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: `${brand.productName} — ${brand.tagline}`,
+    title: `${brand.productName}: ${brand.tagline}`,
     description: brand.description,
     images: [siteUrls.socialImageUrl],
   },

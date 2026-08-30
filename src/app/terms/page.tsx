@@ -35,7 +35,7 @@ export default function TermsPage() {
       </section>
       <section>
         <h2>Ending participation</h2>
-        <p>You may stop using the pilot and request workspace closure through the support channel supplied during onboarding. Terms that logically continue after closure—including responsibility for prior activity, permitted record retention, and limits of responsibility—will continue.</p>
+        <p>You may stop using the pilot and request workspace closure through the support channel supplied during onboarding. Terms that logically continue after closure, including responsibility for prior activity, permitted record retention, and limits of responsibility, will continue.</p>
       </section>
     </LegalPageLayout>
   );

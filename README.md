@@ -10,9 +10,17 @@ Built by [Utsav Doshi](https://github.com/Utsavd7) · [Open QuotePlate](https://
 
 ## Product status
 
-The complete launch workflow is implemented and passes the release gate. Unit, integration, responsive browser, accessibility, migration, tenant-isolation, production-build, and bounded 20-restaurant load checks pass locally and in GitHub Actions. The free production address is [quoteplate.vercel.app](https://quoteplate.vercel.app), and the Neon Free database is bootstrapped in Singapore. The release remains fail-closed until the restricted runtime connection, Google sign-in, readiness check, and live canary all pass. No launch step may add a card, enable billing, or accept a paid upgrade.
+The complete launch workflow is implemented. Unit, integration, responsive browser, accessibility, migration, tenant-isolation, production-build, and bounded 20-restaurant load checks pass locally on this branch. The configured production target remains [quoteplate.vercel.app](https://quoteplate.vercel.app); this branch was not redeployed or reverified there as part of the local product-polish work. The release remains fail-closed until the restricted runtime connection, Google sign-in, readiness check, and live canary all pass. No launch step may add a card, enable billing, or accept a paid upgrade.
 
 The controlled launch is sized for **one to four restaurants** on cardless free plans. The code and test profile already cover **20 isolated restaurant workspaces** so the application can grow without a rewrite.
+
+## Product experience
+
+The public site keeps the approved professional header and leads with a rendered sample quote comparison: supplier totals, coverage, terms, and the requirement for a human decision are visible before sign-in. Every example is labelled as sample or illustrative data, including a clear notice that displayed prices are not live market data.
+
+The product tour follows the same request, supplier-response, comparison, and human-award flow as the signed-in workspace. The shared QuotePlate visual system continues through the tour, authentication, app shell, and overview. Browser checks cover the public journey at phone, tablet, and laptop widths, including contained comparison scrolling and no page-level horizontal overflow.
+
+The controlled pilot is limited to approved restaurant workspaces. The onboarding terms state the boundary plainly: no payment card and no billing.
 
 ## What a restaurant can do
 
@@ -61,30 +69,13 @@ Direct supplier relationships are expected, not blocked. The lasting value is th
 
 All production dependencies are open source. There is no LLM, vector database, background-job platform, paid monitoring service, transactional-email vendor, or usage-priced API in the runtime.
 
-## Lean database
-
-The launch schema has **17 tables and 169 scalar fields**. It is deliberately normalized: identity, invitations, quote revisions, award lines, and the audit trail remain separate because merging them would weaken security or destroy useful history while saving negligible storage.
-
-Six unsupported, redundant, or pre-launch compatibility fields were removed across the minimal-column migrations:
-
-- recipe retirement timestamp;
-- duplicate request-item source reference;
-- supplier verification timestamp;
-- supplier verifier reference;
-- rate-limit housekeeping timestamp, because expiry already defines the bucket lifecycle;
-- legacy password salt, because QuotePlate has no pre-launch user accounts and accepts Argon2id credentials only.
-
-The canonical schema-only reference lists every retained table and field: [docs/database-schema.md](docs/database-schema.md).
-
 ## Security model
 
-- Every restaurant-owned table has forced PostgreSQL row-level security.
-- The running application uses a restricted `autorfp_app` role with no superuser, database-creation, role-creation, replication, inherited privilege, or RLS-bypass capability.
-- Tenant context is set inside transactions; cross-restaurant reads and writes are tested against real PostgreSQL.
+- Restaurant data isolation and least-privilege runtime access are enforced and covered by database-backed tests.
 - Supplier and invitation secrets are random opaque tokens; only their digests are stored.
 - Supplier links expire and can be revoked or rotated. Quote revisions and final awards are immutable records.
 - Browser mutations require a same-origin check, and public/auth endpoints use bounded bodies and persistent rate limits.
-- Authentication responses avoid account-discovery details. The deployment runbook requires `QUOTEPLATE_RUNTIME_STARTUP_CHECK=1`, which makes production startup and readiness fail closed on unsafe configuration.
+- Authentication responses avoid account-discovery details, and production startup fails closed on unsafe configuration.
 - Security headers, private database functions, owner/member authorization, bounded exports, and cursor pagination are verified in automated tests.
 
 ## Run locally
@@ -94,7 +85,7 @@ The canonical schema-only reference lists every retained table and field: [docs/
 - Node.js `24.x`
 - npm
 - PostgreSQL 15 or newer for manual development
-- Docker, or complete local PostgreSQL server binaries (`initdb`, `postgres`, `createdb`, `psql`), for the integration and browser suites
+- Docker or a local PostgreSQL installation for the integration and browser suites
 
 Install the exact dependency tree:
 
@@ -105,36 +96,14 @@ npm ci --omit=peer
 cp .env.sample .env
 ```
 
-Create a local database with your PostgreSQL owner account, then apply the committed migrations. Replace `YOUR_LOCAL_OWNER` with that local PostgreSQL username. Do not use `prisma db push`.
+Set the local values documented in `.env.sample`, create an empty development database, and add a migration-owner `DIRECT_URL` to the untracked `.env` file. `DATABASE_URL` is the restricted runtime connection; `DIRECT_URL` is used only by migration commands. Never commit either value. Then apply the committed migrations. Do not use `prisma db push`.
 
 ```sh
-createdb --username YOUR_LOCAL_OWNER quoteplate
-QUOTEPLATE_OWNER_URL='postgresql://YOUR_LOCAL_OWNER@127.0.0.1:5432/quoteplate?schema=public'
-DATABASE_URL="$QUOTEPLATE_OWNER_URL" DIRECT_URL="$QUOTEPLATE_OWNER_URL" npx prisma migrate deploy
-psql "$QUOTEPLATE_OWNER_URL"
-```
-
-At the interactive PostgreSQL prompt, give the restricted application role a local password:
-
-```text
-\password autorfp_app
-\q
-```
-
-Then set these values in `.env`; URL-encode the application password if it contains reserved URL characters. Keep the owner URL out of `.env` because it is needed only while applying migrations.
-
-```dotenv
-DATABASE_URL="postgresql://autorfp_app:URL_ENCODED_LOCAL_APP_PASSWORD@127.0.0.1:5432/quoteplate?schema=public"
-NEXTAUTH_URL="http://localhost:3000"
-NEXTAUTH_SECRET="REPLACE_WITH_AT_LEAST_32_RANDOM_CHARACTERS"
-QUOTEPLATE_PILOT_EMAILS="owner@example.com"
-```
-
-Google OAuth is optional locally. Add both Google values from `.env.sample` only when you want to exercise the real provider, then start the application:
-
-```sh
+npx prisma migrate deploy
 npm run dev
 ```
+
+Google OAuth is optional locally. Add its values from `.env.sample` only when you want to exercise the real provider. Never commit a populated `.env` file.
 
 For the fastest clean review, `npm run test:integration` and `npm run test:e2e` create and remove their own disposable local PostgreSQL environments; they do not use a remote database or paid service.
 
@@ -155,9 +124,9 @@ The pull-request workflow repeats lint, type checks, unit tests, real PostgreSQL
 
 | Gate | Result |
 | --- | --- |
-| Unit and API tests | 82 suites, 527 tests passed |
+| Unit and API tests | 82 suites, 531 tests passed |
 | Real PostgreSQL integration | 21 suites, 37 tests passed |
-| Responsive end-to-end journeys | 39 passed across desktop, phone and tablet; 3 intentional provider/duplicate-flow skips |
+| Responsive end-to-end journeys | 51 passed across desktop, phone and tablet; 3 intentional live-provider/bounded-profile skips |
 | Empty-database migrations and forced-RLS isolation | Passed |
 | Bounded 20-restaurant profile | Passed with zero errors or tenant mismatches |
 | Production dependency audit | 0 vulnerabilities |
@@ -193,20 +162,17 @@ Operational instructions:
 src/app/                 public pages, authenticated screens, and route handlers
 src/components/          product workspaces and responsive UI
 src/lib/                 auth, tenancy, procurement, quotes, awards, exports, reporting
-prisma/schema.prisma     canonical database model
-prisma/migrations/       reviewed, forward-only PostgreSQL migrations
 tests/e2e/               complete desktop, phone, and tablet product journeys
 tests/load/              bounded 20-restaurant launch profile
 __tests__/integration/   real PostgreSQL migration and isolation checks
 scripts/                 canary, backup, restore, and operational safeguards
 public/brand/            canonical SVG logo, app icon, and social card
-docs/                    schema, research, verification, brand, and runbooks
+docs/                    research, verification, brand, and runbooks
 ```
 
 ## Design and research
 
 - [Brand kit and canonical SVG assets](docs/brand/README.md)
 - [India restaurant procurement competitive review](docs/research/india-restaurant-procurement-competitive-review.md)
-- [Schema-only database reference](docs/database-schema.md)
 
 **QuotePlate** combines the two sides of the product: supplier **quotes** and the restaurant **plate** those purchases ultimately serve. The two document forms in the mark represent a request and a quote moving toward one recorded decision. The product and company names remain provisional until formal trademark, company-name, and domain clearance is completed.

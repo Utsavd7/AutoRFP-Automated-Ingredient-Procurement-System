@@ -94,12 +94,6 @@
   animation: checking 850ms linear infinite;
 }
 
-.indicator.ready {
-  border: 0;
-  background: var(--success);
-  animation: none;
-}
-
 .status strong {
   display: block;
   font-size: 0.94rem;

@@ -196,7 +196,7 @@ test('database catalog exposes only the tenant-safe launch authority', async () 
 
       const columnsByKey = new Map(columns.map((column) => [columnKey(column), column]));
 
-      expect(columns).toHaveLength(171);
+      expect(columns).toHaveLength(169);
 
       for (const table of tenantOwnedTables) {
         expect(columnsByKey.get(`${table}.tenantId`)).toEqual(
@@ -205,11 +205,13 @@ test('database catalog exposes only the tenant-safe launch authority', async () 
       }
       expect(columnsByKey.has('Tenant.tenantId')).toBe(false);
       expect(columnsByKey.has('RateLimitBucket.tenantId')).toBe(false);
+      expect(columnsByKey.has('RateLimitBucket.updatedAt')).toBe(false);
       for (const removedColumn of [
         'Recipe.retiredAt',
         'RequestItem.sourceIngredientId',
         'Supplier.verifiedAt',
         'Supplier.verifiedByUserId',
+        'User.legacyPasswordSalt',
       ]) {
         expect(columnsByKey.has(removedColumn)).toBe(false);
       }
@@ -663,8 +665,8 @@ test('database catalog exposes only the tenant-safe launch authority', async () 
       ).rejects.toThrow();
       await expect(
         prisma.$executeRawUnsafe(`
-          INSERT INTO "RateLimitBucket" ("keyDigest", "count", "resetAt", "updatedAt")
-          VALUES ('short', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+          INSERT INTO "RateLimitBucket" ("keyDigest", "count", "resetAt")
+          VALUES ('short', 0, CURRENT_TIMESTAMP)
         `),
       ).rejects.toThrow();
       await expect(

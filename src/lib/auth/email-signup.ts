@@ -164,7 +164,6 @@ export function createPrismaEmailSignupRepository(
               name: input.ownerName,
               email: input.email,
               passwordHash: input.passwordHash,
-              legacyPasswordSalt: null,
               role: 'OWNER',
             },
           });

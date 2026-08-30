@@ -6,24 +6,13 @@ import { loadCurrentUser } from '@/lib/auth/current-user';
 
 type TenantAccount = Prisma.TenantGetPayload<Record<string, never>>;
 
-export function tenantToAccount(tenant: TenantAccount, email: string) {
+export function tenantToAccount(tenant: TenantAccount) {
   return {
-    tenantId: tenant.id,
     name: tenant.name,
-    email,
-    location: tenant.addressLine,
-    cuisineType: 'General restaurant',
-    preferredSuppliers: [],
-    monthlyBudgetTarget: null,
-    savingsTargetPct: null,
     addressLine: tenant.addressLine,
     city: tenant.city,
     state: tenant.state,
     pin: tenant.pin,
-    phone: tenant.phone,
-    timezone: tenant.timezone,
-    gstin: tenant.gstin,
-    createdAt: tenant.createdAt.toISOString(),
   };
 }
 
@@ -35,9 +24,4 @@ export async function requireAccountContext() {
   });
   if (!user) return null;
   return { tenant: user.tenant, user };
-}
-
-export async function requireTenant() {
-  const context = await requireAccountContext();
-  return context?.tenant ?? null;
 }

@@ -1,29 +1,16 @@
-import { createHash, randomBytes } from 'crypto';
-
 import {
   CredentialsAuthError,
   authenticateCredentials,
   type CredentialsRepository,
 } from '@/lib/auth/credentials';
+import { createPasswordRecord } from '@/lib/password';
 
-function legacyRecord(password: string) {
-  const salt = randomBytes(16);
-  return {
-    salt: salt.toString('hex'),
-    hash: createHash('sha256')
-      .update(Buffer.concat([salt, Buffer.from(password)]))
-      .digest('hex'),
-  };
-}
-
-const legacy = legacyRecord('valid password');
 const user = {
   id: 'user-1',
   tenantId: 'tenant-1',
   name: 'Asha Rao',
   email: 'asha@example.com',
-  passwordHash: legacy.hash,
-  legacyPasswordSalt: legacy.salt,
+  passwordHash: '',
   isActive: true,
   tenant: { isActive: true },
 };
@@ -59,6 +46,10 @@ function authenticate(
 }
 
 describe('credentials authentication', () => {
+  beforeAll(async () => {
+    user.passwordHash = (await createPasswordRecord('valid password')).passwordHash;
+  });
+
   it('rejects a throttled attempt with the same generic credential failure', async () => {
     const repo = repository();
     const rateLimit = jest.fn().mockResolvedValue({
@@ -105,7 +96,6 @@ describe('credentials authentication', () => {
         findByEmail: jest.fn().mockResolvedValue({
           ...user,
           passwordHash: null,
-          legacyPasswordSalt: null,
         }),
       }),
     ];
@@ -127,12 +117,11 @@ describe('credentials authentication', () => {
       expect(verify).toHaveBeenCalledWith(
         'wrong password',
         expect.stringMatching(/^\$argon2id\$/),
-        null,
       );
     }
   });
 
-  it('lowercases email and immediately replaces a verified legacy hash', async () => {
+  it('lowercases email and records a successful current login', async () => {
     const repo = repository();
 
     await expect(
@@ -151,37 +140,6 @@ describe('credentials authentication', () => {
     expect(repo.recordSuccessfulLogin).toHaveBeenCalledWith(
       'tenant-1',
       'user-1',
-      expect.objectContaining({
-        passwordHash: expect.stringMatching(/^\$argon2id\$/),
-        legacyPasswordSalt: null,
-      }),
-    );
-  });
-
-  it('records login without replacing a current Argon2id hash', async () => {
-    const firstRepo = repository();
-    await authenticate(
-      { email: user.email, password: 'valid password' },
-      firstRepo,
-    );
-    const upgrade = jest.mocked(firstRepo.recordSuccessfulLogin).mock.calls[0][2];
-    const repo = repository({
-      findByEmail: jest.fn().mockResolvedValue({
-        ...user,
-        passwordHash: upgrade.passwordHash,
-        legacyPasswordSalt: null,
-      }),
-    });
-
-    await authenticate(
-      { email: user.email, password: 'valid password' },
-      repo,
-    );
-
-    expect(repo.recordSuccessfulLogin).toHaveBeenCalledWith(
-      'tenant-1',
-      'user-1',
-      {},
     );
   });
 
@@ -203,7 +161,6 @@ describe('credentials authentication', () => {
         findByEmail: jest.fn().mockResolvedValue({
           ...user,
           passwordHash: null,
-          legacyPasswordSalt: null,
         }),
       }),
     ];

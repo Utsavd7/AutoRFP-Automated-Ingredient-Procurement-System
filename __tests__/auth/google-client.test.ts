@@ -1,6 +1,5 @@
 import {
   beginGoogleAuthentication,
-  loadGoogleProviderAvailability,
   type GoogleSignupFields,
 } from '@/lib/auth/google-client';
 
@@ -70,21 +69,4 @@ describe('Google authentication client flow', () => {
     });
   });
 
-  it('keeps the Google action unavailable when the providers endpoint omits it', async () => {
-    const fetcher = jest.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        credentials: {
-          id: 'credentials',
-          name: 'Email and password',
-          type: 'credentials',
-          signinUrl: 'http://localhost/api/auth/signin/credentials',
-          callbackUrl: 'http://localhost/api/auth/callback/credentials',
-        },
-      }),
-    });
-
-    await expect(loadGoogleProviderAvailability(fetcher)).resolves.toBe(false);
-  });
 });

@@ -24,24 +24,24 @@ describe('public client rate-limit identity', () => {
     ));
   });
 
-  it('keeps distinct Netlify-provided production clients in distinct buckets', () => {
+  it('keeps distinct Vercel-provided production clients in distinct buckets', () => {
     const first = new Headers({
-      'x-nf-client-connection-ip': '198.51.100.20',
-      'cf-connecting-ip': '192.0.2.1',
+      'x-vercel-forwarded-for': '198.51.100.20',
+      'x-forwarded-for': '192.0.2.1',
     });
     const second = new Headers({
-      'x-nf-client-connection-ip': '203.0.113.20',
-      'cf-connecting-ip': '192.0.2.1',
+      'x-vercel-forwarded-for': '203.0.113.20',
+      'x-forwarded-for': '192.0.2.1',
     });
 
     expect(publicClientRateLimitDigest(
       'quote-access',
       first,
-      { NODE_ENV: 'production' },
+      { NODE_ENV: 'production', VERCEL: '1' },
     )).not.toBe(publicClientRateLimitDigest(
       'quote-access',
       second,
-      { NODE_ENV: 'production' },
+      { NODE_ENV: 'production', VERCEL: '1' },
     ));
   });
 });

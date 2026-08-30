@@ -19,15 +19,6 @@ export interface GstInput {
   inclusive: boolean;
 }
 
-export interface LandedTotalInput extends GstInput {
-  freightPaise: ExactDecimalInput;
-}
-
-export interface LandedTotal extends GstBreakdown {
-  freightPaise: bigint;
-  totalPaise: bigint;
-}
-
 function parsePaise(input: ExactDecimalInput, label: string): bigint {
   return parseUnsignedFixed(input, {
     label,
@@ -113,16 +104,4 @@ export function calculateGst(input: GstInput): GstBreakdown {
   );
 
   return { netPaise: amountPaise, gstPaise, grossPaise };
-}
-
-export function calculateLandedTotal(input: LandedTotalInput): LandedTotal {
-  const gst = calculateGst(input);
-  const freightPaise = parsePaise(input.freightPaise, 'Freight');
-  const totalPaise = assertMaximum(
-    gst.grossPaise + freightPaise,
-    MAX_SIGNED_BIGINT,
-    'Landed total',
-  );
-
-  return { ...gst, freightPaise, totalPaise };
 }

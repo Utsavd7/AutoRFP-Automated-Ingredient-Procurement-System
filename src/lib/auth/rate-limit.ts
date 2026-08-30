@@ -48,13 +48,13 @@ export function digestAuthRateLimitSubject(
 
 export function authClientIdentifier(
   headers: Headers,
-  environment: { NODE_ENV?: string } = process.env,
+  environment: { NODE_ENV?: string; VERCEL?: string } = process.env,
 ) {
   if (environment.NODE_ENV === 'production') {
-    return (
-      normalizedSubject(headers.get('x-nf-client-connection-ip')) ??
-      'production-unidentified'
-    );
+    if (environment.VERCEL !== '1') return 'production-unidentified';
+    return normalizedSubject(
+      headers.get('x-vercel-forwarded-for')?.split(',')[0],
+    ) ?? 'production-unidentified';
   }
   const direct =
     normalizedSubject(headers.get('cf-connecting-ip')) ??

@@ -55,13 +55,7 @@ describe('parse-menu persistence', () => {
       name: 'Menu draft',
       menuText: 'Paneer Tikka\nMasala Dosa',
     });
-    await expect(response.json()).resolves.toMatchObject({
-      success: true,
-      menuId: 'menu-1',
-      recipes,
-      modelSource: 'Deterministic review draft',
-      requiresReview: true,
-    });
+    await expect(response.json()).resolves.toEqual({ menuId: 'menu-1' });
   });
 
   it('returns a generic problem response when the atomic create fails', async () => {

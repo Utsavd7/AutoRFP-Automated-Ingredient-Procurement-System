@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { privateNoStoreResponse as privateResponse } from '@/lib/api/private-response';
 import { problemResponse } from '@/lib/api/problem';
 import {
   InvalidJsonBodyError,
@@ -19,13 +20,6 @@ import { browserJsonMutationRejection } from '@/lib/security/browser-mutation';
 import { requireAccountContext } from '@/lib/server-account';
 
 type AwardRouteContext = { params: Promise<{ id: string }> };
-
-function privateResponse<T extends Response>(response: T): T {
-  response.headers.set('Cache-Control', 'private, no-store');
-  response.headers.set('Referrer-Policy', 'no-referrer');
-  response.headers.set('X-Content-Type-Options', 'nosniff');
-  return response;
-}
 
 async function readAwardBody(request: Request) {
   try {

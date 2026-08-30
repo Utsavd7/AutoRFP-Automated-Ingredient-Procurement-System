@@ -80,9 +80,9 @@ export async function consumeDigestRateLimit(
       RETURNING expired."keyDigest"
     )
     INSERT INTO "RateLimitBucket" AS bucket (
-      "keyDigest", "count", "resetAt", "updatedAt"
+      "keyDigest", "count", "resetAt"
     )
-    VALUES (${keyDigest}, 1, ${nextResetAt}, ${input.now})
+    VALUES (${keyDigest}, 1, ${nextResetAt})
     ON CONFLICT ("keyDigest") DO UPDATE SET
       "count" = CASE
         WHEN bucket."resetAt" <= ${input.now} THEN 1
@@ -91,8 +91,7 @@ export async function consumeDigestRateLimit(
       "resetAt" = CASE
         WHEN bucket."resetAt" <= ${input.now} THEN ${nextResetAt}
         ELSE bucket."resetAt"
-      END,
-      "updatedAt" = ${input.now}
+      END
     RETURNING "count", "resetAt"
   `);
   if (!bucket) throw new Error('Unable to consume rate limit.');

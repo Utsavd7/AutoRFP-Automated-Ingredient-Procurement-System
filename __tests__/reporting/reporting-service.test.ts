@@ -10,12 +10,11 @@ describe('factual reporting', () => {
   it('calculates response, complete-line coverage, awarded value, and observed price ranges from submitted facts', () => {
     const result = buildFactualInsights({
       requests: [{
-        id: 'request-1', title: 'Produce', status: 'AWARDED', openedAt: new Date('2026-08-27T08:00:00Z'),
         items: [{ id: 'tomato', name: 'Tomato', quantity: '100', unit: 'KILOGRAM' }],
         supplierRequests: [
-          { id: 'grant-a', supplierId: 'supplier-a', supplierName: 'A Produce', latestQuote: { id: 'quote-a', submittedAt: new Date('2026-08-27T09:00:00Z'), items: [{ requestItemId: 'tomato', noQuote: false, availableQuantity: '100', unit: 'KILOGRAM', unitRatePaise: '5000' }] } },
-          { id: 'grant-b', supplierId: 'supplier-b', supplierName: 'B Produce', latestQuote: { id: 'quote-b', submittedAt: new Date('2026-08-27T09:30:00Z'), items: [{ requestItemId: 'tomato', noQuote: false, availableQuantity: '100000', unit: 'GRAM', unitRatePaise: '6' }] } },
-          { id: 'grant-c', supplierId: 'supplier-c', supplierName: 'C Produce', latestQuote: null },
+          { supplierName: 'A Produce', latestQuote: { id: 'quote-a', items: [{ requestItemId: 'tomato', noQuote: false, availableQuantity: '100', unit: 'KILOGRAM', unitRatePaise: '5000' }] } },
+          { supplierName: 'B Produce', latestQuote: { id: 'quote-b', items: [{ requestItemId: 'tomato', noQuote: false, availableQuantity: '100000', unit: 'GRAM', unitRatePaise: '6' }] } },
+          { supplierName: 'C Produce', latestQuote: null },
         ],
       }],
       awardedRequestCount: 3,
@@ -72,18 +71,18 @@ describe('factual reporting', () => {
   it('turns only allow-listed audit actions into plain-language activity without exposing metadata', () => {
     const activity = buildHistoryActivity([
       {
-        id: 'audit-1', action: 'request.awarded', entityType: 'Award',
+        id: 'audit-1', action: 'request.awarded',
         createdAt: new Date('2026-08-28T12:00:00.000Z'),
         actor: { name: 'Neha Singh' },
         metadata: { reason: 'private internal note', supplierCount: 2 },
       },
       {
-        id: 'audit-2', action: 'quote.submitted', entityType: 'SupplierQuote',
+        id: 'audit-2', action: 'quote.submitted',
         createdAt: new Date('2026-08-28T11:30:00.000Z'), actor: null,
         metadata: { revision: 3, itemCount: 8 },
       },
       {
-        id: 'audit-3', action: 'internal.unexpected', entityType: 'Secret',
+        id: 'audit-3', action: 'internal.unexpected',
         createdAt: new Date('2026-08-28T11:00:00.000Z'),
         actor: { name: 'Hidden' }, metadata: { token: 'do-not-return' },
       },

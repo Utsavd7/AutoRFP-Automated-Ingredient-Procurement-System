@@ -305,7 +305,6 @@ export function createPrismaInvitationRepository(
                 name: input.name,
                 email: input.email,
                 passwordHash: input.passwordHash,
-                legacyPasswordSalt: null,
                 role: invitation.role,
               },
               select: { id: true, tenantId: true },

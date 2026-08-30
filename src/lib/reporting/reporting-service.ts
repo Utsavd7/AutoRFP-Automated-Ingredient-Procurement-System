@@ -27,18 +27,11 @@ type ReportingActor = { tenantId: string; userId: string };
 type ReportingClient = TenantTransactionHost & Pick<PrismaClient, '$queryRaw'>;
 
 type InsightRequest = {
-  id: string;
-  title: string;
-  status: string;
-  openedAt: Date | null;
   items: Array<{ id: string; name: string; quantity: string; unit: ProcurementUnit }>;
   supplierRequests: Array<{
-    id: string;
-    supplierId: string;
     supplierName: string;
     latestQuote: null | {
       id: string;
-      submittedAt: Date;
       items: Array<{
         requestItemId: string;
         noQuote: boolean;
@@ -80,7 +73,6 @@ export function buildFactualInsights(input: {
   }>();
 
   for (const request of input.requests) {
-    const requestItems = new Map(request.items.map((item) => [item.id, item]));
     supplierRequestsSent += request.supplierRequests.length;
     for (const supplierRequest of request.supplierRequests) {
       const quote = supplierRequest.latestQuote;
@@ -126,9 +118,6 @@ export function buildFactualInsights(input: {
         };
         range.quotes.set(quote.id, { rate, supplierName: supplierRequest.supplierName });
         ranges.set(key, range);
-      }
-      for (const quoteItem of quote.items) {
-        if (!requestItems.has(quoteItem.requestItemId)) continue;
       }
     }
   }
@@ -209,7 +198,6 @@ const historyActivityLabels = {
 type HistoryAuditRecord = {
   id: string;
   action: string;
-  entityType: string;
   createdAt: Date;
   actor: { name: string } | null;
   metadata: unknown;
@@ -254,16 +242,15 @@ export async function getFactualInsights(
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         take: REPORTING_LIMITS.insightRequests + 1,
         select: {
-          id: true, title: true, status: true, openedAt: true,
           items: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], select: { id: true, name: true, quantity: true, unit: true } },
           supplierRequests: {
             orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
             select: {
-              id: true, supplierId: true, supplier: { select: { businessName: true } },
+              supplier: { select: { businessName: true } },
               quotes: {
                 orderBy: [{ revision: 'desc' }], take: 1,
                 select: {
-                  id: true, submittedAt: true,
+                  id: true,
                   items: { select: { requestItemId: true, noQuote: true, availableQuantity: true, unit: true, unitRatePaise: true } },
                 },
               },
@@ -289,8 +276,6 @@ export async function getFactualInsights(
         ...request,
         items: request.items.map((item) => ({ ...item, quantity: item.quantity.toString() })),
         supplierRequests: request.supplierRequests.map((supplierRequest) => ({
-          id: supplierRequest.id,
-          supplierId: supplierRequest.supplierId,
           supplierName: supplierRequest.supplier.businessName,
           latestQuote: supplierRequest.quotes[0] ? {
             ...supplierRequest.quotes[0],
@@ -406,7 +391,6 @@ export async function listProcurementHistory(
         select: {
           id: true,
           action: true,
-          entityType: true,
           metadata: true,
           createdAt: true,
           actor: { select: { name: true } },

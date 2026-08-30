@@ -6,6 +6,7 @@ import {
   updateWorkspaceSettings,
   WorkspaceSettingsValidationError,
 } from '@/lib/account/workspace-settings';
+import { privateNoStoreResponse as privateResponse } from '@/lib/api/private-response';
 import { problemResponse } from '@/lib/api/problem';
 import {
   InvalidJsonBodyError,
@@ -21,13 +22,6 @@ import { requireAccountContext } from '@/lib/server-account';
 import { browserJsonMutationRejection } from '@/lib/security/browser-mutation';
 
 const SETTINGS_BODY_BYTES = 16 * 1_024;
-
-function privateResponse<T extends Response>(response: T): T {
-  response.headers.set('Cache-Control', 'private, no-store');
-  response.headers.set('Referrer-Policy', 'no-referrer');
-  response.headers.set('X-Content-Type-Options', 'nosniff');
-  return response;
-}
 
 function settingsProblem(error: unknown) {
   if (error instanceof WorkspaceSettingsValidationError) {

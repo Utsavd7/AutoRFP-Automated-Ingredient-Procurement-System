@@ -6,21 +6,21 @@ This is the evidence record for the launch gate. A row is `PASS` only after the 
 
 | Gate | Status | Evidence |
 |---|---|---|
-| Unit and API tests | PASS (local) | `npm test` — 83 suites / 559 tests passed on 2026-08-28. |
-| Real PostgreSQL integration suite | PASS (local) | `npm run test:integration` — 22 suites / 40 tests passed against disposable PostgreSQL on 2026-08-29. |
+| Unit and API tests | PASS (local) | `npm test` — 82 suites / 527 focused tests passed on 2026-08-29 after dead-code and pre-launch compatibility cleanup. |
+| Real PostgreSQL integration suite | PASS (local) | `npm run test:integration` — 21 suites / 37 current-product tests passed against disposable PostgreSQL on 2026-08-29. |
 | Clean migration from an empty database | PASS (local) | Covered by `__tests__/integration/migrations.test.ts`; every committed migration deployed without drift. |
 | Forced-RLS two-tenant isolation matrix | PASS (local) | Covered by the real-role integration suite, including unsafe-role rejection, cross-tenant denial, table grants and private-function grants. |
 | Complete restaurant-to-supplier procurement journey | PASS (local) | `npm run test:e2e` — 39 passed / 3 intentional skips across desktop, phone and tablet, including menu, request, public quote, comparison, award and export. |
 | Encrypted backup restore verification | PENDING (provider) | Script safety, ACL preservation, disposable-target refusal and repeat-cleanup tests pass; a real encrypted provider restore requires the cardless backup environment. |
 | Dependency, licence, and secret checks | PASS (local) | Production audit found 0 vulnerabilities; installed licences are open-source/permissive or documented optional LGPL components; secret-pattern review found only fixtures, placeholders and generated local test credentials. |
-| Lint and TypeScript | PASS (local) | `npm run lint` and `npm run typecheck` passed on 2026-08-28. |
+| Lint and TypeScript | PASS (local) | `npm run lint` and `npm run typecheck` passed on 2026-08-29. |
 | Production build | PASS (local and Vercel) | `npm run build` completed locally and Vercel built the merged commit successfully on Hobby. |
 | 20-organization bounded load profile | PASS (local) | `npx playwright test tests/e2e/load-profile.spec.ts --project=desktop-chromium` — 1/1 passed on 2026-08-28 against a disposable PostgreSQL fixture. |
-| Load-runner safety and threshold unit tests | PASS | `node --test tests/load/organizations.test.js` — 6/6 passed on 2026-08-28. |
+| Load-runner safety and threshold unit tests | PASS | `node --test tests/load/organizations.test.js` — 6/6 passed on 2026-08-29. |
 
 Overall local release verification: **PASS**. Provider configuration, encrypted remote restore and the production canary remain **PENDING** and cannot trigger billing or an upgrade.
 
-The exact release workflow passed for commit `090679ff469ea86e0b0ebe33598af3953e9e0d9d` in [GitHub Actions run 33238664781](https://github.com/Utsavd7/QuotePlate/actions/runs/33238664781). The production Neon Free bootstrap then completed for that commit. The stable Vercel Hobby address is `https://quoteplate.vercel.app`; `/api/health/live` returns `200`, while `/api/health/ready` intentionally remains unavailable until the restricted runtime variables are installed and a new deployment passes the canary.
+The [GitHub Actions release gate](https://github.com/Utsavd7/QuotePlate/actions/workflows/ci.yml) validates every pull request and every commit merged to `main`. The production database workflow separately verifies that exact `main` commit and its successful push workflow before applying migrations. The stable Vercel Hobby address is `https://quoteplate.vercel.app`; `/api/health/live` returns `200`, while `/api/health/ready` intentionally remains unavailable until the restricted runtime variables are installed and a new deployment passes the canary.
 
 ## Fixed load thresholds
 
@@ -102,7 +102,7 @@ node --check tests/load/organizations.js
 node --test tests/load/organizations.test.js
 ```
 
-Status: **PASS** on 2026-08-28. Result: 6 tests passed, 0 failed, including a loopback-only 20-organization request exercise. The syntax check must be rerun in the final launch command set.
+Status: **PASS** on 2026-08-29. Result: 6 tests passed, 0 failed, including a loopback-only 20-organization request exercise. The syntax check must be rerun in the final launch command set.
 
 ### 2. Local bounded load profile
 
@@ -186,7 +186,7 @@ Recorded local evidence:
 
 ## Final sign-off
 
-- Release commit: `090679ff469ea86e0b0ebe33598af3953e9e0d9d`
+- Release commit: record the exact CI-green `main` SHA used by the database bootstrap and Vercel deployment.
 - Reviewer:
 - Verification completed at:
 - All local code gates pass: **YES**

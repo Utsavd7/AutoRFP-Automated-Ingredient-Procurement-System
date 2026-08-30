@@ -1,3 +1,4 @@
+import { privateNoStoreResponse } from '@/lib/api/private-response';
 import { problemResponse } from '@/lib/api/problem';
 import {
   RequestBodyTooLargeError,
@@ -57,31 +58,19 @@ async function boundedJson(request: Request) {
   }
 }
 
-function publicInvitationResponse(response: Response) {
-  response.headers.set('cache-control', 'private, no-store');
-  response.headers.set('referrer-policy', 'no-referrer');
-  response.headers.set('x-content-type-options', 'nosniff');
-  return response;
-}
-
-function privateInvitationResponse(response: Response) {
-  response.headers.set('cache-control', 'private, no-store');
-  response.headers.set('referrer-policy', 'no-referrer');
-  response.headers.set('x-content-type-options', 'nosniff');
-  return response;
-}
+const invitationResponse = privateNoStoreResponse;
 
 function mutationRejection(request: Request) {
   const rejected = browserJsonMutationRejection(request);
   if (rejected === 'CROSS_ORIGIN') {
-    return privateInvitationResponse(problemResponse(
+    return invitationResponse(problemResponse(
       403,
       'Request not allowed',
       'Manage invitations from the QuotePlate workspace page.',
     ));
   }
   if (rejected === 'UNSUPPORTED_MEDIA_TYPE') {
-    return privateInvitationResponse(problemResponse(
+    return invitationResponse(problemResponse(
       415,
       'Unsupported media type',
       'Send this request as application/json.',
@@ -93,14 +82,14 @@ function mutationRejection(request: Request) {
 function invitationAcceptMutationRejection(request: Request) {
   const rejected = browserJsonMutationRejection(request);
   if (rejected === 'CROSS_ORIGIN') {
-    return publicInvitationResponse(problemResponse(
+    return invitationResponse(problemResponse(
       403,
       'Request not allowed',
       'Accept this invitation from the QuotePlate join page.',
     ));
   }
   if (rejected === 'UNSUPPORTED_MEDIA_TYPE') {
-    return publicInvitationResponse(problemResponse(
+    return invitationResponse(problemResponse(
       415,
       'Unsupported media type',
       'Send this request as application/json.',
@@ -165,12 +154,12 @@ export function createMemberInvitationHandlers(
     async POST(request: Request) {
       const authenticated = await currentActor();
       if (authenticated.response) {
-        return privateInvitationResponse(authenticated.response);
+        return invitationResponse(authenticated.response);
       }
       const rejected = mutationRejection(request);
       if (rejected) return rejected;
       const parsed = await boundedJson(request);
-      if (parsed.response) return privateInvitationResponse(parsed.response);
+      if (parsed.response) return invitationResponse(parsed.response);
 
       try {
         const invitationBaseUrl = resolveInvitationOrigin();
@@ -183,7 +172,7 @@ export function createMemberInvitationHandlers(
           undefined,
           dependencies.now(),
         );
-        return privateInvitationResponse(Response.json(
+        return invitationResponse(Response.json(
           {
             invitation: {
               id: invitation.id,
@@ -199,19 +188,19 @@ export function createMemberInvitationHandlers(
           { status: 201 },
         ));
       } catch (error) {
-        return privateInvitationResponse(invitationProblem(error));
+        return invitationResponse(invitationProblem(error));
       }
     },
 
     async DELETE(request: Request) {
       const authenticated = await currentActor();
       if (authenticated.response) {
-        return privateInvitationResponse(authenticated.response);
+        return invitationResponse(authenticated.response);
       }
       const rejected = mutationRejection(request);
       if (rejected) return rejected;
       const parsed = await boundedJson(request);
-      if (parsed.response) return privateInvitationResponse(parsed.response);
+      if (parsed.response) return invitationResponse(parsed.response);
 
       try {
         await dependencies.revoke(
@@ -222,9 +211,9 @@ export function createMemberInvitationHandlers(
           undefined,
           dependencies.now(),
         );
-        return privateInvitationResponse(new Response(null, { status: 204 }));
+        return invitationResponse(new Response(null, { status: 204 }));
       } catch (error) {
-        return privateInvitationResponse(invitationProblem(error));
+        return invitationResponse(invitationProblem(error));
       }
     },
   };
@@ -248,14 +237,14 @@ export function createInvitationAcceptHandler(
           'Wait before trying to accept another invitation.',
         );
         response.headers.set('retry-after', String(attempt.retryAfterSeconds));
-        return publicInvitationResponse(response);
+        return invitationResponse(response);
       }
     } catch (error) {
-      return publicInvitationResponse(invitationProblem(error));
+      return invitationResponse(invitationProblem(error));
     }
 
     const parsed = await boundedJson(request);
-    if (parsed.response) return publicInvitationResponse(parsed.response);
+    if (parsed.response) return invitationResponse(parsed.response);
 
     try {
       await dependencies.accept(
@@ -268,9 +257,9 @@ export function createInvitationAcceptHandler(
         undefined,
         currentTime,
       );
-      return publicInvitationResponse(Response.json({ ok: true }, { status: 201 }));
+      return invitationResponse(Response.json({ ok: true }, { status: 201 }));
     } catch (error) {
-      return publicInvitationResponse(invitationProblem(error));
+      return invitationResponse(invitationProblem(error));
     }
   };
 }

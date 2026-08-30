@@ -95,20 +95,3 @@ export function validateRuntimeEnvironment(environment: Environment = process.en
     pilotEmails: pilotEmails ? [...pilotEmails] : [],
   };
 }
-
-export function validateMigrationEnvironment(environment: Environment = process.env) {
-  const issues = new Set<string>();
-  const production = environment.NODE_ENV === 'production';
-  const directUrl = parseUrl(
-    environment.DIRECT_URL,
-    'DIRECT_URL',
-    ['postgres:', 'postgresql:'],
-    issues,
-  );
-  if (directUrl?.username === '') issues.add('DIRECT_URL');
-  requireRemoteTls(directUrl, 'DIRECT_URL', production, issues);
-  if (issues.size > 0 || !directUrl) {
-    throw new EnvironmentConfigurationError([...issues].sort());
-  }
-  return { directUrl: directUrl.toString() };
-}

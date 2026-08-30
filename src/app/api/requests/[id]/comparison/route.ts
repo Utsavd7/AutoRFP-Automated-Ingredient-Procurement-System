@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { privateNoStoreResponse as privateResponse } from '@/lib/api/private-response';
 import { problemResponse } from '@/lib/api/problem';
 import { AuthorizationError } from '@/lib/auth/guards';
 import {
@@ -9,11 +10,6 @@ import {
 import { requireAccountContext } from '@/lib/server-account';
 
 type ComparisonRouteContext = { params: Promise<{ id: string }> };
-
-function privateResponse<T extends Response>(response: T): T {
-  response.headers.set('Cache-Control', 'private, no-store');
-  return response;
-}
 
 export async function GET(_request: Request, context: ComparisonRouteContext) {
   const account = await requireAccountContext();
@@ -28,9 +24,7 @@ export async function GET(_request: Request, context: ComparisonRouteContext) {
       actor: { tenantId: account.tenant.id, userId: account.user.id },
       requestId: id,
     });
-    return NextResponse.json(comparison, {
-      headers: { 'Cache-Control': 'private, no-store' },
-    });
+    return privateResponse(NextResponse.json(comparison));
   } catch (error) {
     if (error instanceof QuoteComparisonNotFoundError) {
       return privateResponse(problemResponse(

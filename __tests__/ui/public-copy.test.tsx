@@ -37,6 +37,7 @@ const publicFiles = [
   'src/components/public/LegalPageLayout.tsx',
   'src/components/public/SampleQuoteComparison.tsx',
   'src/components/public/ProductTour.tsx',
+  'src/components/public/ProductDecisionPreview.tsx',
 ];
 
 describe('public website contract', () => {
@@ -79,6 +80,19 @@ describe('public website contract', () => {
     expect(preview).toMatch(/Sample data/);
     expect(preview).toMatch(/Sample request/);
     expect(tour).toMatch(/Sample (?:request|supplier view|comparison)/g);
+  });
+
+  test('shows a factual product decision in the hero without inventing market data', () => {
+    const preview = source('src/components/public/ProductDecisionPreview.tsx');
+
+    expect(preview).toContain('Sample data');
+    expect(preview).toContain('Sample request');
+    expect(preview).toContain('Review & award');
+    expect(preview).toContain('Human decision required');
+    expect(preview).toContain('restaurantSampleQuotes.map');
+    expect(preview).toContain('restaurantSampleRequest.items.length');
+    expect(preview).toContain('Scroll to compare suppliers');
+    expect(preview).not.toMatch(/live market|guaranteed|recommended supplier/i);
   });
 
   test('states concrete workflow and security boundaries without certifications', () => {

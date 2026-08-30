@@ -76,6 +76,9 @@ next-env.d.ts
 # ── Isolated Codex implementation worktrees ───────────────
 /.worktrees/
 
+# ── Local design exploration ───────────────────────────────
+/.superpowers/
+
 # ── One-off test files ────────────────────────────────────
 test.js
 test-groq.js

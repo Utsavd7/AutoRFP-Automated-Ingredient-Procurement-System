@@ -969,7 +969,7 @@ textarea {
 
 .tour-step--reverse { grid-template-columns: 7fr 4fr; }
 .tour-step--reverse .tour-step__copy { order: 2; }
-.tour-step--comparison { width: 100%; grid-template-columns: minmax(17rem, 1fr) minmax(0, 2fr); padding-inline: max(1rem, calc((100vw - 76rem) / 2)); background: var(--soft-stone); }
+.tour-step--comparison { width: 100%; grid-template-columns: minmax(12rem, 0.55fr) minmax(0, 2.45fr); gap: clamp(2rem, 4vw, 4rem); padding-inline: max(1rem, calc((100vw - 76rem) / 2)); background: var(--soft-stone); }
 
 .tour-step__copy h2 {
   margin: 1.1rem 0 1.2rem;
@@ -1090,8 +1090,8 @@ textarea {
 .supplier-line span { color: color-mix(in srgb, var(--ink) 62%, transparent); font-size: 0.67rem; }
 .supplier-fields { display: grid; grid-template-columns: repeat(3, 1fr); }
 .supplier-fields > span { min-height: 4.5rem; display: grid; align-content: center; gap: 0.25rem; padding: 0.75rem; border-right: 1px solid color-mix(in srgb, var(--ink) 13%, transparent); text-align: left; }
-.supplier-fields small { color: var(--ink-label); font-size: 0.56rem; font-weight: 720; letter-spacing: 0.07em; text-transform: uppercase; }
-.supplier-fields strong { color: var(--ink); font-size: 0.64rem; font-weight: 700; line-height: 1.35; }
+.supplier-fields small { color: var(--ink-label); font-size: 0.7rem; font-weight: 720; letter-spacing: 0.07em; text-transform: uppercase; }
+.supplier-fields strong { color: var(--ink); font-size: 0.76rem; font-weight: 700; line-height: 1.35; }
 .supplier-fields span:last-child { border-right: 0; }
 .supplier-sheet footer { min-height: 5rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem 1.5rem; border-top: 1px solid color-mix(in srgb, var(--ink) 15%, transparent); font-size: 0.72rem; }
 .supplier-total__meta { min-width: 0; line-height: 1.45; }
@@ -1099,6 +1099,7 @@ textarea {
 .supplier-sheet footer strong { font-family: var(--font-display); font-size: 1.35rem; }
 
 .sample-ledger--compact { box-shadow: none; }
+.sample-ledger--compact table { min-width: 37.5rem; }
 .tour-product--comparison .tour-product__surface { padding: 0.4rem; }
 .tour-product--comparison .sample-ledger--compact { overflow: hidden; border-radius: 5px; }
 .sample-ledger--compact .sample-ledger__heading { padding: 1.5rem; }

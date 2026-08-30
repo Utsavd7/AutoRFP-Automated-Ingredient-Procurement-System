@@ -47,8 +47,9 @@ export function ProductDecisionPreview() {
                 role="region"
                 aria-label="Sample supplier quote comparison"
                 tabIndex={0}
+                style={{ overflowX: 'auto' }}
               >
-                <table>
+                <table style={{ minWidth: '31rem' }}>
                   <thead>
                     <tr>
                       <th scope="col">Supplier</th>
@@ -83,7 +84,7 @@ export function ProductDecisionPreview() {
 
       <figcaption>
         <span>Sample supplier response</span>
-        <span>Illustrative prices · not live <span>market data</span></span>
+        <span>Illustrative prices · not live market data</span>
       </figcaption>
     </figure>
   );

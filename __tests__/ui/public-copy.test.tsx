@@ -92,7 +92,9 @@ describe('public website contract', () => {
     expect(preview).toContain('restaurantSampleQuotes.map');
     expect(preview).toContain('restaurantSampleRequest.id');
     expect(preview).toContain('restaurantSampleRequest.context');
+    expect(preview).toContain('restaurantSampleRequest.cadence');
     expect(preview).toContain('restaurantSampleRequest.items.length');
+    expect(preview).toContain('restaurantSampleQuotes.length');
     expect(preview).toContain('quote.supplierName');
     expect(preview).toContain('quote.totalPaise');
     expect(preview).toContain('quote.coverageCount');
@@ -101,8 +103,7 @@ describe('public website contract', () => {
     expect(preview).toContain('Scroll to compare suppliers');
     expect(preview).toContain("style={{ overflowX: 'auto' }}");
     expect(preview).toContain("style={{ minWidth: '31rem' }}");
-    expect(preview).toContain('Illustrative prices');
-    expect(preview).toContain('not live market data');
+    expect(preview).toContain('Illustrative prices · not live market data');
     expect(preview).not.toMatch(/guaranteed|recommended supplier|customer count|production telemetry/i);
   });
 

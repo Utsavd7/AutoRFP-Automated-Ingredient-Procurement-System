@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { PublicLandingPage } from '../../src/components/public/PublicLandingPage';
 import { ProductDecisionPreview } from '../../src/components/public/ProductDecisionPreview';
 import {
   formatSampleInr,
@@ -65,13 +66,30 @@ describe('public website contract', () => {
   test('uses the approved product-led hero while preserving the current header', () => {
     const landing = source('src/components/public/PublicLandingPage.tsx');
     const header = source('src/components/public/PublicHeader.tsx');
+    const markup = renderToStaticMarkup(<PublicLandingPage />);
 
-    expect(landing).toContain('Compare every quote.');
-    expect(landing).toContain('Choose with proof.');
+    expect(markup).toContain('Compare every quote.');
+    expect(markup).toContain('Choose with proof.');
+    expect(markup).toContain('Quote comparison');
+    expect(markup).toContain('Human decision required');
+    expect(markup).toContain('href="/product"');
+    expect(markup).toContain('href="/start"');
+    expect(markup).toContain('No marketplace');
+    expect(markup).toContain('No card required');
+    expect(markup).toContain('Run the request again');
+    expect(markup).toContain('aria-label="Sample decision facts"');
+    expect(markup).toContain(`${restaurantSampleQuotes.length} supplier replies`);
+    expect(markup).toContain(`${restaurantSampleRequest.items.length} items requested`);
+    expect(markup).toContain('Labelled sample replies, not customer activity.');
+    expect(markup).toContain(`Requested in sample ${restaurantSampleRequest.id}; coverage stays visible supplier by supplier.`);
+    expect(markup).toContain('One sample decision is waiting; no auto-choice is made.');
+    expect(markup).toContain('Product rule: the restaurant records the final choice.');
+
     expect(landing).toContain('<ProductDecisionPreview');
-    expect(landing).toContain('No marketplace');
-    expect(landing).toContain('No card required');
-    expect(landing).toContain('Run the request again');
+    expect(landing).toContain("from '@/data/sample-procurement'");
+    expect(landing).toContain('restaurantSampleQuotes');
+    expect(landing).toContain('restaurantSampleRequest');
+    expect(landing).not.toMatch(/\b(?:3 supplier replies|8 items requested)\b/);
     expect(landing).not.toContain('public-hero__mark');
 
     for (const label of ['Product', 'How it works', 'Security', 'Sign in', 'Start a pilot']) {
@@ -80,14 +98,15 @@ describe('public website contract', () => {
   });
 
   test('exposes every required public destination with honest calls to action', () => {
+    const markup = renderToStaticMarkup(<PublicLandingPage />);
     const allPublicSource = publicFiles.map(source).join('\n');
 
     for (const destination of ['/product', '#how-it-works', '#security', '/privacy', '/terms', '/signin', '/start']) {
-      expect(allPublicSource).toContain(destination);
+      expect(markup).toContain(`href="${destination}"`);
     }
 
-    expect(allPublicSource).toContain('See the product');
-    expect(allPublicSource).toContain('Start a pilot');
+    expect(markup).toContain('See the product');
+    expect(markup).toContain('Start a pilot');
     expect(allPublicSource).not.toMatch(
       /\b(?:AI|artificial intelligence|automatic negotiation|market pricing|guaranteed savings|customer count|integrations?)\b/i,
     );
@@ -149,18 +168,19 @@ describe('public website contract', () => {
   });
 
   test('states concrete workflow and security boundaries without certifications', () => {
+    const markup = renderToStaticMarkup(<PublicLandingPage />);
     const allPublicSource = publicFiles.map(source).join('\n');
 
-    expect(allPublicSource).toMatch(/INR/);
-    expect(allPublicSource).toMatch(/GST/);
-    expect(allPublicSource).toMatch(/no supplier account/i);
-    expect(allPublicSource).toMatch(/human (?:decision|approval)/i);
-    expect(allPublicSource).toContain('Each restaurant can only see its own records');
-    expect(allPublicSource).toContain('Private supplier links expire');
-    expect(allPublicSource).toContain('Your team makes the final choice');
-    expect(allPublicSource).toContain('Quote changes and decisions stay recorded');
-    expect(allPublicSource).toMatch(/run the request again/i);
-    expect(allPublicSource).toMatch(/saved history/i);
+    expect(markup).toMatch(/INR/);
+    expect(markup).toMatch(/GST/);
+    expect(markup).toMatch(/no supplier account/i);
+    expect(markup).toMatch(/human (?:decision|approval)/i);
+    expect(markup).toContain('Each restaurant can only see its own records');
+    expect(markup).toContain('Private supplier links expire');
+    expect(markup).toContain('Your team makes the final choice');
+    expect(markup).toContain('Quote changes and decisions stay recorded');
+    expect(markup).toMatch(/run the request again/i);
+    expect(markup).toMatch(/saved history/i);
     expect(allPublicSource).not.toMatch(/SOC\s?2|ISO\s?27001|certified|compliant with/i);
   });
 
@@ -266,11 +286,13 @@ describe('public website contract', () => {
 
   test('keeps sample preview counts and launch units honest', () => {
     const landing = source('src/components/public/PublicLandingPage.tsx');
+    const markup = renderToStaticMarkup(<PublicLandingPage />);
     const tour = source('src/components/public/ProductTour.tsx');
     const sample = source('src/data/sample-procurement.ts');
 
-    expect(landing).toMatch(/restaurantSampleQuotes\.length\} supplier replies/);
-    expect(landing).toMatch(/restaurantSampleRequest\.items\.length\} items requested/);
+    expect(markup).toContain(`${restaurantSampleQuotes.length} supplier replies`);
+    expect(markup).toContain(`${restaurantSampleRequest.items.length} items requested`);
+    expect(landing).toContain("from '@/data/sample-procurement'");
     expect(landing).not.toMatch(/\b(?:3 supplier replies|8 items requested)\b/);
     expect(tour).toContain('items.slice(0, 4)');
     expect(tour).toContain('items.slice(0, 2)');

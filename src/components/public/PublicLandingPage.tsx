@@ -9,9 +9,9 @@ import { ProductDecisionPreview } from './ProductDecisionPreview';
 
 const proofPoints = [
   [`${restaurantSampleQuotes.length} supplier replies`, 'Labelled sample replies, not customer activity.'],
-  [`${restaurantSampleRequest.items.length} items requested`, 'Coverage stays visible supplier by supplier.'],
-  ['1 decision waiting', 'No auto-choice is made from the comparison.'],
-  ['Human approval required', 'The restaurant records the final choice.'],
+  [`${restaurantSampleRequest.items.length} items requested`, `Requested in sample ${restaurantSampleRequest.id}; coverage stays visible supplier by supplier.`],
+  ['1 decision waiting', 'One sample decision is waiting; no auto-choice is made.'],
+  ['Human approval required', 'Product rule: the restaurant records the final choice.'],
 ];
 
 const workflow = [
@@ -41,7 +41,7 @@ export function PublicLandingPage() {
           <ProductDecisionPreview />
         </section>
 
-        <section className="proof-band" aria-label="Product facts">
+        <section className="proof-band" aria-label="Sample decision facts">
           <div className="public-container proof-band__grid">
             {proofPoints.map(([title, detail]) => (
               <div key={title}><strong>{title}</strong><span>{detail}</span></div>

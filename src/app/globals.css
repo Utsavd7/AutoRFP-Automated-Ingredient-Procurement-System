@@ -418,14 +418,14 @@ textarea {
   border-right: 1px solid color-mix(in srgb, var(--stone) 11%, transparent);
   background: var(--raised-ink);
   color: color-mix(in srgb, var(--stone) 68%, transparent);
-  font-size: 0.57rem;
+  font-size: 0.68rem;
   line-height: 1.35;
 }
 
 .decision-preview__sidebar strong {
   margin-bottom: 1rem;
   color: var(--stone);
-  font-size: 0.62rem;
+  font-size: 0.7rem;
   line-height: 1.4;
 }
 
@@ -460,7 +460,7 @@ textarea {
 .decision-preview__summary > div span {
   overflow: hidden;
   color: var(--ink-label);
-  font-size: 0.55rem;
+  font-size: 0.65rem;
   font-weight: 720;
   letter-spacing: 0.06em;
   text-overflow: ellipsis;
@@ -485,14 +485,14 @@ textarea {
   border-radius: 999px;
   background: color-mix(in srgb, var(--soft-stone) 52%, transparent);
   color: var(--ink-label);
-  font-size: 0.57rem;
+  font-size: 0.65rem;
   font-weight: 720;
 }
 
 .decision-preview__main > p {
   margin: 0.8rem 0 1rem;
   color: var(--ink-label);
-  font-size: 0.62rem;
+  font-size: 0.68rem;
   line-height: 1.55;
 }
 
@@ -512,7 +512,7 @@ textarea {
   width: 100%;
   min-width: 31rem;
   border-collapse: collapse;
-  font-size: 0.61rem;
+  font-size: 0.68rem;
 }
 
 .decision-preview__table th,
@@ -532,7 +532,7 @@ textarea {
 .decision-preview__table thead th {
   background: var(--soft-stone);
   color: var(--ink-label);
-  font-size: 0.53rem;
+  font-size: 0.62rem;
   font-weight: 760;
   letter-spacing: 0.055em;
   text-transform: uppercase;
@@ -555,7 +555,7 @@ textarea {
   align-items: center;
   gap: 0.45rem;
   color: var(--success);
-  font-size: 0.6rem;
+  font-size: 0.68rem;
   font-weight: 740;
 }
 
@@ -575,7 +575,7 @@ textarea {
   border-radius: 6px;
   background: var(--ink);
   color: var(--stone);
-  font-size: 0.62rem;
+  font-size: 0.68rem;
   font-weight: 740;
 }
 
@@ -590,7 +590,8 @@ textarea {
   border-radius: 8px;
   background: var(--stone);
   box-shadow: 0 0.8rem 2rem color-mix(in srgb, var(--raised-ink) 10%, transparent);
-  font-size: 0.53rem;
+  font-size: 0.64rem;
+  line-height: 1.45;
 }
 
 .decision-preview figcaption span:first-child {
@@ -1132,7 +1133,7 @@ textarea {
   .public-text-action { padding-inline: 0.55rem; }
   .public-button--small { display: none; }
   .public-hero { gap: 3.5rem; padding-block: 4.5rem 5rem; }
-  .public-hero h1 { font-size: clamp(3rem, 14vw, 4.8rem); }
+  .public-hero h1 { font-size: clamp(3.2rem, 10vw, 3.4rem); }
   .public-hero__actions { align-items: stretch; flex-direction: column; gap: 0.75rem; }
   .public-hero__actions > a { width: 100%; }
   .public-inline-link { justify-content: center; }
@@ -1152,7 +1153,7 @@ textarea {
     align-items: center;
     justify-content: flex-end;
     color: var(--ink-label);
-    font-size: 0.58rem;
+    font-size: 0.68rem;
     font-weight: 700;
   }
   .decision-preview__footer { align-items: stretch; flex-direction: column; padding-top: 0.9rem; }

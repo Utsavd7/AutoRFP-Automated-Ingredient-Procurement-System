@@ -5,8 +5,8 @@ QuotePlate production uses Vercel Hobby and Neon Free. The Vercel account is car
 ## One-time setup
 
 1. Confirm the Vercel team still says **Hobby**, has no payment method, and has no paid add-on or external integration that can create charges.
-2. Keep the Vercel project linked to the repository's `main` branch. Use the stable free `quoteplate.vercel.app` address when available.
-3. Configure Google OAuth with the exact authorized redirect URI `${NEXTAUTH_URL}/api/auth/callback/google`. The verified Google email must exactly match an address in `QUOTEPLATE_PILOT_EMAILS`.
+2. Keep the Vercel project linked to the repository's `main` branch. Its stable free production address is `https://quoteplate.vercel.app`.
+3. Configure Google OAuth with the exact authorized redirect URI `https://quoteplate.vercel.app/api/auth/callback/google`. The verified Google email must exactly match an address in `QUOTEPLATE_PILOT_EMAILS`.
 4. Keep the migration-only owner secret in the protected GitHub production environment as `NEON_DIRECT_DATABASE_URL`. Never put that owner connection in Vercel or any running application environment.
 5. Confirm Neon says **Free**, uses the Singapore project, the smallest autoscaling range, and scale-to-zero. Migrations use the direct endpoint; the application uses the pooled endpoint.
 

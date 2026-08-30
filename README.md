@@ -4,13 +4,13 @@
 
 QuotePlate is an India-first restaurant procurement workspace. A restaurant can prepare an ingredient request, collect quotes from its own suppliers without asking them to create accounts, compare the real landed cost, record a whole or split award, and keep the complete commercial history for the next buying cycle.
 
-Built by [Utsav Doshi](https://github.com/Utsavd7) · [View the repository](https://github.com/Utsavd7/QuotePlate)
+Built by [Utsav Doshi](https://github.com/Utsavd7) · [Open QuotePlate](https://quoteplate.vercel.app) · [View the repository](https://github.com/Utsavd7/QuotePlate)
 
 ![QuotePlate wordmark](public/brand/wordmark-horizontal.svg)
 
 ## Product status
 
-The complete launch workflow is implemented and passes the local release gate. Unit, integration, responsive browser, accessibility, migration, tenant-isolation, production-build, and bounded 20-restaurant load checks pass. The application builds successfully on Vercel Hobby and remains deployment-protected while the production database and Google sign-in are configured. No launch step may add a card, enable billing, or accept a paid upgrade.
+The complete launch workflow is implemented and passes the release gate. Unit, integration, responsive browser, accessibility, migration, tenant-isolation, production-build, and bounded 20-restaurant load checks pass locally and in GitHub Actions. The free production address is [quoteplate.vercel.app](https://quoteplate.vercel.app), and the Neon Free database is bootstrapped in Singapore. The release remains fail-closed until the restricted runtime connection, Google sign-in, readiness check, and live canary all pass. No launch step may add a card, enable billing, or accept a paid upgrade.
 
 The controlled launch is sized for **one to four restaurants** on cardless free plans. The code and test profile already cover **20 isolated restaurant workspaces** so the application can grow without a rewrite.
 
@@ -53,7 +53,7 @@ Direct supplier relationships are expected, not blocked. The lasting value is th
 | Database | PostgreSQL with Prisma 5 |
 | Authentication | NextAuth, Google OAuth, Argon2 local credentials |
 | Documents | CSV, QR code PNG, and PDF generated inside the application |
-| Production host | Vercel Hobby (cardless) |
+| Production host | [Vercel Hobby](https://quoteplate.vercel.app) (cardless) |
 | Production database | Neon Postgres Free |
 | Automation | GitHub Actions with manual production approval |
 | Production backup | Encrypted S3-compatible storage, only when a cardless free provider is configured |
@@ -147,7 +147,7 @@ npm run typecheck
 npm run build
 ```
 
-Recorded release evidence:
+Recorded release evidence is tied to commit `090679ff469ea86e0b0ebe33598af3953e9e0d9d`. The [GitHub Actions release gate](https://github.com/Utsavd7/QuotePlate/actions/runs/33238664781) passed before the production database bootstrap.
 
 The pull-request workflow repeats lint, type checks, unit tests, real PostgreSQL integration, the production build, responsive browser journeys, and the production dependency audit on a clean Ubuntu runner.
 
@@ -171,7 +171,7 @@ The database bootstrap is intentionally separate from hosting. It accepts only a
 Before a first release:
 
 1. Confirm Vercel Hobby, Neon Free, GitHub, Google, and any optional backup provider are cardless with no paid overage or auto-recharge.
-2. Configure Google OAuth with the exact callback `${NEXTAUTH_URL}/api/auth/callback/google`; every production owner email must be Google-verified and exactly listed in `QUOTEPLATE_PILOT_EMAILS`.
+2. Use `NEXTAUTH_URL=https://quoteplate.vercel.app` and configure Google OAuth with the exact callback `https://quoteplate.vercel.app/api/auth/callback/google`; every production owner email must be Google-verified and exactly listed in `QUOTEPLATE_PILOT_EMAILS`.
 3. Run the database-only bootstrap workflow for the approved `main` commit.
 4. Set the runtime-role password interactively and store only the restricted pooled URL in Vercel.
 5. Configure the dedicated read-only backup role and complete one real encrypted restore using the cardless backup environment.

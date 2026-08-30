@@ -20,6 +20,8 @@ This is the evidence record for the launch gate. A row is `PASS` only after the 
 
 Overall local release verification: **PASS**. Provider configuration, encrypted remote restore and the production canary remain **PENDING** and cannot trigger billing or an upgrade.
 
+The exact release workflow passed for commit `090679ff469ea86e0b0ebe33598af3953e9e0d9d` in [GitHub Actions run 33238664781](https://github.com/Utsavd7/QuotePlate/actions/runs/33238664781). The production Neon Free bootstrap then completed for that commit. The stable Vercel Hobby address is `https://quoteplate.vercel.app`; `/api/health/live` returns `200`, while `/api/health/ready` intentionally remains unavailable until the restricted runtime variables are installed and a new deployment passes the canary.
+
 ## Fixed load thresholds
 
 These thresholds were defined before the real run:
@@ -184,7 +186,7 @@ Recorded local evidence:
 
 ## Final sign-off
 
-- Release commit:
+- Release commit: `090679ff469ea86e0b0ebe33598af3953e9e0d9d`
 - Reviewer:
 - Verification completed at:
 - All local code gates pass: **YES**

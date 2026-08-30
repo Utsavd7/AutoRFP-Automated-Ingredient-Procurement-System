@@ -62,6 +62,23 @@ describe('public website contract', () => {
     expect(home).toContain('<PublicLandingPage');
   });
 
+  test('uses the approved product-led hero while preserving the current header', () => {
+    const landing = source('src/components/public/PublicLandingPage.tsx');
+    const header = source('src/components/public/PublicHeader.tsx');
+
+    expect(landing).toContain('Compare every quote.');
+    expect(landing).toContain('Choose with proof.');
+    expect(landing).toContain('<ProductDecisionPreview');
+    expect(landing).toContain('No marketplace');
+    expect(landing).toContain('No card required');
+    expect(landing).toContain('Run the request again');
+    expect(landing).not.toContain('public-hero__mark');
+
+    for (const label of ['Product', 'How it works', 'Security', 'Sign in', 'Start a pilot']) {
+      expect(header).toContain(label);
+    }
+  });
+
   test('exposes every required public destination with honest calls to action', () => {
     const allPublicSource = publicFiles.map(source).join('\n');
 
@@ -137,10 +154,11 @@ describe('public website contract', () => {
     expect(allPublicSource).toMatch(/INR/);
     expect(allPublicSource).toMatch(/GST/);
     expect(allPublicSource).toMatch(/no supplier account/i);
-    expect(allPublicSource).toMatch(/human award/i);
-    expect(allPublicSource).toMatch(/tenant isolation/i);
-    expect(allPublicSource).toMatch(/expir(?:ing|y)/i);
-    expect(allPublicSource).toMatch(/audit history/i);
+    expect(allPublicSource).toMatch(/human (?:decision|approval)/i);
+    expect(allPublicSource).toContain('Each restaurant can only see its own records');
+    expect(allPublicSource).toContain('Private supplier links expire');
+    expect(allPublicSource).toContain('Your team makes the final choice');
+    expect(allPublicSource).toContain('Quote changes and decisions stay recorded');
     expect(allPublicSource).toMatch(/run the request again/i);
     expect(allPublicSource).toMatch(/saved history/i);
     expect(allPublicSource).not.toMatch(/SOC\s?2|ISO\s?27001|certified|compliant with/i);
@@ -235,7 +253,8 @@ describe('public website contract', () => {
     expect(css).toMatch(/\.workflow__list > li > span[\s\S]*?color: var\(--copper-text\)/);
     expect(css).toMatch(/\.tour-index \{ color: var\(--copper-text\); \}/);
     expect(css).toMatch(/\.sample-label,[\s\S]*?\.supplier-sheet header span[\s\S]*?color: var\(--ink-label\)/);
-    expect(css).toMatch(/\.public-hero__mark \{[\s\S]*?color: var\(--ink-label\)/);
+    expect(css).toMatch(/\.decision-preview__summary > span \{[\s\S]*?color: var\(--ink-label\)/);
+    expect(css).toMatch(/\.decision-preview__footer > span \{[\s\S]*?color: var\(--success\)/);
   });
 
   test('lets the root title template add the product name exactly once', () => {
@@ -246,9 +265,13 @@ describe('public website contract', () => {
   });
 
   test('keeps sample preview counts and launch units honest', () => {
+    const landing = source('src/components/public/PublicLandingPage.tsx');
     const tour = source('src/components/public/ProductTour.tsx');
     const sample = source('src/data/sample-procurement.ts');
 
+    expect(landing).toMatch(/restaurantSampleQuotes\.length\} supplier replies/);
+    expect(landing).toMatch(/restaurantSampleRequest\.items\.length\} items requested/);
+    expect(landing).not.toMatch(/\b(?:3 supplier replies|8 items requested)\b/);
     expect(tour).toContain('items.slice(0, 4)');
     expect(tour).toContain('items.slice(0, 2)');
     expect(sample).toContain("name: 'Coriander', quantity: 3, unit: 'kg'");

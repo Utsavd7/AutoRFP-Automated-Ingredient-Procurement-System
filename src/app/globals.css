@@ -362,6 +362,14 @@ textarea {
   margin-bottom: clamp(5rem, 10vw, 9rem);
 }
 
+.decision-preview__table-scroll {
+  overflow-x: auto;
+}
+
+.decision-preview__table {
+  min-width: 31rem;
+}
+
 .sample-ledger {
   margin: 0;
   overflow: hidden;

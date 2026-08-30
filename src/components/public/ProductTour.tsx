@@ -50,7 +50,7 @@ export function ProductTour() {
         </article>
       </section>
 
-      <section className="tour-step tour-step--comparison" aria-labelledby="tour-comparison-title">
+      <section id="compare" className="tour-step tour-step--comparison" aria-labelledby="tour-comparison-title">
         <div className="tour-step__copy">
           <span className="tour-index">03 / Compare and award</span>
           <h2 id="tour-comparison-title">Keep the decision accountable.</h2>

@@ -1,6 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { ProductDecisionPreview } from '../../src/components/public/ProductDecisionPreview';
 import {
+  formatSampleInr,
   restaurantSampleQuotes,
   restaurantSampleRequest,
 } from '../../src/data/sample-procurement';
@@ -84,11 +87,26 @@ describe('public website contract', () => {
 
   test('shows a factual product decision in the hero without inventing market data', () => {
     const preview = source('src/components/public/ProductDecisionPreview.tsx');
+    const markup = renderToStaticMarkup(<ProductDecisionPreview />);
 
-    expect(preview).toContain('Sample data');
-    expect(preview).toContain('Sample request');
-    expect(preview).toContain('Review & award');
-    expect(preview).toContain('Human decision required');
+    expect(markup).toContain('Sample data');
+    expect(markup).toContain('Sample request');
+    expect(markup).toContain('Human decision required');
+    expect(markup).toContain('href="/product#compare"');
+    expect(markup).toContain('Review &amp; award');
+    expect(markup).toContain('Illustrative prices · not live market data');
+    expect(markup).toContain('role="region"');
+    expect(markup).toContain('tabindex="0"');
+    expect(markup).not.toContain('<aside');
+
+    for (const quote of restaurantSampleQuotes) {
+      expect(markup).toContain(quote.supplierName);
+      expect(markup).toContain(formatSampleInr(quote.totalPaise));
+      expect(markup).toContain(
+        `${quote.coverageCount} of ${restaurantSampleRequest.items.length} items`,
+      );
+    }
+
     expect(preview).toContain('restaurantSampleQuotes.map');
     expect(preview).toContain('restaurantSampleRequest.id');
     expect(preview).toContain('restaurantSampleRequest.context');
@@ -101,10 +119,16 @@ describe('public website contract', () => {
     expect(preview).toContain('quote.terms');
     expect(preview).toContain('formatSampleInr(quote.totalPaise)');
     expect(preview).toContain('Scroll to compare suppliers');
-    expect(preview).toContain("style={{ overflowX: 'auto' }}");
-    expect(preview).toContain("style={{ minWidth: '31rem' }}");
-    expect(preview).toContain('Illustrative prices · not live market data');
     expect(preview).not.toMatch(/guaranteed|recommended supplier|customer count|production telemetry/i);
+  });
+
+  test('keeps the decision table scrollable and the review link target valid', () => {
+    const css = source('src/app/globals.css');
+    const tour = source('src/components/public/ProductTour.tsx');
+
+    expect(css).toMatch(/\.decision-preview__table-scroll\s*\{[^}]*overflow-x:\s*auto;/);
+    expect(css).toMatch(/\.decision-preview__table\s*\{[^}]*min-width:\s*31rem;/);
+    expect(tour).toContain('id="compare"');
   });
 
   test('states concrete workflow and security boundaries without certifications', () => {

@@ -21,12 +21,12 @@ export function ProductDecisionPreview() {
           </header>
 
           <div className="decision-preview__body">
-            <aside className="decision-preview__workspace" aria-label="Sample workspace navigation">
+            <div className="decision-preview__sidebar" aria-hidden="true">
               <strong>Kitchen procurement</strong>
               <span>Requests</span>
               <span>Suppliers</span>
               <span>History</span>
-            </aside>
+            </div>
 
             <section className="decision-preview__main" aria-label="Quote decision">
               <div className="decision-preview__summary">
@@ -47,9 +47,8 @@ export function ProductDecisionPreview() {
                 role="region"
                 aria-label="Sample supplier quote comparison"
                 tabIndex={0}
-                style={{ overflowX: 'auto' }}
               >
-                <table style={{ minWidth: '31rem' }}>
+                <table className="decision-preview__table">
                   <thead>
                     <tr>
                       <th scope="col">Supplier</th>

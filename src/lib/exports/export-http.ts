@@ -1,3 +1,4 @@
+import { privateNoStoreResponse } from '@/lib/api/private-response';
 import { problemResponse } from '@/lib/api/problem';
 import { AuthorizationError } from '@/lib/auth/guards';
 import {
@@ -43,12 +44,7 @@ export function runExportWithTimeout<T>(
   });
 }
 
-export function withExportPrivacy<T extends Response>(response: T): T {
-  response.headers.set('Cache-Control', 'private, no-store');
-  response.headers.set('Referrer-Policy', 'no-referrer');
-  response.headers.set('X-Content-Type-Options', 'nosniff');
-  return response;
-}
+export const withExportPrivacy = privateNoStoreResponse;
 
 export function exportResponse(output: ExportOutput) {
   if (output.bytes.byteLength < 1 || output.bytes.byteLength > MAX_EXPORT_BYTES) {

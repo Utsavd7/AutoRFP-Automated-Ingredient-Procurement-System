@@ -76,7 +76,7 @@ function SidebarContent({
         <span className={styles.accountInitial}>{account.name.charAt(0).toUpperCase()}</span>
         <span className={styles.accountName}>
           <strong>{account.name}</strong>
-          <small>{[account.city, account.state].filter(Boolean).join(', ') || account.location}</small>
+          <small>{[account.city, account.state].filter(Boolean).join(', ') || account.addressLine}</small>
         </span>
       </div>
       <SignOutButton className={styles.signOut} />

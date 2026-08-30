@@ -11,7 +11,6 @@ export class DeterministicMenuDraftError extends Error {
 export type DeterministicDishDraft = {
   name: string;
   ingredients: never[];
-  requiresReview: true;
 };
 
 export function buildDeterministicMenuDraft(
@@ -38,7 +37,7 @@ export function buildDeterministicMenuDraft(
     }
 
     seen.add(key);
-    dishes.push({ name, ingredients: [], requiresReview: true });
+    dishes.push({ name, ingredients: [] });
   }
 
   return dishes;

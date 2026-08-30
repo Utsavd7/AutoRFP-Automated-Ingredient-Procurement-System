@@ -1,3 +1,5 @@
+import { privateNoStoreResponse } from '@/lib/api/private-response';
+
 export type BrowserMutationRejection = 'CROSS_ORIGIN' | 'UNSUPPORTED_MEDIA_TYPE';
 
 type BrowserMutationEnvironment = Readonly<Record<string, string | undefined>>;
@@ -78,9 +80,4 @@ export function browserJsonMutationRejection(
   return mediaType === 'application/json' ? null : 'UNSUPPORTED_MEDIA_TYPE';
 }
 
-export function privateMutationResponse<T extends Response>(response: T): T {
-  response.headers.set('Cache-Control', 'private, no-store');
-  response.headers.set('Referrer-Policy', 'no-referrer');
-  response.headers.set('X-Content-Type-Options', 'nosniff');
-  return response;
-}
+export const privateMutationResponse = privateNoStoreResponse;

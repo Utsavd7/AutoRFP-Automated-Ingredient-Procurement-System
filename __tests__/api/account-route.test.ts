@@ -17,7 +17,7 @@ const currentTenant = {
 };
 const owner = {
   id: 'owner-a', tenantId: 'tenant-a', name: 'A Owner', email: 'owner-a@example.test',
-  passwordHash: null, legacyPasswordSalt: null, role: 'OWNER' as const, isActive: true,
+  passwordHash: null, role: 'OWNER' as const, isActive: true,
   lastLoginAt: null, createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'), tenant: currentTenant,
 };
@@ -39,9 +39,13 @@ describe('account read route', () => {
     expect(response.status).toBe(200);
     expectPrivate(response);
     await expect(response.json()).resolves.toEqual({
-      account: expect.objectContaining({
-        tenantId: 'tenant-a', name: 'Monsoon Table', email: 'owner-a@example.test',
-      }),
+      account: {
+        name: 'Monsoon Table',
+        addressLine: '1 Market Road',
+        city: 'Mumbai',
+        state: 'Maharashtra',
+        pin: '400001',
+      },
     });
   });
 

@@ -1,16 +1,10 @@
 import { NextResponse } from 'next/server';
 
+import { privateNoStoreResponse as privateResponse } from '@/lib/api/private-response';
 import {
   requireAccountContext,
   tenantToAccount,
 } from '@/lib/server-account';
-
-function privateResponse<T extends Response>(response: T): T {
-  response.headers.set('Cache-Control', 'private, no-store');
-  response.headers.set('Referrer-Policy', 'no-referrer');
-  response.headers.set('X-Content-Type-Options', 'nosniff');
-  return response;
-}
 
 export async function GET() {
   let context;
@@ -29,6 +23,6 @@ export async function GET() {
     ));
   }
   return privateResponse(NextResponse.json({
-    account: tenantToAccount(context.tenant, context.user.email),
+    account: tenantToAccount(context.tenant),
   }));
 }

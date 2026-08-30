@@ -6,9 +6,6 @@ import { validateRuntimeEnvironment } from '@/lib/env';
 
 type ReadinessDatabaseClient = Pick<PrismaClient, '$queryRaw'>;
 
-export const REQUIRED_DATABASE_MIGRATION =
-  '20260827000900_minimal_launch_columns';
-
 type ReadinessDependencies = {
   environment: Readonly<Record<string, string | undefined>>;
   checkDatabase: () => Promise<unknown>;
@@ -47,9 +44,11 @@ export async function checkRuntimeDatabase(client: ReadinessDatabaseClient) {
   const [migration] = await client.$queryRaw<Array<{ migrationReady: boolean }>>(
     Prisma.sql`
       SELECT (
-        to_regclass('public."Recipe"') IS NOT NULL
+        to_regclass('public."User"') IS NOT NULL
+        AND to_regclass('public."Recipe"') IS NOT NULL
         AND to_regclass('public."RequestItem"') IS NOT NULL
         AND to_regclass('public."Supplier"') IS NOT NULL
+        AND to_regclass('public."RateLimitBucket"') IS NOT NULL
         AND NOT EXISTS (
         SELECT 1
           FROM pg_catalog.pg_attribute AS attribute
@@ -64,6 +63,22 @@ export async function checkRuntimeDatabase(client: ReadinessDatabaseClient) {
               'verifiedAt',
               'verifiedByUserId'
             )
+            AND attribute.attnum > 0
+            AND NOT attribute.attisdropped
+        )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM pg_catalog.pg_attribute AS attribute
+          WHERE attribute.attrelid = to_regclass('public."User"')
+            AND attribute.attname = 'legacyPasswordSalt'
+            AND attribute.attnum > 0
+            AND NOT attribute.attisdropped
+        )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM pg_catalog.pg_attribute AS attribute
+          WHERE attribute.attrelid = to_regclass('public."RateLimitBucket"')
+            AND attribute.attname = 'updatedAt'
             AND attribute.attnum > 0
             AND NOT attribute.attisdropped
         )

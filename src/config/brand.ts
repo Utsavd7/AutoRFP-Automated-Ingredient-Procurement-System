@@ -6,5 +6,3 @@ export const brand = Object.freeze({
   description:
     'A review-first procurement workspace for restaurant teams to issue requests, collect comparable supplier quotes, and record human award decisions.',
 });
-
-export type Brand = typeof brand;

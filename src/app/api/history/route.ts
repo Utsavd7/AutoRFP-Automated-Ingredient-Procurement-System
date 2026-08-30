@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { privateNoStoreResponse as privateResponse } from '@/lib/api/private-response';
 import { problemResponse } from '@/lib/api/problem';
 import { AuthorizationError } from '@/lib/auth/guards';
 import {
@@ -7,13 +8,6 @@ import {
   ReportingValidationError,
 } from '@/lib/reporting/reporting-service';
 import { requireAccountContext } from '@/lib/server-account';
-
-function privateResponse<T extends Response>(response: T): T {
-  response.headers.set('Cache-Control', 'private, no-store');
-  response.headers.set('Referrer-Policy', 'no-referrer');
-  response.headers.set('X-Content-Type-Options', 'nosniff');
-  return response;
-}
 
 export async function GET(request: Request) {
   const account = await requireAccountContext();

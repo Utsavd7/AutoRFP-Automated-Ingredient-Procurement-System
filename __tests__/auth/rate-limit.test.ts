@@ -25,7 +25,7 @@ describe('auth rate-limit subjects', () => {
     );
   });
 
-  it('does not trust caller-controlled forwarding headers in production', () => {
+  it('trusts Vercel client metadata only inside the Vercel production runtime', () => {
     expect(authClientIdentifier(
       new Headers({
         'cf-connecting-ip': '198.51.100.1',
@@ -36,10 +36,10 @@ describe('auth rate-limit subjects', () => {
     )).toBe('production-unidentified');
     expect(authClientIdentifier(
       new Headers({
-        'x-nf-client-connection-ip': '203.0.113.20',
-        'cf-connecting-ip': '198.51.100.1',
+        'x-vercel-forwarded-for': '203.0.113.20',
+        'x-forwarded-for': '198.51.100.1',
       }),
-      { NODE_ENV: 'production' },
+      { NODE_ENV: 'production', VERCEL: '1' },
     )).toBe('203.0.113.20');
   });
 

@@ -60,14 +60,7 @@ export async function POST(req: Request) {
       menuText,
     });
 
-    return privateMutationResponse(NextResponse.json({
-      success: true,
-      menuId: menu.id,
-      recipes: menu.recipes,
-      modelSource: 'Deterministic review draft',
-      requiresReview: true,
-      menuInsight: null,
-    }));
+    return privateMutationResponse(NextResponse.json({ menuId: menu.id }));
   } catch (error) {
     if (error instanceof MenuValidationError) {
       return privateMutationResponse(problemResponse(422, 'Invalid menu', error.message, {

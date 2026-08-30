@@ -52,7 +52,6 @@
 - `name`: `String`
 - `email`: `String`
 - `passwordHash`: `String?`
-- `legacyPasswordSalt`: `String?`
 - `role`: `UserRole`
 - `isActive`: `Boolean`
 - `lastLoginAt`: `DateTime?`
@@ -250,4 +249,3 @@
 - `keyDigest`: `String`
 - `count`: `Int`
 - `resetAt`: `DateTime`
-- `updatedAt`: `DateTime`

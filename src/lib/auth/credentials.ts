@@ -2,7 +2,7 @@ import { Prisma, type PrismaClient } from '@prisma/client';
 
 import { withTenant } from '@/lib/db/tenant-transaction';
 import { assertRuntimeDatabaseRole } from '@/lib/db/runtime-role';
-import { createPasswordRecord, verifyPassword } from '@/lib/password';
+import { verifyPassword } from '@/lib/password';
 import { prisma } from '@/lib/prisma';
 import { consumeCredentialsRateLimit } from '@/lib/auth/rate-limit';
 
@@ -15,7 +15,6 @@ type CredentialsUser = {
   name: string;
   email: string;
   passwordHash: string | null;
-  legacyPasswordSalt: string | null;
   isActive: boolean;
   tenant: { isActive: boolean };
 };
@@ -25,10 +24,6 @@ export type CredentialsRepository = {
   recordSuccessfulLogin(
     tenantId: string,
     userId: string,
-    passwordUpgrade: {
-      passwordHash?: string;
-      legacyPasswordSalt?: null;
-    },
   ): Promise<void>;
 };
 
@@ -55,7 +50,6 @@ type CredentialsDependencies = {
   now?: Date;
   rateLimit?: typeof consumeCredentialsRateLimit;
   verifyPassword?: typeof verifyPassword;
-  createPasswordRecord?: typeof createPasswordRecord;
 };
 
 export async function authenticateCredentials(
@@ -83,51 +77,25 @@ export async function authenticateCredentials(
     if (!rateLimit.allowed) throw new CredentialsAuthError();
 
     const user = await repository.findByEmail(email);
-    if (
-      !user ||
-      !user.isActive ||
-      !user.tenant.isActive ||
-      !user.passwordHash
-    ) {
-      await (input.verifyPassword ?? verifyPassword)(
-        password,
-        DUMMY_PASSWORD_HASH,
-        null,
-      );
-      throw new CredentialsAuthError();
-    }
-
-    const verification = await (input.verifyPassword ?? verifyPassword)(
+    const usableUser =
+      user?.isActive &&
+      user.tenant.isActive &&
+      user.passwordHash?.startsWith('$argon2id$')
+        ? user
+        : null;
+    const valid = await (input.verifyPassword ?? verifyPassword)(
       password,
-      user.passwordHash,
-      user.legacyPasswordSalt,
+      usableUser?.passwordHash ?? DUMMY_PASSWORD_HASH,
     );
-    if (!verification.valid) {
-      if (!user.passwordHash.startsWith('$argon2id$')) {
-        await (input.verifyPassword ?? verifyPassword)(
-          password,
-          DUMMY_PASSWORD_HASH,
-          null,
-        );
-      }
-      throw new CredentialsAuthError();
-    }
-
-    const passwordUpgrade = verification.needsUpgrade
-      ? await (input.createPasswordRecord ?? createPasswordRecord)(password)
-      : {};
-    await repository.recordSuccessfulLogin(
-      user.tenantId,
-      user.id,
-      passwordUpgrade,
-    );
+    if (!usableUser || !valid) throw new CredentialsAuthError();
+    await repository.recordSuccessfulLogin(usableUser.tenantId, usableUser.id);
 
     return {
-      id: user.id,
-      userId: user.id,
-      tenantId: user.tenantId,
-      name: user.name,
-      email: user.email,
+      id: usableUser.id,
+      userId: usableUser.id,
+      tenantId: usableUser.tenantId,
+      name: usableUser.name,
+      email: usableUser.email,
     };
   } catch (error) {
     if (error instanceof CredentialsAuthError) throw error;
@@ -159,14 +127,13 @@ export function createPrismaCredentialsRepository(
             name: user.name,
             email: user.email,
             passwordHash: user.passwordHash,
-            legacyPasswordSalt: user.legacyPasswordSalt,
             isActive: user.userIsActive,
             tenant: { isActive: user.tenantIsActive },
           }
         : null;
     },
 
-    async recordSuccessfulLogin(tenantId, userId, passwordUpgrade) {
+    async recordSuccessfulLogin(tenantId, userId) {
       await withTenant(
         tenantId,
         (transaction) =>
@@ -174,7 +141,6 @@ export function createPrismaCredentialsRepository(
             where: { id: userId },
             data: {
               lastLoginAt: new Date(),
-              ...passwordUpgrade,
             },
           }).then(() => undefined),
         client,

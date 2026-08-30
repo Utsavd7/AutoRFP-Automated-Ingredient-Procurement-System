@@ -42,20 +42,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-export async function loadGoogleProviderAvailability(
-  fetcher: ClientFetcher,
-): Promise<boolean> {
-  try {
-    const response = await fetcher('/api/auth/providers');
-    if (!response.ok) return false;
-
-    const providers = await response.json();
-    return isRecord(providers) && isRecord(providers.google);
-  } catch {
-    return false;
-  }
-}
-
 export async function beginGoogleAuthentication(
   request: GoogleAuthenticationRequest,
   dependencies: GoogleAuthenticationDependencies,

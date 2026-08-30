@@ -12,22 +12,11 @@ import {
 import { expectNoSeriousAxeViolations } from './helpers/accessibility';
 
 const account = {
-  tenantId: 'tenant-ui',
   name: 'Monsoon Table Pune',
-  email: 'owner@monsoontable.example',
-  location: '18 Koregaon Park Road',
-  cuisineType: 'General restaurant',
-  preferredSuppliers: [],
-  monthlyBudgetTarget: null,
-  savingsTargetPct: null,
   addressLine: '18 Koregaon Park Road',
   city: 'Pune',
   state: 'Maharashtra',
   pin: '411001',
-  phone: '+91 98765 43210',
-  timezone: 'Asia/Kolkata',
-  gstin: null,
-  createdAt: '2026-08-28T08:00:00.000Z',
 };
 
 async function mockAccount(page: Page) {

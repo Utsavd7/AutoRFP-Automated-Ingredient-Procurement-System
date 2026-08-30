@@ -1,7 +1,6 @@
 import { GET as live } from '@/app/api/health/live/route';
 import {
   EnvironmentConfigurationError,
-  validateMigrationEnvironment,
   validateRuntimeEnvironment,
 } from '@/lib/env';
 import {
@@ -19,16 +18,13 @@ const validRuntimeEnvironment = {
 };
 
 describe('production environment', () => {
-  it('validates runtime and migration concerns separately', () => {
+  it('validates the runtime environment', () => {
     expect(validateRuntimeEnvironment(validRuntimeEnvironment)).toEqual(
       expect.objectContaining({
         databaseUrl: validRuntimeEnvironment.DATABASE_URL,
         siteUrl: 'https://quoteplate.example/',
       }),
     );
-    expect(validateMigrationEnvironment({
-      DIRECT_URL: 'postgresql://owner:secret@ep-example.ap-southeast-1.aws.neon.tech/neondb?sslmode=require',
-    })).toEqual(expect.objectContaining({ directUrl: expect.stringContaining('postgresql://') }));
   });
 
   it('rejects incomplete Google configuration and unsafe production URLs without exposing values', () => {
@@ -133,6 +129,7 @@ describe('health endpoints', () => {
       const readinessQuery = JSON.stringify(staleQuery.mock.calls[1]);
       expect(readinessQuery).toContain('sourceIngredientId');
       expect(readinessQuery).toContain('verifiedByUserId');
+      expect(readinessQuery).toContain('legacyPasswordSalt');
       expect(readinessQuery).not.toContain('_prisma_migrations');
     }
 

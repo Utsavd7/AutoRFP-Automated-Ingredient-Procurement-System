@@ -98,22 +98,6 @@ export function divideHalfUp(numerator: bigint, denominator: bigint): bigint {
   return remainder * BigInt(2) >= denominator ? quotient + BigInt(1) : quotient;
 }
 
-export function divideExactly(
-  numerator: bigint,
-  denominator: bigint,
-  label: string,
-): bigint {
-  if (numerator < BigInt(0) || denominator <= BigInt(0)) {
-    throw new RangeError(`${label} has invalid conversion inputs`);
-  }
-
-  if (numerator % denominator !== BigInt(0)) {
-    throw new RangeError(`${label} cannot be represented with three decimal places`);
-  }
-
-  return numerator / denominator;
-}
-
 export function assertMaximum(value: bigint, maximum: bigint, label: string): bigint {
   if (value < BigInt(0) || value > maximum) {
     throw new RangeError(`${label} is outside the supported range`);

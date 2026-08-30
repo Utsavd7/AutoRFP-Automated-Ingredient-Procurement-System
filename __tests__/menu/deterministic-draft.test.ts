@@ -5,8 +5,8 @@ describe('buildDeterministicMenuDraft', () => {
     expect(
       buildDeterministicMenuDraft('  Paneer Tikka  \n\n Masala Dosa\n'),
     ).toEqual([
-      { name: 'Paneer Tikka', ingredients: [], requiresReview: true },
-      { name: 'Masala Dosa', ingredients: [], requiresReview: true },
+      { name: 'Paneer Tikka', ingredients: [] },
+      { name: 'Masala Dosa', ingredients: [] },
     ]);
   });
 
@@ -16,7 +16,6 @@ describe('buildDeterministicMenuDraft', () => {
 
     expect(dishes.map((dish) => dish.name)).toEqual(userLines);
     expect(dishes.every((dish) => dish.ingredients.length === 0)).toBe(true);
-    expect(dishes.every((dish) => dish.requiresReview)).toBe(true);
   });
 
   it('collapses duplicate lines case-insensitively and keeps the first form', () => {

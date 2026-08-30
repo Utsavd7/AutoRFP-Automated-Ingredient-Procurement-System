@@ -63,14 +63,16 @@ All production dependencies are open source. There is no LLM, vector database, b
 
 ## Lean database
 
-The launch schema has **17 tables and 171 scalar fields**. It is deliberately normalized: identity, invitations, quote revisions, award lines, and the audit trail remain separate because merging them would weaken security or destroy useful history while saving negligible storage.
+The launch schema has **17 tables and 169 scalar fields**. It is deliberately normalized: identity, invitations, quote revisions, award lines, and the audit trail remain separate because merging them would weaken security or destroy useful history while saving negligible storage.
 
-Four unsupported or redundant fields were removed in the final minimal-column migration:
+Six unsupported, redundant, or pre-launch compatibility fields were removed across the minimal-column migrations:
 
 - recipe retirement timestamp;
 - duplicate request-item source reference;
 - supplier verification timestamp;
-- supplier verifier reference.
+- supplier verifier reference;
+- rate-limit housekeeping timestamp, because expiry already defines the bucket lifecycle;
+- legacy password salt, because QuotePlate has no pre-launch user accounts and accepts Argon2id credentials only.
 
 The canonical schema-only reference lists every retained table and field: [docs/database-schema.md](docs/database-schema.md).
 
@@ -147,14 +149,14 @@ npm run typecheck
 npm run build
 ```
 
-Recorded release evidence is tied to commit `090679ff469ea86e0b0ebe33598af3953e9e0d9d`. The [GitHub Actions release gate](https://github.com/Utsavd7/QuotePlate/actions/runs/33238664781) passed before the production database bootstrap.
+The [GitHub Actions release gate](https://github.com/Utsavd7/QuotePlate/actions/workflows/ci.yml) repeats the full verification set for every pull request and every commit merged to `main`. The database bootstrap accepts only an exact `main` commit whose push workflow passed.
 
 The pull-request workflow repeats lint, type checks, unit tests, real PostgreSQL integration, the production build, responsive browser journeys, and the production dependency audit on a clean Ubuntu runner.
 
 | Gate | Result |
 | --- | --- |
-| Unit and API tests | 83 suites, 559 tests passed |
-| Real PostgreSQL integration | 22 suites, 40 tests passed |
+| Unit and API tests | 82 suites, 527 tests passed |
+| Real PostgreSQL integration | 21 suites, 37 tests passed |
 | Responsive end-to-end journeys | 39 passed across desktop, phone and tablet; 3 intentional provider/duplicate-flow skips |
 | Empty-database migrations and forced-RLS isolation | Passed |
 | Bounded 20-restaurant profile | Passed with zero errors or tenant mismatches |

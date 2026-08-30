@@ -72,7 +72,6 @@ model User {
   name                       String
   email                      String               @unique @db.VarChar(320)
   passwordHash               String?
-  legacyPasswordSalt         String?
   role                       UserRole             @default(MEMBER)
   isActive                   Boolean              @default(true)
   lastLoginAt                DateTime?
@@ -387,5 +386,4 @@ model RateLimitBucket {
   keyDigest String   @id @db.Char(64)
   count     Int      @default(0)
   resetAt   DateTime
-  updatedAt DateTime @updatedAt
 }

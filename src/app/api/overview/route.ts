@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { privateNoStoreResponse } from '@/lib/api/private-response';
 import { problemResponse } from '@/lib/api/problem';
 import { AuthorizationError } from '@/lib/auth/guards';
 import { getOverview } from '@/lib/overview/overview-service';
@@ -8,7 +9,7 @@ import { requireAccountContext } from '@/lib/server-account';
 export const dynamic = 'force-dynamic';
 
 function privateResponse<T extends Response>(response: T): T {
-  response.headers.set('Cache-Control', 'private, no-store');
+  privateNoStoreResponse(response);
   response.headers.set('Vary', 'Cookie');
   return response;
 }

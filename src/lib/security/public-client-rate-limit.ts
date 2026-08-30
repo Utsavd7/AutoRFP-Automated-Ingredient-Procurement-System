@@ -53,13 +53,13 @@ function normalizedHeader(value: string | null) {
 
 function clientIdentifier(
   headers: Headers,
-  environment: { NODE_ENV?: string } = process.env,
+  environment: { NODE_ENV?: string; VERCEL?: string } = process.env,
 ) {
   if (environment.NODE_ENV === 'production') {
-    return (
-      normalizedHeader(headers.get('x-nf-client-connection-ip')) ??
-      'production-unidentified'
-    );
+    if (environment.VERCEL !== '1') return 'production-unidentified';
+    return normalizedHeader(
+      headers.get('x-vercel-forwarded-for')?.split(',')[0] ?? null,
+    ) ?? 'production-unidentified';
   }
   const direct =
     normalizedHeader(headers.get('cf-connecting-ip')) ??
@@ -73,7 +73,7 @@ function clientIdentifier(
 export function publicClientRateLimitDigest(
   operation: PublicClientOperation,
   headers: Headers,
-  environment: { NODE_ENV?: string } = process.env,
+  environment: { NODE_ENV?: string; VERCEL?: string } = process.env,
 ) {
   return createHash('sha256')
     .update(`quoteplate:v1:public-client:${operation}:`, 'utf8')

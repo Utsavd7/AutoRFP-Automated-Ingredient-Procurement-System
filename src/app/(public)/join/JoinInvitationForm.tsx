@@ -91,7 +91,7 @@ export function JoinInvitationForm() {
           autoComplete="name"
           maxLength={200}
           required
-          disabled={disabled || accepted}
+          disabled={disabled}
         />
       </div>
       <div className={styles.field}>
@@ -104,7 +104,7 @@ export function JoinInvitationForm() {
           maxLength={320}
           required
           aria-describedby="join-email-help"
-          disabled={disabled || accepted}
+          disabled={disabled}
         />
         <p id="join-email-help" className={styles.help}>
           Use the exact email address this invitation was created for.
@@ -120,7 +120,7 @@ export function JoinInvitationForm() {
           minLength={8}
           maxLength={1024}
           required
-          disabled={disabled || accepted}
+          disabled={disabled}
         />
       </div>
 

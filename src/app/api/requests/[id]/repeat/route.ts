@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { privateNoStoreResponse as privateResponse } from '@/lib/api/private-response';
 import { problemResponse } from '@/lib/api/problem';
 import { repeatProcurementRequest } from '@/lib/procurement/request-service';
 import { browserJsonMutationRejection } from '@/lib/security/browser-mutation';
@@ -7,13 +8,6 @@ import { requireAccountContext } from '@/lib/server-account';
 import { readRequestBody, requestActor, requestServiceError } from '../../route';
 
 type RepeatRouteContext = { params: Promise<{ id: string }> };
-
-function privateResponse<T extends Response>(response: T): T {
-  response.headers.set('Cache-Control', 'private, no-store');
-  response.headers.set('Referrer-Policy', 'no-referrer');
-  response.headers.set('X-Content-Type-Options', 'nosniff');
-  return response;
-}
 
 export async function POST(request: Request, context: RepeatRouteContext) {
   const rejected = browserJsonMutationRejection(request);

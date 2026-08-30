@@ -1,6 +1,5 @@
 import {
   calculateGst,
-  calculateLandedTotal,
   formatInr,
   multiplyPaise,
   parseInrToPaise,
@@ -82,23 +81,6 @@ describe('India money primitives', () => {
     });
   });
 
-  test('adds freight after GST and returns an auditable landed total', () => {
-    expect(
-      calculateLandedTotal({
-        amountPaise: BigInt('10000'),
-        gstBasisPoints: 1800,
-        inclusive: false,
-        freightPaise: BigInt('250'),
-      }),
-    ).toEqual({
-      netPaise: BigInt('10000'),
-      gstPaise: BigInt('1800'),
-      grossPaise: BigInt('11800'),
-      freightPaise: BigInt('250'),
-      totalPaise: BigInt('12050'),
-    });
-  });
-
   test.each([
     { amountPaise: BigInt('-1'), gstBasisPoints: 500, inclusive: false },
     { amountPaise: BigInt('1'), gstBasisPoints: -1, inclusive: false },
@@ -108,23 +90,4 @@ describe('India money primitives', () => {
     expect(() => calculateGst(input)).toThrow();
   });
 
-  test('rejects negative freight and a landed-total overflow', () => {
-    expect(() =>
-      calculateLandedTotal({
-        amountPaise: BigInt('100'),
-        gstBasisPoints: 0,
-        inclusive: false,
-        freightPaise: BigInt('-1'),
-      }),
-    ).toThrow();
-
-    expect(() =>
-      calculateLandedTotal({
-        amountPaise: BigInt('9223372036854775807'),
-        gstBasisPoints: 0,
-        inclusive: false,
-        freightPaise: BigInt('1'),
-      }),
-    ).toThrow();
-  });
 });

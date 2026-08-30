@@ -222,7 +222,7 @@ export function HistoryWorkspace({ initialPage }: { initialPage?: HistoryPageDat
               <span className={styles.historyDate}><CalendarDays aria-hidden="true" />{displayDate(request.deliveryDate)}</span>
               <span className={styles.historyCount}><strong>{request._count.supplierRequests}</strong><small>{request.respondingSupplierCount} replied</small></span>
               <span>{request.quoteRevisionCount}</span>
-              <span className={styles.historyValue}>{request.award ? <><strong>{formatInr(request.award.totalPaise)}</strong><small>{request.award.supplierCount} winning {request.award.supplierCount === 1 ? 'supplier' : 'suppliers'}</small></> : '—'}</span>
+              <span className={styles.historyValue}>{request.award ? <><strong>{formatInr(request.award.totalPaise)}</strong><small>{request.award.supplierCount} winning {request.award.supplierCount === 1 ? 'supplier' : 'suppliers'}</small></> : 'Not available'}</span>
               <i className={styles[`history${request.status}`]}>{statusLabel[request.status]}</i>
               <span className={styles.historyActions}>{request.status === 'AWARDED' && <button type="button" onClick={() => openRepeat(request)}><CopyPlus aria-hidden="true" />Run again</button>}<ArrowRight aria-hidden="true" /></span>
             </article>

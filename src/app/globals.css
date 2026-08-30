@@ -1178,6 +1178,11 @@ textarea {
   .tour-step--comparison { padding-inline: max(1rem, calc((100vw - 76rem) / 2)); }
 }
 
+@media (max-width: 720px) {
+  .decision-preview__body { display: block; }
+  .decision-preview__sidebar { display: none; }
+}
+
 @media (max-width: 620px) {
   .public-container,
   .tour-step { width: min(100% - 1.25rem, 76rem); }
@@ -1195,14 +1200,11 @@ textarea {
   .decision-preview__window { border-radius: 9px; }
   .decision-preview__bar { grid-template-columns: 3.2rem minmax(0, 1fr) auto; padding-inline: 0.75rem; }
   .decision-preview__bar h2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .decision-preview__body { display: block; }
-  .decision-preview__sidebar { display: none; }
   .decision-preview__main { padding: 1rem 0.75rem 0.75rem; }
   .decision-preview__summary { align-items: stretch; flex-direction: column; gap: 0.75rem; }
   .decision-preview__summary > span { align-self: flex-start; }
   .decision-preview__scroll-hint {
     min-height: 44px;
-    display: flex;
     align-items: center;
     justify-content: flex-end;
     color: var(--ink-label);
@@ -1257,6 +1259,10 @@ textarea {
   .product-principles dl div,
   .legal-copy section { grid-template-columns: 1fr; gap: 1rem; }
   .legal-page__back { margin-bottom: 2.5rem; }
+}
+
+@media (max-width: 555px) {
+  .decision-preview__scroll-hint { display: flex; }
 }
 
 @media (prefers-reduced-motion: reduce) {

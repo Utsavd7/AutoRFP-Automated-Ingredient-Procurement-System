@@ -79,8 +79,8 @@ export function InsightsWorkspace({ initialData }: { initialData?: FactualInsigh
       {loading && !data ? <div className={styles.loading} aria-label="Loading insights"><span /><span /><span /></div> : data && data.summary.requestSampleSize > 0 ? (
         <>
           <section className={styles.metrics} aria-label="Procurement summary">
-            <article><Users aria-hidden="true" /><span><small>Supplier response</small><strong>{data.summary.responseRatePercent ?? '—'}{data.summary.responseRatePercent ? '%' : ''}</strong><em>{data.summary.supplierResponses} of {data.summary.supplierRequestsSent} requested suppliers</em></span></article>
-            <article><CheckCircle2 aria-hidden="true" /><span><small>Full line coverage</small><strong>{data.summary.quotedLineCoveragePercent ?? '—'}{data.summary.quotedLineCoveragePercent ? '%' : ''}</strong><em>{data.summary.quoteLinesFullyCovered} of {data.summary.quoteLinesExpected} expected quote lines</em></span></article>
+            <article><Users aria-hidden="true" /><span><small>Supplier response</small><strong>{data.summary.responseRatePercent ?? 'Not available'}{data.summary.responseRatePercent ? '%' : ''}</strong><em>{data.summary.supplierResponses} of {data.summary.supplierRequestsSent} requested suppliers</em></span></article>
+            <article><CheckCircle2 aria-hidden="true" /><span><small>Full line coverage</small><strong>{data.summary.quotedLineCoveragePercent ?? 'Not available'}{data.summary.quotedLineCoveragePercent ? '%' : ''}</strong><em>{data.summary.quoteLinesFullyCovered} of {data.summary.quoteLinesExpected} expected quote lines</em></span></article>
             <article><IndianRupee aria-hidden="true" /><span><small>Awarded value</small><strong>{formatInr(data.summary.totalAwardedPaise)}</strong><em>{data.summary.awardedRequestCount} completed {data.summary.awardedRequestCount === 1 ? 'award' : 'awards'}</em></span></article>
             <article><BarChart3 aria-hidden="true" /><span><small>Requests in this view</small><strong>{data.summary.requestSampleSize}</strong><em>{data.capped ? 'Latest 50 requests' : 'All open and awarded requests'}</em></span></article>
           </section>
@@ -95,7 +95,7 @@ export function InsightsWorkspace({ initialData }: { initialData?: FactualInsigh
                     <span><strong>{range.itemName}</strong><small>per {unitLabel(range.unit)}</small></span>
                     <span><strong>{formatInr(range.minimumUnitRatePaise)}</strong><small>{range.minimumSupplierName}</small></span>
                     <span><strong>{formatInr(range.maximumUnitRatePaise)}</strong><small>{range.maximumSupplierName}</small></span>
-                    <span><strong>{range.observedVariancePercent ? `${range.observedVariancePercent}%` : '—'}</strong><small>range, not savings</small></span>
+                    <span><strong>{range.observedVariancePercent ? `${range.observedVariancePercent}%` : 'Not available'}</strong><small>range, not savings</small></span>
                     <span>{range.quoteCount} quotes</span>
                   </div>
                 ))}

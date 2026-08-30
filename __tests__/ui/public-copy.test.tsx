@@ -175,7 +175,6 @@ describe('public website contract', () => {
   });
 
   test('shows a factual product decision in the hero without inventing market data', () => {
-    const preview = source('src/components/public/ProductDecisionPreview.tsx');
     const markup = renderToStaticMarkup(<ProductDecisionPreview />);
 
     expect(markup).toContain('Sample data');
@@ -196,19 +195,8 @@ describe('public website contract', () => {
       );
     }
 
-    expect(preview).toContain('restaurantSampleQuotes.map');
-    expect(preview).toContain('restaurantSampleRequest.id');
-    expect(preview).toContain('restaurantSampleRequest.context');
-    expect(preview).toContain('restaurantSampleRequest.cadence');
-    expect(preview).toContain('restaurantSampleRequest.items.length');
-    expect(preview).toContain('restaurantSampleQuotes.length');
-    expect(preview).toContain('quote.supplierName');
-    expect(preview).toContain('quote.totalPaise');
-    expect(preview).toContain('quote.coverageCount');
-    expect(preview).toContain('quote.terms');
-    expect(preview).toContain('formatSampleInr(quote.totalPaise)');
-    expect(preview).toContain('Scroll to compare suppliers');
-    expect(preview).not.toMatch(/guaranteed|recommended supplier|customer count|production telemetry/i);
+    expect(markup).toContain('Scroll to compare suppliers');
+    expect(markup).not.toMatch(/guaranteed|recommended supplier|customer count|production telemetry/i);
   });
 
   test('states concrete workflow and security boundaries without certifications', () => {
@@ -364,17 +352,6 @@ describe('public website contract', () => {
       expect(quote.totalPaise).toBe(quote.subtotalPaise + quote.gstPaise + quote.freightPaise);
       expect(quote.coverageCount).toBeLessThanOrEqual(restaurantSampleRequest.items.length);
     }
-  });
-
-  test('stacks the supplier total cleanly on narrow screens', () => {
-    const tour = source('src/components/public/ProductTour.tsx');
-    const css = source('src/app/globals.css');
-
-    expect(tour).toContain('className="supplier-total__meta"');
-    expect(tour).toContain('className="supplier-total__amount"');
-    expect(css).toMatch(
-      /@media \(max-width: 620px\) \{[\s\S]*?\.supplier-sheet footer \{[\s\S]*?flex-direction: column;[\s\S]*?align-items: flex-start;/,
-    );
   });
 
   test('ships a static 1200 by 630 social card with complete sharing metadata', () => {

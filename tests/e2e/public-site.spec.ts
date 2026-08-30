@@ -79,7 +79,6 @@ test.describe('public landing responsive contract', () => {
     const fontSizeAt621 = await desktopHeading.evaluate((element) => (
       Number.parseFloat(getComputedStyle(element).fontSize)
     ));
-
     await page.setViewportSize({ width: 620, height: 900 });
     await page.reload();
 
@@ -88,8 +87,26 @@ test.describe('public landing responsive contract', () => {
     const fontSizeAt620 = await mobileHeading.evaluate((element) => (
       Number.parseFloat(getComputedStyle(element).fontSize)
     ));
-
     expect(fontSizeAt620).toBeLessThanOrEqual(fontSizeAt621 + 0.25);
+  });
+
+  test('shows the comparison cue exactly when the hero table overflows', async ({ page }) => {
+    for (const width of [721, 720, 621, 620, 560, 559, 558, 557, 556, 555, 521, 520, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto('/');
+
+      const comparison = page.getByRole('region', {
+        name: 'Sample supplier quote comparison',
+      });
+      const overflows = await comparison.evaluate((element) => (
+        element.scrollWidth > element.clientWidth + 1
+      ));
+      const cueIsVisible = await page
+        .getByText('Scroll to compare suppliers →', { exact: true })
+        .isVisible();
+
+      expect(cueIsVisible, `comparison cue at ${width}px`).toBe(overflows);
+    }
   });
 
   test('keeps sample decision facts readable without page overflow on mobile', async ({ page }) => {
@@ -133,7 +150,6 @@ test.describe('public product tour responsive contract', () => {
     const supplierWorkspace = page.getByRole('group', {
       name: 'Illustrative supplier response workspace',
     });
-
     await expect(comparison).toBeVisible();
     await expect(finalSupplier).toBeVisible();
     await expect(
@@ -183,6 +199,9 @@ test.describe('public product tour responsive contract', () => {
     const supplierWorkspace = page.getByRole('group', {
       name: 'Illustrative supplier response workspace',
     });
+    const supplierFooter = page.getByRole('article', {
+      name: 'Sample supplier response',
+    }).locator('footer');
 
     await expect(comparison).toBeVisible();
     await expect(
@@ -216,5 +235,11 @@ test.describe('public product tour responsive contract', () => {
     );
     expect(labelFontSize).toBeGreaterThanOrEqual(11.15);
     expect(valueFontSize).toBeGreaterThanOrEqual(12.1);
+
+    const footerLayout = await supplierFooter.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { alignItems: style.alignItems, flexDirection: style.flexDirection };
+    });
+    expect(footerLayout).toEqual({ alignItems: 'flex-start', flexDirection: 'column' });
   });
 });

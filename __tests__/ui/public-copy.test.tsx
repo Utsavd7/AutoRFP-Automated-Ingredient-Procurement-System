@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { PublicLandingPage } from '../../src/components/public/PublicLandingPage';
+import { PublicHeader } from '../../src/components/public/PublicHeader';
 import { ProductDecisionPreview } from '../../src/components/public/ProductDecisionPreview';
 import {
   formatSampleInr,
@@ -63,9 +64,8 @@ describe('public website contract', () => {
     expect(home).toContain('<PublicLandingPage');
   });
 
-  test('uses the approved product-led hero while preserving the current header', () => {
+  test('uses the approved product-led hero', () => {
     const landing = source('src/components/public/PublicLandingPage.tsx');
-    const header = source('src/components/public/PublicHeader.tsx');
     const markup = renderToStaticMarkup(<PublicLandingPage />);
 
     expect(markup).toContain('Compare every quote.');
@@ -91,10 +91,17 @@ describe('public website contract', () => {
     expect(landing).toContain('restaurantSampleRequest');
     expect(landing).not.toMatch(/\b(?:3 supplier replies|8 items requested)\b/);
     expect(landing).not.toContain('public-hero__mark');
+  });
 
-    for (const label of ['Product', 'How it works', 'Security', 'Sign in', 'Start a pilot']) {
-      expect(header).toContain(label);
-    }
+  test('renders the approved header links with accessible names and destinations', () => {
+    const markup = renderToStaticMarkup(<PublicHeader home />);
+
+    expect(markup).toContain('aria-label="Primary navigation"');
+    expect(markup).toContain('<a href="/product">Product</a>');
+    expect(markup).toContain('<a href="#how-it-works">How it works</a>');
+    expect(markup).toContain('<a href="#security">Security</a>');
+    expect(markup).toContain('<a class="public-text-action" href="/signin">Sign in</a>');
+    expect(markup).toContain('<a class="public-button public-button--small" href="/start">Start a pilot</a>');
   });
 
   test('exposes every required public destination with honest calls to action', () => {

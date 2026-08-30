@@ -983,12 +983,58 @@ textarea {
 .tour-step__copy p { max-width: 30rem; margin: 0; color: color-mix(in srgb, var(--ink) 66%, transparent); font-size: 0.82rem; line-height: 1.7; }
 .tour-index { color: var(--copper-text); }
 
+.tour-product {
+  min-width: 0;
+  padding: 0.45rem;
+  border: 1px solid var(--raised-ink);
+  border-radius: 14px;
+  background: var(--raised-ink);
+  box-shadow:
+    0.8rem 0.8rem 0 color-mix(in srgb, var(--copper) 74%, var(--stone)),
+    0 1.8rem 4rem color-mix(in srgb, var(--ink) 14%, transparent);
+}
+
+.tour-product--supplier { max-width: 38rem; }
+
+.tour-product__bar {
+  min-height: 2.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.55rem 0.8rem 0.65rem;
+  color: var(--stone);
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.tour-product__bar strong {
+  color: color-mix(in srgb, var(--stone) 68%, transparent);
+  font-family: var(--font-mono);
+  font-size: 0.56rem;
+  font-weight: 620;
+  letter-spacing: 0.04em;
+  text-align: right;
+}
+
+.tour-product__surface {
+  min-width: 0;
+  padding: 0.55rem;
+  border: 1px solid color-mix(in srgb, var(--stone) 22%, transparent);
+  border-radius: 8px;
+  background: var(--soft-stone);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.58) inset;
+}
+
 .tour-record,
 .supplier-sheet {
   border: 1px solid color-mix(in srgb, var(--ink) 20%, transparent);
-  border-radius: 12px;
+  border-radius: 5px;
   background: #FBF8F1;
-  box-shadow: 0.8rem 0.8rem 0 var(--copper);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.85) inset,
+    0 0.65rem 1.6rem color-mix(in srgb, var(--ink) 9%, transparent);
 }
 
 .tour-record header,
@@ -1011,7 +1057,8 @@ textarea {
   display: inline-flex;
   align-items: center;
   padding: 0.25rem 0.55rem;
-  border-radius: 999px;
+  border-left: 3px solid var(--copper);
+  border-radius: 2px;
   background: var(--soft-stone);
   color: var(--ink) !important;
   letter-spacing: 0 !important;
@@ -1032,16 +1079,19 @@ textarea {
 
 .tour-record table { width: 100%; border-collapse: collapse; font-size: 0.73rem; }
 .tour-record th, .tour-record td { height: 3rem; padding: 0.65rem 1.5rem; border-bottom: 1px solid color-mix(in srgb, var(--ink) 12%, transparent); text-align: left; }
-.tour-record th { background: var(--soft-stone); font-size: 0.61rem; letter-spacing: 0.06em; text-transform: uppercase; }
+.tour-record thead th { background: var(--soft-stone); font-size: 0.61rem; letter-spacing: 0.06em; text-transform: uppercase; }
+.tour-record tbody th { font-size: inherit; font-weight: 700; }
 .tour-record footer { min-height: 3.4rem; display: flex; align-items: center; justify-content: flex-end; padding: 0.7rem 1.5rem; color: color-mix(in srgb, var(--ink) 62%, transparent); font-size: 0.68rem; }
 
-.supplier-sheet { max-width: 38rem; }
+.supplier-sheet { max-width: none; }
 .supplier-sheet header { align-items: flex-start; flex-direction: column; }
 .supplier-line { min-height: 5rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem 1.5rem; border-bottom: 1px solid color-mix(in srgb, var(--ink) 13%, transparent); font-size: 0.76rem; }
 .supplier-line > div { display: grid; gap: 0.35rem; }
 .supplier-line span { color: color-mix(in srgb, var(--ink) 62%, transparent); font-size: 0.67rem; }
 .supplier-fields { display: grid; grid-template-columns: repeat(3, 1fr); }
-.supplier-fields span { min-height: 4.5rem; display: grid; place-items: center; padding: 0.75rem; border-right: 1px solid color-mix(in srgb, var(--ink) 13%, transparent); color: color-mix(in srgb, var(--ink) 62%, transparent); font-size: 0.62rem; text-align: center; }
+.supplier-fields > span { min-height: 4.5rem; display: grid; align-content: center; gap: 0.25rem; padding: 0.75rem; border-right: 1px solid color-mix(in srgb, var(--ink) 13%, transparent); text-align: left; }
+.supplier-fields small { color: var(--ink-label); font-size: 0.56rem; font-weight: 720; letter-spacing: 0.07em; text-transform: uppercase; }
+.supplier-fields strong { color: var(--ink); font-size: 0.64rem; font-weight: 700; line-height: 1.35; }
 .supplier-fields span:last-child { border-right: 0; }
 .supplier-sheet footer { min-height: 5rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem 1.5rem; border-top: 1px solid color-mix(in srgb, var(--ink) 15%, transparent); font-size: 0.72rem; }
 .supplier-total__meta { min-width: 0; line-height: 1.45; }
@@ -1049,6 +1099,8 @@ textarea {
 .supplier-sheet footer strong { font-family: var(--font-display); font-size: 1.35rem; }
 
 .sample-ledger--compact { box-shadow: none; }
+.tour-product--comparison .tour-product__surface { padding: 0.4rem; }
+.tour-product--comparison .sample-ledger--compact { overflow: hidden; border-radius: 5px; }
 .sample-ledger--compact .sample-ledger__heading { padding: 1.5rem; }
 .sample-ledger--compact .sample-ledger__heading h2 { font-size: 2rem; }
 
@@ -1192,10 +1244,13 @@ textarea {
   .public-footer__legal { align-items: flex-start; flex-direction: column; justify-content: center; gap: 0.35rem; padding-block: 1rem; }
   .product-hero__intro { grid-template-columns: 1fr; gap: 1rem; }
   .tour-step--comparison { width: 100%; padding-inline: 0.375rem; }
-  .tour-record,
-  .supplier-sheet { box-shadow: 0.45rem 0.45rem 0 var(--copper); }
+  .tour-product { box-shadow: 0.45rem 0.45rem 0 color-mix(in srgb, var(--copper) 74%, var(--stone)); }
+  .tour-product__bar { align-items: flex-start; flex-direction: column; gap: 0.15rem; }
+  .tour-product__bar strong { text-align: left; }
+  .tour-record header { align-items: flex-start; flex-direction: column; }
+  .tour-record__meta { align-items: flex-start; flex-direction: column; }
   .supplier-fields { grid-template-columns: 1fr; }
-  .supplier-fields span { min-height: 3rem; border-right: 0; border-bottom: 1px solid color-mix(in srgb, var(--ink) 13%, transparent); }
+  .supplier-fields > span { min-height: 3rem; border-right: 0; border-bottom: 1px solid color-mix(in srgb, var(--ink) 13%, transparent); }
   .supplier-fields span:last-child { border-bottom: 0; }
   .supplier-sheet footer { flex-direction: column; align-items: flex-start; gap: 0.4rem; }
   .product-principles dl div,

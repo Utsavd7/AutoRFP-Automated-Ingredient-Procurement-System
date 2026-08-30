@@ -4,11 +4,17 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { PublicLandingPage } from '../../src/components/public/PublicLandingPage';
 import { PublicHeader } from '../../src/components/public/PublicHeader';
 import { ProductDecisionPreview } from '../../src/components/public/ProductDecisionPreview';
+import { ProductTour } from '../../src/components/public/ProductTour';
+import { AuthPageShell } from '../../src/components/auth/AuthPageShell';
 import {
   formatSampleInr,
   restaurantSampleQuotes,
   restaurantSampleRequest,
 } from '../../src/data/sample-procurement';
+
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ refresh: jest.fn(), replace: jest.fn() }),
+}));
 
 const root = path.resolve(__dirname, '../..');
 
@@ -126,6 +132,46 @@ describe('public website contract', () => {
     expect(preview).toMatch(/Sample data/);
     expect(preview).toMatch(/Sample request/);
     expect(tour).toMatch(/Sample (?:request|supplier view|comparison)/g);
+  });
+
+  test('presents each product-tour example as an illustrative working record', () => {
+    const markup = renderToStaticMarkup(<ProductTour />);
+    const supplierStart = markup.indexOf('Illustrative supplier response workspace');
+    const comparisonStart = markup.indexOf('Illustrative comparison workspace');
+    const requestMarkup = markup.slice(0, supplierStart);
+    const supplierMarkup = markup.slice(supplierStart, comparisonStart);
+
+    expect(markup).toContain('aria-label="Illustrative request workspace"');
+    expect(markup).toContain('aria-label="Illustrative supplier response workspace"');
+    expect(markup).toContain('aria-label="Illustrative comparison workspace"');
+    expect(markup.match(/Sample data · illustrative only/g)).toHaveLength(3);
+    expect(markup).toContain('aria-label="Sample request record"');
+    expect(markup).toContain('id="compare"');
+    expect(requestMarkup).toContain(restaurantSampleRequest.cadence);
+    expect(requestMarkup).toContain(`${restaurantSampleQuotes.length} sample supplier records`);
+    expect(requestMarkup).toContain('<th scope="col">Ingredient</th>');
+    expect(requestMarkup).toContain(`<th scope="row">${restaurantSampleRequest.items[0].name}</th>`);
+    expect(supplierMarkup).toContain(formatSampleInr(restaurantSampleQuotes[0].gstPaise));
+    expect(supplierMarkup).toContain(formatSampleInr(restaurantSampleQuotes[0].freightPaise));
+    expect(supplierMarkup).toContain(restaurantSampleQuotes[0].delivery);
+  });
+
+  test('states the controlled-pilot terms before account onboarding', () => {
+    const markup = renderToStaticMarkup(
+      <AuthPageShell
+        callbackUrl="/dashboard"
+        googleAvailable
+        mode="start"
+      />,
+    );
+
+    expect(markup).toContain('aria-label="Controlled pilot terms"');
+    expect(markup).toContain('Up to four approved restaurant workspaces');
+    expect(markup).toContain('Use the Google account approved for your workspace');
+    expect(markup).toContain('No payment card. No billing.');
+    expect(markup.indexOf('Controlled pilot terms')).toBeLessThan(
+      markup.indexOf('Create your workspace'),
+    );
   });
 
   test('shows a factual product decision in the hero without inventing market data', () => {

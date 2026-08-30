@@ -96,7 +96,7 @@ npm ci --omit=peer
 cp .env.sample .env
 ```
 
-Set the local values documented in `.env.sample`, create an empty development database, and apply the committed migrations. Do not use `prisma db push`.
+Set the local values documented in `.env.sample`, create an empty development database, and add a migration-owner `DIRECT_URL` to the untracked `.env` file. `DATABASE_URL` is the restricted runtime connection; `DIRECT_URL` is used only by migration commands. Never commit either value. Then apply the committed migrations. Do not use `prisma db push`.
 
 ```sh
 npx prisma migrate deploy

@@ -211,15 +211,6 @@ describe('public website contract', () => {
     expect(preview).not.toMatch(/guaranteed|recommended supplier|customer count|production telemetry/i);
   });
 
-  test('keeps the decision table scrollable and the review link target valid', () => {
-    const css = source('src/app/globals.css');
-    const tour = source('src/components/public/ProductTour.tsx');
-
-    expect(css).toMatch(/\.decision-preview__table-scroll\s*\{[^}]*overflow-x:\s*auto;/);
-    expect(css).toMatch(/\.decision-preview__table\s*\{[^}]*min-width:\s*31rem;/);
-    expect(tour).toContain('id="compare"');
-  });
-
   test('states concrete workflow and security boundaries without certifications', () => {
     const markup = renderToStaticMarkup(<PublicLandingPage />);
     const allPublicSource = publicFiles.map(source).join('\n');

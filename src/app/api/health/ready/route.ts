@@ -13,7 +13,7 @@ async function checkDatabase() {
 const readiness = createReadinessHandler({
   environment: process.env,
   checkDatabase,
-  timeoutMs: 2_000,
+  timeoutMs: 5_000,
 });
 
 export async function GET() {

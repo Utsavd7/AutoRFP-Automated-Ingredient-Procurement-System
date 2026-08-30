@@ -128,6 +128,12 @@
   outline-offset: 2px;
 }
 
+.metricCard:focus-visible,
+.deadlineList > a:focus-visible,
+.awardList > a:focus-visible {
+  outline-offset: -3px;
+}
+
 .loadingHeader, .loadingCards, .loadingPanels { max-width: 82rem; margin-right: auto; margin-left: auto; }
 .loadingHeader { margin-bottom: 2rem; display: grid; gap: .65rem; }
 .loadingHeader span:first-child { width: min(15rem, 45%); height: 3.8rem; }

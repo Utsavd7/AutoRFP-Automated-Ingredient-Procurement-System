@@ -32,9 +32,7 @@ function appDatabaseUrl(databaseUrl: string, password: string) {
 
 async function provisionAppClient(admin: PrismaClient, databaseUrl: string) {
   const password = randomBytes(24).toString('hex');
-  await admin.$executeRawUnsafe(
-    `ALTER ROLE autorfp_app PASSWORD '${password}'`,
-  );
+  await admin.$executeRawUnsafe(`ALTER ROLE autorfp_app PASSWORD '${password}'`);
   const client = new PrismaClient({
     datasources: { db: { url: appDatabaseUrl(databaseUrl, password) } },
   });
@@ -70,11 +68,9 @@ const googleOnboarding = {
   expiresAt: '2026-08-28T00:10:00.000Z',
 };
 
-test('restricted runtime role safely bootstraps email and Google identity around forced RLS', async () => {
+test('restricted runtime role bootstraps compact active users around forced RLS', async () => {
   await withMigratedPostgres(async (databaseUrl) => {
-    const admin = new PrismaClient({
-      datasources: { db: { url: databaseUrl } },
-    });
+    const admin = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
     let app: PrismaClient | undefined;
 
     try {
@@ -97,10 +93,7 @@ test('restricted runtime role safely bootstraps email and Google identity around
           EXISTS (
             SELECT 1
             FROM aclexplode(
-              COALESCE(
-                procedure.proacl,
-                acldefault('f', procedure.proowner)
-              )
+              COALESCE(procedure.proacl, acldefault('f', procedure.proowner))
             ) AS permission
             WHERE permission.grantee = 0
               AND permission.privilege_type = 'EXECUTE'
@@ -127,7 +120,7 @@ test('restricted runtime role safely bootstraps email and Google identity around
           public_can_execute: false,
         },
         {
-          proname: 'autorfp_auth_identity_by_provider',
+          proname: 'autorfp_auth_identity_by_google_subject',
           security_definer: true,
           settings: ['search_path=pg_catalog'],
           app_can_execute: true,
@@ -137,15 +130,8 @@ test('restricted runtime role safely bootstraps email and Google identity around
       await expect(
         app.$queryRaw`
           SELECT *
-          FROM autorfp_private.autorfp_auth_credentials_by_email(${'x'.repeat(321)})
-        `,
-      ).resolves.toEqual([]);
-      await expect(
-        app.$queryRaw`
-          SELECT *
-          FROM autorfp_private.autorfp_auth_identity_by_provider(
-            ${'github'},
-            ${'provider-account'}
+          FROM autorfp_private.autorfp_auth_identity_by_google_subject(
+            ${'x'.repeat(513)}
           )
         `,
       ).resolves.toEqual([]);
@@ -162,15 +148,21 @@ test('restricted runtime role safely bootstraps email and Google identity around
       ).rejects.toMatchObject({ code: 'UNSAFE_DATABASE_ROLE' });
       await expect(
         createPrismaGoogleIdentityRepository(admin).findIdentity(
-          'google',
           'google-sub-restricted-role',
         ),
       ).rejects.toMatchObject({ code: 'UNSAFE_DATABASE_ROLE' });
 
-      const emailOwner = await createEmailWorkspace(
-        emailSignup,
-        emailRepository,
-      );
+      const emailOwner = await createEmailWorkspace(emailSignup, emailRepository);
+      const emailOwnerRow = await admin.user.findUniqueOrThrow({
+        where: { id: emailOwner.userId },
+      });
+      expect(emailOwnerRow).toMatchObject({
+        tenantId: emailOwner.tenantId,
+        email: 'asha@example.test',
+        role: 'OWNER',
+        accountState: 'ACTIVE',
+        isActive: true,
+      });
       await expect(
         authenticateCredentials(
           {
@@ -196,18 +188,41 @@ test('restricted runtime role safely bootstraps email and Google identity around
         }),
       );
 
-      await admin.user.update({
-        where: { id: emailOwner.userId },
-        data: { role: 'MEMBER' },
-      });
-      await expect(
-        loadCurrentUser(
-          { userId: emailOwner.userId, tenantId: emailOwner.tenantId },
-          currentUserStore,
-        ),
-      ).resolves.toEqual(
-        expect.objectContaining({ role: 'MEMBER', isActive: true }),
-      );
+      for (const accountState of ['INVITED', 'DEACTIVATED'] as const) {
+        const id = accountState.toLowerCase();
+        await admin.user.create({
+          data: {
+            id,
+            tenantId: emailOwner.tenantId,
+            name: id,
+            email: `${id}@example.test`,
+            passwordHash: emailOwnerRow.passwordHash,
+            accountState,
+            isActive: false,
+          },
+        });
+        await expect(
+          authenticateCredentials(
+            { email: `${id}@example.test`, password: emailSignup.password },
+            credentialsRepository,
+            {
+              clientIdentifier: `198.51.100.${accountState === 'INVITED' ? 1 : 2}`,
+              now: new Date('2026-08-28T01:00:00.000Z'),
+              rateLimit: (input) =>
+                consumeCredentialsRateLimit(
+                  input,
+                  (attempt) => consumeDigestRateLimit(attempt, app!),
+                ),
+            },
+          ),
+        ).rejects.toMatchObject({ code: 'INVALID_CREDENTIALS' });
+        await expect(
+          loadCurrentUser(
+            { userId: id, tenantId: emailOwner.tenantId },
+            currentUserStore,
+          ),
+        ).resolves.toBeNull();
+      }
 
       const account = {
         provider: 'google',
@@ -238,34 +253,33 @@ test('restricted runtime role safely bootstraps email and Google identity around
           email: 'neha@example.test',
         }),
       );
+      expect(
+        await admin.user.findUniqueOrThrow({ where: { id: googleOwner.userId } }),
+      ).toMatchObject({
+        googleSubject: 'google-sub-restricted-role',
+        role: 'OWNER',
+        accountState: 'ACTIVE',
+        isActive: true,
+      });
+
+      await expect(
+        createEmailWorkspace(
+          {
+            ...emailSignup,
+            restaurantName: 'Duplicate Kitchen',
+            email: 'asha@example.test',
+          },
+          emailRepository,
+        ),
+      ).rejects.toMatchObject({
+        code: 'EMAIL_ALREADY_REGISTERED',
+        status: 409,
+        message: 'A workspace already exists for that email. Use Sign in instead.',
+      });
 
       await expect(app.tenant.findMany()).resolves.toEqual([]);
       await expect(app.user.findMany()).resolves.toEqual([]);
-      await expect(app.externalIdentity.findMany()).resolves.toEqual([]);
-
-      expect(
-        await admin.user.findUnique({ where: { id: emailOwner.userId } }),
-      ).toEqual(
-        expect.objectContaining({
-          email: 'asha@example.test',
-          lastLoginAt: expect.any(Date),
-        }),
-      );
-      expect(
-        await admin.externalIdentity.findUnique({
-          where: {
-            provider_providerAccountId: {
-              provider: 'google',
-              providerAccountId: 'google-sub-restricted-role',
-            },
-          },
-        }),
-      ).toEqual(
-        expect.objectContaining({
-          tenantId: googleOwner.tenantId,
-          userId: googleOwner.userId,
-        }),
-      );
+      expect(await admin.tenant.count()).toBe(2);
     } finally {
       await app?.$disconnect();
       await admin.$disconnect();

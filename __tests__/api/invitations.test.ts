@@ -17,7 +17,7 @@ function repository(
   overrides: Partial<InvitationRepository> = {},
 ): InvitationRepository {
   return {
-    create: jest.fn().mockResolvedValue({ id: 'invite-a' }),
+    create: jest.fn().mockResolvedValue({ id: 'member-a' }),
     resolve: jest.fn().mockResolvedValue({ tenantId: 'tenant-a' }),
     consumeAcceptanceAttempt: jest.fn().mockResolvedValue({
       allowed: true,
@@ -47,7 +47,7 @@ describe('member invitations', () => {
     );
 
     expect(result).toEqual({
-      id: 'invite-a',
+      id: 'member-a',
       token: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
       email: 'team@example.com',
       role: 'MEMBER',
@@ -105,6 +105,9 @@ describe('member invitations', () => {
       email: 'team@example.com',
       name: 'Priya Shah',
       passwordHash: expect.stringMatching(/^\$argon2id\$/),
+    });
+    expect(repo.resolve).toHaveBeenCalledWith({
+      tokenDigest: digestOpaqueToken('member-invitation', token),
     });
   });
 

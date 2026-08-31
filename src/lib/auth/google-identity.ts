@@ -18,16 +18,10 @@ export type GoogleIdentityUser = {
 };
 
 export type GoogleIdentityRepository = {
-  findIdentity(
-    provider: string,
-    providerAccountId: string,
-  ): Promise<GoogleIdentityUser | null>;
+  findIdentity(googleSubject: string): Promise<GoogleIdentityUser | null>;
   findUserByEmail(email: string): Promise<GoogleIdentityUser | null>;
   createOwnerIdentity(
-    input: GoogleOnboarding & {
-      provider: string;
-      providerAccountId: string;
-    },
+    input: GoogleOnboarding & { googleSubject: string },
   ): Promise<GoogleIdentityUser>;
   touchLogin(tenantId: string, userId: string): Promise<void>;
 };
@@ -126,10 +120,7 @@ export async function resolveGoogleIdentity(
   }
 
   try {
-    const existingIdentity = await repository.findIdentity(
-      provider,
-      providerAccountId,
-    );
+    const existingIdentity = await repository.findIdentity(providerAccountId);
     if (existingIdentity) {
       const user = active(existingIdentity);
       await repository.touchLogin(user.tenantId, user.userId);
@@ -166,17 +157,13 @@ export async function resolveGoogleIdentity(
         await repository.createOwnerIdentity({
           ...input.onboarding,
           email,
-          provider,
-          providerAccountId,
+          googleSubject: providerAccountId,
         }),
       );
     } catch (error) {
       if (!uniqueConflict(error)) throw error;
 
-      const racedIdentity = await repository.findIdentity(
-        provider,
-        providerAccountId,
-      );
+      const racedIdentity = await repository.findIdentity(providerAccountId);
       if (racedIdentity) return active(racedIdentity);
 
       if (await repository.findUserByEmail(email)) {
@@ -232,13 +219,12 @@ export function createPrismaGoogleIdentityRepository(
   client: GoogleIdentityClient,
 ): GoogleIdentityRepository {
   return {
-    async findIdentity(provider, providerAccountId) {
+    async findIdentity(googleSubject) {
       await assertRuntimeDatabaseRole(client);
       const [identity] = await client.$queryRaw<GoogleIdentityRow[]>(Prisma.sql`
         SELECT *
-        FROM autorfp_private.autorfp_auth_identity_by_provider(
-          ${provider},
-          ${providerAccountId}
+        FROM autorfp_private.autorfp_auth_identity_by_google_subject(
+          ${googleSubject}
         )
       `);
       return identity ?? null;
@@ -277,15 +263,10 @@ export function createPrismaGoogleIdentityRepository(
               tenantId,
               name: input.ownerName,
               email: input.email,
+              googleSubject: input.googleSubject,
               role: 'OWNER',
-            },
-          });
-          await transaction.externalIdentity.create({
-            data: {
-              tenantId,
-              userId,
-              provider: input.provider,
-              providerAccountId: input.providerAccountId,
+              accountState: 'ACTIVE',
+              isActive: true,
             },
           });
           return identityUser({ ...user, tenant });

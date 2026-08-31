@@ -518,7 +518,7 @@ AS $function$
       AND account."invitationAcceptedAt" IS NULL
       AND account."invitationRevokedAt" IS NULL
       AND account."invitationExpiresAt" > pg_catalog.clock_timestamp()
-      AND account."isActive" = true
+      AND account."isActive" = false
       AND tenant."isActive" = true
     LIMIT 1
 $function$;

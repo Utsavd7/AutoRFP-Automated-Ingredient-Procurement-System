@@ -11,6 +11,7 @@ const user = {
   name: 'Asha Rao',
   email: 'asha@example.com',
   passwordHash: '',
+  accountState: 'ACTIVE' as const,
   isActive: true,
   tenant: { isActive: true },
 };
@@ -178,6 +179,31 @@ describe('credentials authentication', () => {
       expect(repo.recordSuccessfulLogin).not.toHaveBeenCalled();
     }
   });
+
+  it.each(['INVITED', 'DEACTIVATED'] as const)(
+    'does not sign in an %s account even with its correct password',
+    async (accountState) => {
+      const repo = repository({
+        findByEmail: jest.fn().mockResolvedValue({
+          ...user,
+          accountState,
+          // Account state must remain authoritative even if a legacy flag drifts.
+          isActive: true,
+        }),
+      });
+
+      await expect(
+        authenticate(
+          { email: user.email, password: 'valid password' },
+          repo,
+        ),
+      ).rejects.toMatchObject<Partial<CredentialsAuthError>>({
+        code: 'INVALID_CREDENTIALS',
+        message: 'Email or password is incorrect.',
+      });
+      expect(repo.recordSuccessfulLogin).not.toHaveBeenCalled();
+    },
+  );
 
   it('rejects oversized credentials before a database or Argon2 lookup', async () => {
     const repo = repository();

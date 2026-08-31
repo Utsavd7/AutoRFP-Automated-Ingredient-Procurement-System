@@ -1,4 +1,8 @@
-import { Prisma, type PrismaClient } from '@prisma/client';
+import {
+  Prisma,
+  type PrismaClient,
+  type UserAccountState,
+} from '@prisma/client';
 
 import { withTenant } from '@/lib/db/tenant-transaction';
 import { assertRuntimeDatabaseRole } from '@/lib/db/runtime-role';
@@ -15,6 +19,7 @@ type CredentialsUser = {
   name: string;
   email: string;
   passwordHash: string | null;
+  accountState: UserAccountState;
   isActive: boolean;
   tenant: { isActive: boolean };
 };
@@ -79,6 +84,7 @@ export async function authenticateCredentials(
     const user = await repository.findByEmail(email);
     const usableUser =
       user?.isActive &&
+      user.accountState === 'ACTIVE' &&
       user.tenant.isActive &&
       user.passwordHash?.startsWith('$argon2id$')
         ? user
@@ -127,6 +133,7 @@ export function createPrismaCredentialsRepository(
             name: user.name,
             email: user.email,
             passwordHash: user.passwordHash,
+            accountState: user.userIsActive ? 'ACTIVE' : 'DEACTIVATED',
             isActive: user.userIsActive,
             tenant: { isActive: user.tenantIsActive },
           }

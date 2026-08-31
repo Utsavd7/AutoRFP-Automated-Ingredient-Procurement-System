@@ -165,6 +165,8 @@ export function createPrismaEmailSignupRepository(
               email: input.email,
               passwordHash: input.passwordHash,
               role: 'OWNER',
+              accountState: 'ACTIVE',
+              isActive: true,
             },
           });
           return { tenantId, userId };

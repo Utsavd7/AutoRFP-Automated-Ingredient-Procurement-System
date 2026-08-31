@@ -1,6 +1,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -14,7 +15,7 @@ import { PrismaClient } from '@prisma/client';
 
 import { checkRuntimeDatabase } from '@/lib/health/readiness';
 
-import { withMigratedPostgres } from './setup/postgres';
+import { withMigratedPostgres, withPostgres } from './setup/postgres';
 
 const applicationTables =
   'AuditEvent Award Menu ProcurementRequest RateLimitBucket Supplier SupplierRequest Tenant User'.split(
@@ -76,6 +77,52 @@ function functionOwnerSecurity(prisma: PrismaClient) {
     JOIN pg_catalog.pg_roles AS owner ON owner.oid = procedure.proowner
     WHERE namespace.nspname = 'autorfp_private'
   `;
+}
+
+function attemptRestoreWithUrl(restoreDatabaseUrl: string) {
+  const directory = mkdtempSync(path.join(tmpdir(), 'quoteplate-restore-url-'));
+  const backup = path.join(directory, 'backup.dump.gz.age');
+  const identity = path.join(directory, 'identity.txt');
+  try {
+    writeFileSync(backup, 'encrypted');
+    writeFileSync(identity, 'identity');
+    for (const command of ['age', 'psql']) {
+      const executable = path.join(directory, command);
+      writeFileSync(executable, '#!/bin/sh\nexit 98\n');
+      chmodSync(executable, 0o755);
+    }
+    return spawnSync(
+      'sh',
+      [path.resolve(__dirname, '../../scripts/restore-verify.sh'), backup],
+      {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          PATH: `${directory}:${process.env.PATH}`,
+          RESTORE_DATABASE_URL: restoreDatabaseUrl,
+          AGE_IDENTITY_FILE: identity,
+        },
+      },
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+function deployMigrations(databaseUrl: string) {
+  const projectRoot = path.resolve(__dirname, '../..');
+  execFileSync(process.execPath, [
+    path.join(projectRoot, 'node_modules/prisma/build/index.js'),
+    'migrate', 'deploy', '--schema', path.join(projectRoot, 'prisma/schema.prisma'),
+  ], {
+    cwd: projectRoot,
+    env: {
+      ...process.env,
+      DATABASE_URL: databaseUrl,
+      DIRECT_URL: databaseUrl,
+      NO_COLOR: '1',
+    },
+  });
 }
 
 test('compact catalog keeps nine bounded tables and fixed digest grants', async () => {
@@ -375,42 +422,38 @@ test('restore verification mirrors the exact compact catalog contract', () => {
 });
 
 test('malformed restore URLs never expose embedded credentials', () => {
-  const directory = mkdtempSync(path.join(tmpdir(), 'quoteplate-restore-url-'));
-  const backup = path.join(directory, 'backup.dump.gz.age');
-  const identity = path.join(directory, 'identity.txt');
-  const age = path.join(directory, 'age');
   const secret = 'restore-password-must-not-leak';
-  try {
-    writeFileSync(backup, 'encrypted');
-    writeFileSync(identity, 'identity');
-    writeFileSync(age, '#!/bin/sh\nexit 99\n');
-    chmodSync(age, 0o755);
-    const result = spawnSync(
-      'sh',
-      [path.resolve(__dirname, '../../scripts/restore-verify.sh'), backup],
-      {
-        encoding: 'utf8',
-        env: {
-          ...process.env,
-          PATH: `${directory}:${process.env.PATH}`,
-          RESTORE_DATABASE_URL:
-            `postgresql://operator:${secret}@[invalid/quoteplate_restore_malformed`,
-          AGE_IDENTITY_FILE: identity,
-        },
-      },
-    );
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain(
-      'RESTORE_DATABASE_URL could not be converted to a private libpq service',
-    );
-    expect(`${result.stdout}${result.stderr}`).not.toContain(secret);
-  } finally {
-    rmSync(directory, { recursive: true, force: true });
-  }
+  const result = attemptRestoreWithUrl(
+    `postgresql://operator:${secret}@[invalid/quoteplate_restore_malformed`,
+  );
+  expect(result.status).not.toBe(0);
+  expect(result.stderr).toContain(
+    'RESTORE_DATABASE_URL could not be converted to a private libpq service',
+  );
+  expect(`${result.stdout}${result.stderr}`).not.toContain(secret);
+});
+
+test.each([
+  ['space', 'restore-trailing-space-secret ', 'restore-trailing-space-secret%20'],
+  ['tab', 'restore-trailing-tab-secret\t', 'restore-trailing-tab-secret%09'],
+])('percent-encoded trailing %s in credentials is rejected generically', (
+  _kind,
+  secret,
+  encodedSecret,
+) => {
+  const result = attemptRestoreWithUrl(
+    `postgresql://operator:${encodedSecret}@127.0.0.1/quoteplate_restore_whitespace`,
+  );
+  expect(result.status).not.toBe(0);
+  expect(result.stderr).toContain(
+    'RESTORE_DATABASE_URL could not be converted to a private libpq service',
+  );
+  expect(`${result.stdout}${result.stderr}`).not.toContain(secret.trim());
+  expect(`${result.stdout}${result.stderr}`).not.toContain(encodedSecret);
 });
 
 test('cross-owner archives restore with target-owner function readiness', async () => {
-  await withMigratedPostgres(async (databaseUrl) => {
+  await withPostgres(async ({ databaseUrl }) => {
     const admin = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
     const directory = mkdtempSync(path.join(tmpdir(), 'quoteplate-cross-owner-'));
     const restoreRole = 'archive_restore_owner';
@@ -430,18 +473,90 @@ test('cross-owner archives restore with target-owner function readiness', async 
     const identityFile = path.join(directory, 'identity.txt');
     const toolsDirectory = path.join(directory, 'bin');
     const cloneMarker = path.join(directory, 'cloned');
+    const appProbeMarker = path.join(directory, 'app-probed');
+    const backupProbeMarker = path.join(directory, 'backup-probed');
 
     try {
+      await admin.$executeRawUnsafe(`
+        CREATE ROLE ${restoreRole} LOGIN PASSWORD '${restorePassword}'
+          NOSUPERUSER NOCREATEDB CREATEROLE NOINHERIT NOREPLICATION BYPASSRLS
+      `);
+      const creatorUrl = new URL(nativeSourceUrl);
+      creatorUrl.username = restoreRole;
+      creatorUrl.password = restorePassword;
+      const creator = new PrismaClient({
+        datasources: { db: { url: creatorUrl.toString() } },
+      });
+      const [{ server_version_num: serverVersion }] = await admin.$queryRaw<
+        Array<{ server_version_num: number }>
+      >`SELECT current_setting('server_version_num')::INTEGER AS server_version_num`;
+      try {
+        await creator.$executeRawUnsafe(
+          'CREATE ROLE autorfp_app LOGIN NOSUPERUSER NOCREATEDB '
+          + 'NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS',
+        );
+        if (serverVersion >= 160000) {
+          await creator.$executeRawUnsafe(
+            'CREATE ROLE autorfp_backup LOGIN NOSUPERUSER NOCREATEDB '
+            + 'NOCREATEROLE NOINHERIT NOREPLICATION BYPASSRLS',
+          );
+        } else {
+          await admin.$executeRawUnsafe(
+            'CREATE ROLE autorfp_backup LOGIN NOSUPERUSER NOCREATEDB '
+            + 'NOCREATEROLE NOINHERIT NOREPLICATION BYPASSRLS',
+          );
+        }
+      } finally {
+        await creator.$disconnect();
+      }
+      if (serverVersion >= 160000) {
+        const initialMemberships = await admin.$queryRawUnsafe<Array<{
+          role_name: string;
+          has_admin: boolean;
+          has_inherit: boolean;
+          has_set: boolean;
+        }>>(`
+          SELECT target.rolname AS role_name,
+            bool_or(membership.admin_option) AS has_admin,
+            bool_or(membership.inherit_option) AS has_inherit,
+            bool_or(membership.set_option) AS has_set
+          FROM pg_catalog.pg_auth_members AS membership
+          JOIN pg_catalog.pg_roles AS target ON target.oid = membership.roleid
+          WHERE membership.member = '${restoreRole}'::regrole
+            AND target.rolname IN ('autorfp_app', 'autorfp_backup')
+          GROUP BY target.rolname
+          ORDER BY target.rolname
+        `);
+        expect(initialMemberships).toEqual([
+          {
+            role_name: 'autorfp_app', has_admin: true,
+            has_inherit: false, has_set: false,
+          },
+          {
+            role_name: 'autorfp_backup', has_admin: true,
+            has_inherit: false, has_set: false,
+          },
+        ]);
+      }
+      const [setBeforeRestore] = await admin.$queryRaw<
+        Array<{ can_set_both: boolean }>
+      >`
+        SELECT CASE WHEN current_setting('server_version_num')::INTEGER >= 160000
+          THEN pg_has_role(${restoreRole}, 'autorfp_app', 'SET')
+            AND pg_has_role(${restoreRole}, 'autorfp_backup', 'SET')
+          ELSE pg_has_role(${restoreRole}, 'autorfp_app', 'MEMBER')
+            AND pg_has_role(${restoreRole}, 'autorfp_backup', 'MEMBER')
+        END AS can_set_both
+      `;
+      expect(setBeforeRestore).toEqual({ can_set_both: false });
+
+      deployMigrations(databaseUrl);
       const [sourceSecurity] = await functionOwnerSecurity(admin);
       expect(sourceSecurity.attestation).toBe(
         `quoteplate:rls-owner-attestation:direct:${sourceSecurity.owner}`,
       );
       expect(sourceSecurity.owner).not.toBe(restoreRole);
 
-      await admin.$executeRawUnsafe(`
-        CREATE ROLE ${restoreRole} LOGIN PASSWORD '${restorePassword}'
-          NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION BYPASSRLS
-      `);
       execFileSync('createdb', [
         `--maintenance-db=${nativeSourceUrl}`,
         `--owner=${restoreRole}`,
@@ -454,8 +569,6 @@ test('cross-owner archives restore with target-owner function readiness', async 
         '--set=ON_ERROR_STOP=1',
         `--command=ALTER SCHEMA public OWNER TO ${restoreRole}`,
       ]);
-      await admin.$executeRawUnsafe(`GRANT autorfp_app TO ${restoreRole}`);
-      await admin.$executeRawUnsafe(`GRANT autorfp_backup TO ${restoreRole}`);
       execFileSync('pg_dump', [
         '--format=custom',
         `--file=${dumpFile}`,
@@ -494,7 +607,11 @@ cp "$input_file" "$output_file"
 set -eu
 "$REAL_PSQL" "$@"
 case "$*" in
+  *"SET LOCAL ROLE autorfp_app"*)
+    : > "$CROSS_OWNER_APP_PROBE_MARKER"
+    ;;
   *"SET LOCAL ROLE autorfp_backup"*)
+    : > "$CROSS_OWNER_BACKUP_PROBE_MARKER"
     if [ ! -f "$CROSS_OWNER_CLONE_MARKER" ]; then
       "$REAL_CREATEDB" \
         --maintenance-db="$CROSS_OWNER_ADMIN_URL" \
@@ -523,12 +640,16 @@ esac
             CROSS_OWNER_TARGET_DATABASE: targetDatabase,
             CROSS_OWNER_READINESS_DATABASE: readinessDatabase,
             CROSS_OWNER_CLONE_MARKER: cloneMarker,
+            CROSS_OWNER_APP_PROBE_MARKER: appProbeMarker,
+            CROSS_OWNER_BACKUP_PROBE_MARKER: backupProbeMarker,
           },
         },
       );
       expect(
         `status=${restored.status}\n${restored.stdout}${restored.stderr}`,
       ).toMatch(/^status=0\n/);
+      expect(existsSync(appProbeMarker)).toBe(true);
+      expect(existsSync(backupProbeMarker)).toBe(true);
 
       const readiness = new PrismaClient({
         datasources: { db: { url: readinessUrl.toString() } },
@@ -552,6 +673,52 @@ esac
           FROM pg_catalog.pg_default_acl AS defaults
         `;
         expect(defaultAclOwner).toEqual({ target_owner_only: true });
+        const [setAfterRestore] = await readiness.$queryRaw<
+          Array<{ can_set_both: boolean }>
+        >`
+          SELECT CASE WHEN current_setting('server_version_num')::INTEGER >= 160000
+            THEN pg_has_role(${restoreRole}, 'autorfp_app', 'SET')
+              AND pg_has_role(${restoreRole}, 'autorfp_backup', 'SET')
+            ELSE pg_has_role(${restoreRole}, 'autorfp_app', 'MEMBER')
+              AND pg_has_role(${restoreRole}, 'autorfp_backup', 'MEMBER')
+          END AS can_set_both
+        `;
+        expect(setAfterRestore).toEqual({ can_set_both: true });
+        if (serverVersion >= 160000) {
+          const grants = await readiness.$queryRawUnsafe<Array<{
+            role_name: string;
+            has_admin: boolean;
+            has_inherit: boolean;
+            has_self_admin: boolean;
+            has_set: boolean;
+          }>>(`
+            SELECT target.rolname AS role_name,
+              bool_or(membership.admin_option) AS has_admin,
+              bool_or(membership.inherit_option) AS has_inherit,
+              bool_or(membership.set_option) AS has_set,
+              bool_or(
+                membership.admin_option
+                AND membership.grantor = '${restoreRole}'::regrole
+              ) AS has_self_admin
+            FROM pg_catalog.pg_auth_members AS membership
+            JOIN pg_catalog.pg_roles AS target
+              ON target.oid = membership.roleid
+            WHERE membership.member = '${restoreRole}'::regrole
+              AND target.rolname IN ('autorfp_app', 'autorfp_backup')
+            GROUP BY target.rolname
+            ORDER BY target.rolname
+          `);
+          expect(grants).toEqual([
+            {
+              role_name: 'autorfp_app', has_admin: true, has_inherit: false,
+              has_self_admin: false, has_set: true,
+            },
+            {
+              role_name: 'autorfp_backup', has_admin: true, has_inherit: false,
+              has_self_admin: false, has_set: true,
+            },
+          ]);
+        }
         await expect(checkReadinessAsApp(readiness)).resolves.toBeUndefined();
       } finally {
         await readiness.$disconnect();

@@ -55,7 +55,7 @@ for (const [key, value] of url.searchParams) {
 }
 const lines = ["[quoteplate_restore]"];
 for (const [key, value] of parameters) {
-  if (/[\r\n\0]/.test(value)) process.exit(2);
+  if (/[\r\n\0]/.test(value) || /^[ \t]|[ \t]$/.test(value)) process.exit(2);
   lines.push(key + "=" + value);
 }
 writeFileSync(process.env.RESTORE_SERVICE_FILE, lines.join("\n") + "\n", { mode: 0o600 });
@@ -293,6 +293,55 @@ BEGIN
   END IF;
 END
 \$autorfp_backup_role\$;"
+
+  psql \
+    --set=ON_ERROR_STOP=1 \
+    --quiet \
+    --command="DO \$autorfp_probe_role_memberships\$
+DECLARE
+  current_is_super BOOLEAN;
+  server_version_num INTEGER := current_setting('server_version_num')::INTEGER;
+  target_role TEXT;
+BEGIN
+  SELECT rolsuper INTO current_is_super
+  FROM pg_catalog.pg_roles
+  WHERE rolname = CURRENT_USER;
+
+  FOREACH target_role IN ARRAY ARRAY['autorfp_app', 'autorfp_backup']
+  LOOP
+    IF server_version_num >= 160000 THEN
+      IF NOT pg_catalog.pg_has_role(CURRENT_USER, target_role, 'SET') THEN
+        EXECUTE pg_catalog.format(
+          'GRANT %I TO %I WITH INHERIT FALSE, SET TRUE, ADMIN FALSE',
+          target_role,
+          CURRENT_USER
+        );
+      END IF;
+      IF NOT pg_catalog.pg_has_role(CURRENT_USER, target_role, 'SET') THEN
+        RAISE EXCEPTION 'restore connection lacks SET access';
+      END IF;
+    ELSIF NOT current_is_super THEN
+      IF NOT pg_catalog.pg_has_role(CURRENT_USER, target_role, 'MEMBER') THEN
+        IF (
+          SELECT rolinherit FROM pg_catalog.pg_roles
+          WHERE rolname = CURRENT_USER
+        ) THEN
+          RAISE EXCEPTION 'non-inheriting membership is unavailable';
+        END IF;
+        EXECUTE pg_catalog.format(
+          'GRANT %I TO %I',
+          target_role,
+          CURRENT_USER
+        );
+      END IF;
+      IF NOT pg_catalog.pg_has_role(CURRENT_USER, target_role, 'MEMBER') THEN
+        RAISE EXCEPTION 'restore connection lacks role membership';
+      END IF;
+    END IF;
+  END LOOP;
+END
+\$autorfp_probe_role_memberships\$;" \
+    || fail 'restore connection must be able to SET ROLE to autorfp_app and autorfp_backup'
 }
 
 ensure_restore_owner

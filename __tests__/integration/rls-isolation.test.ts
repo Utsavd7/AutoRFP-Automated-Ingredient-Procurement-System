@@ -10,17 +10,9 @@ import { withMigratedPostgres } from './setup/postgres';
 const tenantTables = [
   'AuditEvent',
   'Award',
-  'AwardLine',
-  'ExternalIdentity',
-  'Ingredient',
-  'Invitation',
   'Menu',
   'ProcurementRequest',
-  'Recipe',
-  'RequestItem',
   'Supplier',
-  'SupplierQuote',
-  'SupplierQuoteItem',
   'SupplierRequest',
   'Tenant',
   'User',
@@ -76,6 +68,7 @@ async function seedTenant(admin: PrismaClient, id: string, suffix: string) {
         create: {
           id: `supplier-${suffix.toLowerCase()}`,
           businessName: `${suffix} Produce`,
+          capabilities: {},
         },
       },
     },
@@ -233,6 +226,7 @@ test('forced RLS isolates every tenant transaction under the restricted runtime 
                 id: 'cross-tenant-insert',
                 tenantId: 'tenant-b',
                 businessName: 'Forbidden Produce',
+                capabilities: {},
               },
             }),
           app,
@@ -265,6 +259,7 @@ test('forced RLS isolates every tenant transaction under the restricted runtime 
               id: 'supplier-a-temporary',
               tenantId: 'tenant-a',
               businessName: 'Temporary Produce',
+              capabilities: {},
             },
           });
           await tx.supplier.update({

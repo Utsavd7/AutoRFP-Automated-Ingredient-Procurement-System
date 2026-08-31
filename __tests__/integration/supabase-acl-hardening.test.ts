@@ -6,24 +6,17 @@ const supabaseRoles = [
   'anon',
   'authenticated',
   'service_role',
+  'dashboard_user',
   'authenticator',
 ] as const;
 
 const appTables = [
   'AuditEvent',
   'Award',
-  'AwardLine',
-  'ExternalIdentity',
-  'Ingredient',
-  'Invitation',
   'Menu',
   'ProcurementRequest',
   'RateLimitBucket',
-  'Recipe',
-  'RequestItem',
   'Supplier',
-  'SupplierQuote',
-  'SupplierQuoteItem',
   'SupplierRequest',
   'Tenant',
   'User',
@@ -53,8 +46,7 @@ test('security migrations remove simulated Supabase grants and default ACLs', as
         );
       }
 
-      await harness.migrateTo('20260827000300_forced_rls');
-      await harness.migrateTo('20260827000400_member_invitations');
+      await harness.migrateTo('20260831000100_compact_nine_table_schema');
 
       const tablePrivileges = await admin.$queryRaw<
         Array<{
@@ -154,9 +146,32 @@ test('security migrations remove simulated Supabase grants and default ACLs', as
         WHERE namespace.nspname = 'autorfp_private'
         ORDER BY role_name, procedure.proname
       `;
-      expect(functionPrivileges).toHaveLength(supabaseRoles.length * 5);
+      expect(functionPrivileges).toHaveLength(supabaseRoles.length * 7);
       expect(functionPrivileges.every(({ can_execute }) => !can_execute)).toBe(
         true,
+      );
+
+      const appFunctionPrivileges = await admin.$queryRaw<
+        Array<{ proname: string; can_execute: boolean }>
+      >`
+        SELECT procedure.proname,
+               has_function_privilege('autorfp_app', procedure.oid, 'EXECUTE')
+                 AS can_execute
+        FROM pg_proc AS procedure
+        JOIN pg_namespace AS namespace ON namespace.oid = procedure.pronamespace
+        WHERE namespace.nspname = 'autorfp_private'
+        ORDER BY procedure.proname
+      `;
+      expect(appFunctionPrivileges).toEqual(
+        [
+          'autorfp_auth_credentials_by_email',
+          'autorfp_auth_identity_by_email',
+          'autorfp_auth_identity_by_google_subject',
+          'autorfp_invitation_tenant_by_digest',
+          'autorfp_supplier_application_grant_by_digest',
+          'autorfp_supplier_grant_by_digest',
+          'autorfp_user_email_exists',
+        ].map((proname) => ({ proname, can_execute: true })),
       );
 
       const publicAclLeaks = await admin.$queryRaw<Array<{ leak_count: bigint }>>`
@@ -171,6 +186,38 @@ test('security migrations remove simulated Supabase grants and default ACLs', as
           AND permission.grantee = 0
       `;
       expect(publicAclLeaks[0].leak_count).toBe(BigInt(0));
+
+      const [publicSchemaAndFunctionLeaks] = await admin.$queryRaw<
+        Array<{ schema_create: bigint; private_execute: bigint }>
+      >`
+        SELECT
+          (
+            SELECT COUNT(*)::BIGINT
+            FROM pg_namespace AS namespace
+            CROSS JOIN LATERAL aclexplode(
+              COALESCE(namespace.nspacl, acldefault('n', namespace.nspowner))
+            ) AS permission
+            WHERE namespace.nspname IN ('public', 'autorfp_private')
+              AND permission.grantee = 0
+              AND permission.privilege_type = 'CREATE'
+          ) AS schema_create,
+          (
+            SELECT COUNT(*)::BIGINT
+            FROM pg_proc AS procedure
+            JOIN pg_namespace AS namespace
+              ON namespace.oid = procedure.pronamespace
+            CROSS JOIN LATERAL aclexplode(
+              COALESCE(procedure.proacl, acldefault('f', procedure.proowner))
+            ) AS permission
+            WHERE namespace.nspname = 'autorfp_private'
+              AND permission.grantee = 0
+              AND permission.privilege_type = 'EXECUTE'
+          ) AS private_execute
+      `;
+      expect(publicSchemaAndFunctionLeaks).toEqual({
+        schema_create: BigInt(0),
+        private_execute: BigInt(0),
+      });
 
       const defaultAclLeaks = await admin.$queryRaw<Array<{ leak_count: bigint }>>`
         SELECT count(*)::BIGINT AS leak_count

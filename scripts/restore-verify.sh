@@ -141,17 +141,27 @@ verification_result=$(PGDATABASE="$RESTORE_DATABASE_URL" psql \
   --no-align \
   --command="SELECT CASE WHEN
   to_regclass('public.\"_prisma_migrations\"') IS NOT NULL
-  AND (
+  AND ARRAY(
+    SELECT tablename::TEXT
+    FROM pg_catalog.pg_tables
+    WHERE schemaname = 'public'
+      AND tablename <> '_prisma_migrations'
+    ORDER BY tablename
+  ) = ARRAY[
+    'AuditEvent', 'Award', 'Menu', 'ProcurementRequest', 'RateLimitBucket',
+    'Supplier', 'SupplierRequest', 'Tenant', 'User'
+  ]::TEXT[]
+  AND NOT (
     SELECT COUNT(*) = 17
     FROM pg_catalog.pg_tables
     WHERE schemaname = 'public'
-      AND tablename = ANY (ARRAY[
-        'Tenant', 'User', 'ExternalIdentity', 'Invitation', 'Menu',
-        'Recipe', 'Ingredient', 'Supplier', 'ProcurementRequest',
-        'RequestItem', 'SupplierRequest', 'SupplierQuote',
-        'SupplierQuoteItem', 'Award', 'AwardLine', 'AuditEvent',
-        'RateLimitBucket'
-      ])
+  )
+  AND EXISTS (
+    SELECT 1
+    FROM public.\"_prisma_migrations\"
+    WHERE migration_name = '20260831000100_compact_nine_table_schema'
+      AND finished_at IS NOT NULL
+      AND rolled_back_at IS NULL
   )
   AND EXISTS (
     SELECT 1
@@ -160,8 +170,52 @@ verification_result=$(PGDATABASE="$RESTORE_DATABASE_URL" psql \
       AND finished_at IS NOT NULL
       AND rolled_back_at IS NULL
   )
+  AND (
+    SELECT COUNT(*) = 10
+    FROM pg_catalog.pg_constraint AS constraint_catalog
+    JOIN pg_catalog.pg_class AS table_catalog
+      ON table_catalog.oid = constraint_catalog.conrelid
+    JOIN pg_catalog.pg_namespace AS namespace
+      ON namespace.oid = table_catalog.relnamespace
+    WHERE namespace.nspname = 'public'
+      AND constraint_catalog.contype = 'c'
+      AND constraint_catalog.conname = ANY(ARRAY[
+        'AuditEvent_metadata_size_check',
+        'Award_allocationLines_size_check',
+        'Award_deliverySnapshot_size_check',
+        'Award_supplierSnapshots_size_check',
+        'Menu_document_size_check',
+        'ProcurementRequest_deliveryDetails_size_check',
+        'ProcurementRequest_items_size_check',
+        'ProcurementRequest_sourcing_size_check',
+        'Supplier_capabilities_size_check',
+        'SupplierRequest_quoteRevisions_size_check'
+      ])
+  )
+  AND (
+    SELECT COUNT(*) = 7
+      AND bool_and(procedure.prosecdef)
+      AND bool_and(procedure.proconfig = ARRAY['search_path=pg_catalog']::TEXT[])
+    FROM pg_catalog.pg_proc AS procedure
+    JOIN pg_catalog.pg_namespace AS namespace
+      ON namespace.oid = procedure.pronamespace
+    WHERE namespace.nspname = 'autorfp_private'
+  )
+  AND (
+    SELECT COUNT(*) = 8
+      AND bool_and(table_catalog.relrowsecurity)
+      AND bool_and(table_catalog.relforcerowsecurity)
+    FROM pg_catalog.pg_class AS table_catalog
+    JOIN pg_catalog.pg_namespace AS namespace
+      ON namespace.oid = table_catalog.relnamespace
+    WHERE namespace.nspname = 'public'
+      AND table_catalog.relname = ANY(ARRAY[
+        'AuditEvent', 'Award', 'Menu', 'ProcurementRequest',
+        'Supplier', 'SupplierRequest', 'Tenant', 'User'
+      ])
+  )
 THEN 1 ELSE 0 END;")
-[ "$verification_result" = '1' ] || fail 'restored database did not contain the required launch tables'
+[ "$verification_result" = '1' ] || fail 'restored database did not contain the compact schema contract'
 
 runtime_verification_result=$(PGDATABASE="$RESTORE_DATABASE_URL" psql \
   --set=ON_ERROR_STOP=1 \
@@ -172,7 +226,8 @@ runtime_verification_result=$(PGDATABASE="$RESTORE_DATABASE_URL" psql \
 SET LOCAL ROLE autorfp_app;
 SET LOCAL app.tenant_id = 'quoteplate-restore-verification-no-tenant';
 SELECT CASE WHEN
-  has_schema_privilege(current_user, 'public', 'USAGE')
+  to_regclass('public.\"Tenant\"') IS NOT NULL
+  AND has_schema_privilege(current_user, 'public', 'USAGE')
   AND has_schema_privilege(current_user, 'autorfp_private', 'USAGE')
   AND has_table_privilege(current_user, 'public.\"Tenant\"', 'SELECT')
   AND has_function_privilege(
@@ -190,5 +245,41 @@ THEN 1 ELSE 0 END;
 COMMIT;")
 [ "$runtime_verification_result" = '1' ] \
   || fail 'restored runtime grants or tenant row security were unusable'
+
+backup_verification_result=$(PGDATABASE="$RESTORE_DATABASE_URL" psql \
+  --set=ON_ERROR_STOP=1 \
+  --tuples-only \
+  --no-align \
+  --quiet \
+  --command="BEGIN;
+SET LOCAL ROLE autorfp_backup;
+SELECT CASE WHEN
+  to_regclass('public.\"Tenant\"') IS NOT NULL
+  AND has_schema_privilege(current_user, 'public', 'USAGE')
+  AND (
+    SELECT bool_and(has_table_privilege(current_user, relation.oid, 'SELECT'))
+      AND NOT bool_or(has_table_privilege(
+        current_user,
+        relation.oid,
+        'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'
+      ))
+    FROM pg_catalog.pg_class AS relation
+    JOIN pg_catalog.pg_namespace AS namespace
+      ON namespace.oid = relation.relnamespace
+    WHERE namespace.nspname = 'public'
+      AND relation.relkind IN ('r', 'p')
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_proc AS procedure
+    JOIN pg_catalog.pg_namespace AS namespace
+      ON namespace.oid = procedure.pronamespace
+    WHERE namespace.nspname = 'autorfp_private'
+      AND has_function_privilege(current_user, procedure.oid, 'EXECUTE')
+  )
+THEN 1 ELSE 0 END;
+COMMIT;")
+[ "$backup_verification_result" = '1' ] \
+  || fail 'restored backup grants were not read-only'
 
 printf 'Disposable restore verified and scheduled for immediate cleanup.\n'

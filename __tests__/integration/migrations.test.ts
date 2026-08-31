@@ -5,7 +5,19 @@ import { PrismaClient } from '@prisma/client';
 
 import { withMigratedPostgres, withPostgres } from './setup/postgres';
 
-const expectedTables = [
+const compactTables = [
+  'AuditEvent',
+  'Award',
+  'Menu',
+  'ProcurementRequest',
+  'RateLimitBucket',
+  'Supplier',
+  'SupplierRequest',
+  'Tenant',
+  'User',
+];
+
+const legacyTables = [
   'AuditEvent',
   'Award',
   'AwardLine',
@@ -24,6 +36,8 @@ const expectedTables = [
   'Tenant',
   'User',
 ];
+
+const compactMigration = '20260831000100_compact_nine_table_schema' as const;
 
 test('deploys every migration to an empty PostgreSQL database without schema drift', async () => {
   await withMigratedPostgres(async (databaseUrl) => {
@@ -51,7 +65,7 @@ test('deploys every migration to an empty PostgreSQL database without schema dri
       `;
 
       expect(tables.map(({ tablename }) => tablename).sort()).toEqual([
-        ...expectedTables,
+        ...compactTables,
         '_prisma_migrations',
       ].sort());
       expect(migrations).toEqual([
@@ -115,6 +129,11 @@ test('deploys every migration to an empty PostgreSQL database without schema dri
           finished_at: expect.any(Date),
           rolled_back_at: null,
         }),
+        expect.objectContaining({
+          migration_name: compactMigration,
+          finished_at: expect.any(Date),
+          rolled_back_at: null,
+        }),
       ]);
     } finally {
       await prisma.$disconnect();
@@ -150,7 +169,7 @@ test('early owner guards accept inherited bypass capability without provider use
       await admin.$executeRawUnsafe(
         'CREATE SCHEMA autorfp_private AUTHORIZATION neon_launch_owner',
       );
-      for (const table of expectedTables) {
+      for (const table of legacyTables) {
         await admin.$executeRawUnsafe(
           `ALTER TABLE public."${table}" OWNER TO neon_launch_owner`,
         );
@@ -197,7 +216,7 @@ test('forced-RLS migration runs as a managed Postgres owner without true superus
       await admin.$executeRawUnsafe(
         `GRANT CREATE ON DATABASE "${database_name.replaceAll('"', '""')}" TO managed_migration_owner`,
       );
-      for (const table of expectedTables) {
+      for (const table of legacyTables) {
         await admin.$executeRawUnsafe(
           `ALTER TABLE public."${table}" OWNER TO managed_migration_owner`,
         );
@@ -278,6 +297,9 @@ test('all migrations run as a managed Postgres database owner without true super
         '20260827000800_award_snapshot_capacity',
         '20260827000900_minimal_launch_columns',
         '20260827001000_backup_role',
+        '20260827001100_minimal_rate_limit_bucket',
+        '20260827001200_current_user_credentials',
+        compactMigration,
       ] as const) {
         await applyMigrationAs(migration, managedOwnerUrl.toString());
       }
@@ -325,6 +347,60 @@ test('all migrations run as a managed Postgres database owner without true super
       ]);
     } finally {
       await admin.$disconnect();
+    }
+  });
+});
+
+test('compact replacement refuses populated databases before destructive work', async () => {
+  const sql = readFileSync(
+    path.resolve(
+      __dirname,
+      `../../prisma/migrations/${compactMigration}/migration.sql`,
+    ),
+    'utf8',
+  );
+  const guardStart = sql.indexOf('DO $compact_schema_guard$');
+  const firstDestructive = sql.search(/\n(?:REVOKE|DROP|ALTER)\s/);
+
+  expect(sql).toMatch(/^BEGIN;\s+DO \$compact_schema_guard\$/);
+  expect(guardStart).toBeGreaterThan('BEGIN;'.length);
+  expect(firstDestructive).toBeGreaterThan(guardStart);
+
+  await withPostgres(async ({ databaseUrl, migrateTo, applyMigrationAs }) => {
+    await migrateTo('20260827001200_current_user_credentials');
+    const prisma = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
+
+    try {
+      await prisma.tenant.create({
+        data: {
+          id: 'guarded-tenant',
+          name: 'Guarded Kitchen',
+          addressLine: '1 Safe Road',
+          city: 'Mumbai',
+          state: 'Maharashtra',
+          pin: '400001',
+          phone: '9000000001',
+        },
+      });
+
+      await expect(
+        applyMigrationAs(compactMigration, databaseUrl),
+      ).rejects.toThrow(
+        'Compact schema migration requires an empty pre-launch database',
+      );
+
+      const tables = await prisma.$queryRaw<Array<{ tablename: string }>>`
+        SELECT tablename
+        FROM pg_catalog.pg_tables
+        WHERE schemaname = 'public'
+        ORDER BY tablename
+      `;
+      expect(tables.map(({ tablename }) => tablename)).toEqual(legacyTables);
+      await expect(
+        prisma.tenant.findUnique({ where: { id: 'guarded-tenant' } }),
+      ).resolves.toEqual(expect.objectContaining({ name: 'Guarded Kitchen' }));
+    } finally {
+      await prisma.$disconnect();
     }
   });
 });

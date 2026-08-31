@@ -266,7 +266,7 @@ export async function checkRuntimeDatabase(client: ReadinessDatabaseClient) {
           )
         )
         AND NOT (
-          SELECT table_catalog.relrowsecurity
+          SELECT table_catalog.relrowsecurity OR table_catalog.relforcerowsecurity
           FROM pg_catalog.pg_class AS table_catalog
           WHERE table_catalog.oid = to_regclass('public."RateLimitBucket"')
         )

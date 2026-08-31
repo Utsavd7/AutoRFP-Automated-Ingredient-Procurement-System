@@ -333,7 +333,7 @@ test('restore verification mirrors the exact compact catalog contract', () => {
   expect(script).toContain('=NULLIFcurrent_setting');
 });
 
-test('readiness rejects tenant-policy and security-definer owner drift', async () => {
+test('readiness rejects compact catalog security drift', async () => {
   await withMigratedPostgres(async (databaseUrl) => {
     const prisma = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
     const awardPolicy = `CREATE POLICY tenant_isolation ON public."Award"
@@ -369,6 +369,29 @@ test('readiness rejects tenant-policy and security-definer owner drift', async (
         await prisma.$executeRawUnsafe(awardPolicy);
         await expect(checkReadinessAsApp(prisma)).resolves.toBeUndefined();
       }
+
+      await prisma.$executeRawUnsafe(
+        'ALTER TABLE public."RateLimitBucket" DISABLE ROW LEVEL SECURITY',
+      );
+      await prisma.$executeRawUnsafe(
+        'ALTER TABLE public."RateLimitBucket" FORCE ROW LEVEL SECURITY',
+      );
+      const rateLimitRls = await prisma.$queryRaw<
+        Array<{ enabled: boolean; forced: boolean }>
+      >`
+        SELECT table_catalog.relrowsecurity AS enabled,
+               table_catalog.relforcerowsecurity AS forced
+        FROM pg_catalog.pg_class AS table_catalog
+        WHERE table_catalog.oid = to_regclass('public."RateLimitBucket"')
+      `;
+      expect(rateLimitRls).toEqual([{ enabled: false, forced: true }]);
+      await expect(checkReadinessAsApp(prisma)).rejects.toThrow(
+        'required database migration',
+      );
+      await prisma.$executeRawUnsafe(
+        'ALTER TABLE public."RateLimitBucket" NO FORCE ROW LEVEL SECURITY',
+      );
+      await expect(checkReadinessAsApp(prisma)).resolves.toBeUndefined();
 
       await prisma.$executeRawUnsafe(
         'ALTER TABLE public."Menu" DROP CONSTRAINT "Menu_document_size_check"',

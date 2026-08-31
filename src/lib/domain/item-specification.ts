@@ -161,9 +161,27 @@ function readUint32LittleEndian(value: string, offset: number): number {
   );
 }
 
+function isVp8KeyFrame(value: string, offset: number, length: number): boolean {
+  return (
+    length >= 10 &&
+    (value.charCodeAt(offset) & 1) === 0 &&
+    value.charCodeAt(offset + 3) === 0x9d &&
+    value.charCodeAt(offset + 4) === 0x01 &&
+    value.charCodeAt(offset + 5) === 0x2a
+  );
+}
+
+function isVp8lHeader(value: string, offset: number, length: number): boolean {
+  return (
+    length >= 5 &&
+    value.charCodeAt(offset) === 0x2f &&
+    (value.charCodeAt(offset + 4) & 0xe0) === 0
+  );
+}
+
 function isWebp(value: string): boolean {
   if (
-    value.length < 21 ||
+    value.length < 12 ||
     value.slice(0, 4) !== 'RIFF' ||
     value.slice(8, 12) !== 'WEBP' ||
     readUint32LittleEndian(value, 4) !== value.length - 8
@@ -171,13 +189,29 @@ function isWebp(value: string): boolean {
     return false;
   }
 
-  const chunkTag = value.slice(12, 16);
-  const chunkLength = readUint32LittleEndian(value, 16);
-  return (
-    ['VP8 ', 'VP8L', 'VP8X'].includes(chunkTag) &&
-    chunkLength > 0 &&
-    chunkLength <= value.length - 20
-  );
+  let offset = 12;
+  let hasImageData = false;
+  while (offset < value.length) {
+    if (offset + 8 > value.length) return false;
+    const tag = value.slice(offset, offset + 4);
+    const chunkLength = readUint32LittleEndian(value, offset + 4);
+    const dataOffset = offset + 8;
+    const dataEnd = dataOffset + chunkLength;
+    const paddedEnd = dataEnd + (chunkLength % 2);
+    if (dataEnd > value.length || paddedEnd > value.length) return false;
+
+    if (tag === 'VP8X' && chunkLength !== 10) return false;
+    if (tag === 'VP8 ') {
+      if (!isVp8KeyFrame(value, dataOffset, chunkLength)) return false;
+      hasImageData = true;
+    } else if (tag === 'VP8L') {
+      if (!isVp8lHeader(value, dataOffset, chunkLength)) return false;
+      hasImageData = true;
+    }
+    offset = paddedEnd;
+  }
+
+  return hasImageData;
 }
 
 function validateThumbnail(input: Record<string, unknown>): void {

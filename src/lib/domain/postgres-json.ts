@@ -2,8 +2,8 @@ const INVALID_JSON_MESSAGE = 'Value must be valid JSON for PostgreSQL jsonb seri
 
 type JsonWorkItem =
   | { kind: 'value'; value: unknown }
-  | { kind: 'text'; value: string }
-  | { kind: 'leave'; value: object };
+  | { kind: 'array'; value: unknown[]; index: number }
+  | { kind: 'object'; value: object; keys: string[]; index: number };
 
 function invalidJson(): never {
   throw new TypeError(INVALID_JSON_MESSAGE);
@@ -26,7 +26,6 @@ function hasUnpairedSurrogate(value: string): boolean {
 function postgresNumberText(value: number): string {
   const json = JSON.stringify(value);
   if (json === undefined || !Number.isFinite(value)) invalidJson();
-
   const scientific = /^(-?)(\d)(?:\.(\d+))?e([+-]?\d+)$/i.exec(json);
   if (!scientific) return json;
 
@@ -45,80 +44,107 @@ function serializeString(value: string): string {
   return JSON.stringify(value);
 }
 
-function postgresJsonText(root: unknown): string {
+function countPostgresJsonBytes(
+  root: unknown,
+  maximumBytes?: number,
+  label = 'JSON document',
+): number {
   const active = new WeakSet<object>();
-  const output: string[] = [];
+  const encoder = new TextEncoder();
   const work: JsonWorkItem[] = [{ kind: 'value', value: root }];
+  let bytes = 0;
+
+  const addBytes = (amount: number) => {
+    bytes += amount;
+    if (maximumBytes !== undefined && bytes > maximumBytes) {
+      throw new RangeError(`${label} exceeds its ${maximumBytes}-byte JSON limit.`);
+    }
+  };
+  const addText = (text: string) => addBytes(encoder.encode(text).byteLength);
 
   while (work.length > 0) {
     const item = work.pop()!;
-    if (item.kind === 'text') {
-      output.push(item.value);
+    if (item.kind === 'array') {
+      if (item.index === item.value.length) {
+        const keys = Reflect.ownKeys(item.value);
+        if (
+          keys.length !== item.value.length + 1 ||
+          keys.some(
+            (key) =>
+              key !== 'length' &&
+              (typeof key !== 'string' ||
+                !/^(0|[1-9]\d*)$/.test(key) ||
+                Number(key) >= item.value.length),
+          )
+        ) {
+          invalidJson();
+        }
+        addBytes(1);
+        active.delete(item.value);
+        continue;
+      }
+
+      if (item.index > 0) addBytes(2);
+      const descriptor = Object.getOwnPropertyDescriptor(item.value, String(item.index));
+      if (!descriptor?.enumerable || !('value' in descriptor)) invalidJson();
+      work.push(
+        { ...item, index: item.index + 1 },
+        { kind: 'value', value: descriptor.value },
+      );
       continue;
     }
-    if (item.kind === 'leave') {
-      active.delete(item.value);
+
+    if (item.kind === 'object') {
+      if (item.index === item.keys.length) {
+        addBytes(1);
+        active.delete(item.value);
+        continue;
+      }
+
+      if (item.index > 0) addBytes(2);
+      const key = item.keys[item.index];
+      addText(serializeString(key));
+      addBytes(2);
+      const descriptor = Object.getOwnPropertyDescriptor(item.value, key);
+      if (!descriptor?.enumerable || !('value' in descriptor)) invalidJson();
+      work.push(
+        { ...item, index: item.index + 1 },
+        { kind: 'value', value: descriptor.value },
+      );
       continue;
     }
 
     const value = item.value;
     if (value === null) {
-      output.push('null');
+      addBytes(4);
     } else if (typeof value === 'boolean') {
-      output.push(value ? 'true' : 'false');
+      addBytes(value ? 4 : 5);
     } else if (typeof value === 'number') {
-      output.push(postgresNumberText(value));
+      addBytes(postgresNumberText(value).length);
     } else if (typeof value === 'string') {
-      output.push(serializeString(value));
+      addText(serializeString(value));
     } else if (Array.isArray(value)) {
       if (Object.getPrototypeOf(value) !== Array.prototype || active.has(value)) invalidJson();
-      const keys = Reflect.ownKeys(value);
-      if (
-        keys.length !== value.length + 1 ||
-        keys.some(
-          (key) =>
-            key !== 'length' &&
-            (typeof key !== 'string' || !/^(0|[1-9]\d*)$/.test(key) || Number(key) >= value.length),
-        )
-      ) {
-        invalidJson();
-      }
-
       active.add(value);
-      output.push('[');
-      work.push({ kind: 'leave', value }, { kind: 'text', value: ']' });
-      for (let index = value.length - 1; index >= 0; index -= 1) {
-        const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
-        if (!descriptor?.enumerable || !('value' in descriptor)) invalidJson();
-        work.push({ kind: 'value', value: descriptor.value });
-        if (index > 0) work.push({ kind: 'text', value: ', ' });
-      }
+      addBytes(1);
+      work.push({ kind: 'array', value, index: 0 });
     } else if (typeof value === 'object') {
       if (Object.getPrototypeOf(value) !== Object.prototype || active.has(value)) invalidJson();
       const keys = Reflect.ownKeys(value);
       if (keys.some((key) => typeof key !== 'string')) invalidJson();
-
       active.add(value);
-      output.push('{');
-      work.push({ kind: 'leave', value }, { kind: 'text', value: '}' });
-      for (let index = keys.length - 1; index >= 0; index -= 1) {
-        const key = keys[index] as string;
-        const descriptor = Object.getOwnPropertyDescriptor(value, key);
-        if (!descriptor?.enumerable || !('value' in descriptor)) invalidJson();
-        work.push({ kind: 'value', value: descriptor.value });
-        work.push({ kind: 'text', value: `${serializeString(key)}: ` });
-        if (index > 0) work.push({ kind: 'text', value: ', ' });
-      }
+      addBytes(1);
+      work.push({ kind: 'object', value, keys: keys as string[], index: 0 });
     } else {
       invalidJson();
     }
   }
 
-  return output.join('');
+  return bytes;
 }
 
 export function postgresJsonByteLength(value: unknown): number {
-  return new TextEncoder().encode(postgresJsonText(value)).byteLength;
+  return countPostgresJsonBytes(value);
 }
 
 export function assertBoundedJson(
@@ -129,7 +155,5 @@ export function assertBoundedJson(
   if (!Number.isSafeInteger(maximumBytes) || maximumBytes <= 0) {
     throw new RangeError('JSON byte limit must be a positive integer.');
   }
-  if (postgresJsonByteLength(value) > maximumBytes) {
-    throw new RangeError(`${label} exceeds its ${maximumBytes}-byte JSON limit.`);
-  }
+  countPostgresJsonBytes(value, maximumBytes, label);
 }

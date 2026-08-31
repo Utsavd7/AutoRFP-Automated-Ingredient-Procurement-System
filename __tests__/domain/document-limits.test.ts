@@ -93,4 +93,13 @@ describe('bounded PostgreSQL JSON documents', () => {
       expect(() => assertBoundedJson({}, limit)).toThrow(/positive integer/i);
     }
   });
+
+  test('stops bounded validation as soon as a large shallow array exceeds its cap', () => {
+    const value = Array(100_000).fill(0);
+    Object.defineProperty(value, 1, { enumerable: true, get: () => 0 });
+
+    expect(() => assertBoundedJson(value, 1, 'Large array')).toThrow(
+      'Large array exceeds its 1-byte JSON limit',
+    );
+  });
 });

@@ -25,6 +25,19 @@ function webpBytes(size: number): Buffer {
   const bytes = Buffer.alloc(size);
   Buffer.from(TINY_WEBP_BASE64, 'base64').copy(bytes);
   bytes.writeUInt32LE(size - 8, 4);
+  bytes.writeUInt32LE(size - 20, 16);
+  return bytes;
+}
+
+function webpChunk(tag: string, data: Buffer, includePadding = true): Buffer {
+  const padding = includePadding && data.length % 2 === 1 ? 1 : 0;
+  const bytes = Buffer.alloc(20 + data.length + padding);
+  bytes.write('RIFF', 0, 'ascii');
+  bytes.writeUInt32LE(bytes.length - 8, 4);
+  bytes.write('WEBP', 8, 'ascii');
+  bytes.write(tag, 12, 'ascii');
+  bytes.writeUInt32LE(data.length, 16);
+  data.copy(bytes, 20);
   return bytes;
 }
 
@@ -183,6 +196,9 @@ describe('procurement categories and item specification v1', () => {
       webpBytes(42),
       webpBytes(42),
       webpBytes(42),
+      webpChunk('VP8X', Buffer.alloc(10)),
+      webpChunk('VP8X', Buffer.alloc(9)),
+      webpChunk('VP8L', Buffer.from([0x2f, 0, 0, 0, 0]), false),
     ];
     malformedWebps[2].writeUInt32LE(1, 4);
     malformedWebps[3].write('JUNK', 12, 'ascii');

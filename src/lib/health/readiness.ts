@@ -125,6 +125,9 @@ export async function checkRuntimeDatabase(client: ReadinessDatabaseClient) {
               procedure.proconfig = ARRAY['search_path=pg_catalog']::TEXT[]
             )
             AND pg_catalog.bool_and(
+              owner_role.rolsuper OR owner_role.rolbypassrls
+            )
+            AND pg_catalog.bool_and(
               pg_catalog.has_function_privilege(
                 'autorfp_app', procedure.oid, 'EXECUTE'
               )
@@ -132,6 +135,8 @@ export async function checkRuntimeDatabase(client: ReadinessDatabaseClient) {
           FROM pg_catalog.pg_proc AS procedure
           JOIN pg_catalog.pg_namespace AS namespace
             ON namespace.oid = procedure.pronamespace
+          JOIN pg_catalog.pg_roles AS owner_role
+            ON owner_role.oid = procedure.proowner
           WHERE namespace.nspname = 'autorfp_private'
         )
         AND NOT EXISTS (
@@ -164,11 +169,79 @@ export async function checkRuntimeDatabase(client: ReadinessDatabaseClient) {
         )
         AND (
           SELECT COUNT(*) = 8
-          FROM pg_catalog.pg_policies
-          WHERE schemaname = 'public'
-            AND policyname = 'tenant_isolation'
-            AND roles = ARRAY['autorfp_app']::NAME[]
-            AND cmd = 'ALL'
+          FROM pg_catalog.pg_policy AS policy_catalog
+          JOIN pg_catalog.pg_class AS table_catalog
+            ON table_catalog.oid = policy_catalog.polrelid
+          JOIN pg_catalog.pg_namespace AS namespace
+            ON namespace.oid = table_catalog.relnamespace
+          WHERE namespace.nspname = 'public'
+            AND policy_catalog.polname = 'tenant_isolation'
+        )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM (
+            VALUES
+              ('Tenant', 'id'),
+              ('User', 'tenantId'),
+              ('Menu', 'tenantId'),
+              ('Supplier', 'tenantId'),
+              ('ProcurementRequest', 'tenantId'),
+              ('SupplierRequest', 'tenantId'),
+              ('Award', 'tenantId'),
+              ('AuditEvent', 'tenantId')
+          ) AS expected(table_name, tenant_column)
+          WHERE NOT EXISTS (
+            SELECT 1
+            FROM pg_catalog.pg_policy AS policy_catalog
+            JOIN pg_catalog.pg_class AS table_catalog
+              ON table_catalog.oid = policy_catalog.polrelid
+            JOIN pg_catalog.pg_namespace AS namespace
+              ON namespace.oid = table_catalog.relnamespace
+            JOIN pg_catalog.pg_roles AS policy_role
+              ON policy_role.rolname = 'autorfp_app'
+            WHERE namespace.nspname = 'public'
+              AND table_catalog.relname = expected.table_name
+              AND policy_catalog.polname = 'tenant_isolation'
+              AND policy_catalog.polcmd = '*'
+              AND policy_catalog.polpermissive
+              AND policy_catalog.polroles = ARRAY[policy_role.oid]::OID[]
+              AND pg_catalog.replace(
+                pg_catalog.replace(
+                  pg_catalog.regexp_replace(
+                    pg_catalog.pg_get_expr(
+                      policy_catalog.polqual,
+                      policy_catalog.polrelid
+                    ),
+                    '[[:space:]()"]',
+                    '',
+                    'g'
+                  ),
+                  'pg_catalog.',
+                  ''
+                ),
+                '::text',
+                ''
+              ) = expected.tenant_column
+                  || '=current_setting''app.tenant_id'',true'
+              AND pg_catalog.replace(
+                pg_catalog.replace(
+                  pg_catalog.regexp_replace(
+                    pg_catalog.pg_get_expr(
+                      policy_catalog.polwithcheck,
+                      policy_catalog.polrelid
+                    ),
+                    '[[:space:]()"]',
+                    '',
+                    'g'
+                  ),
+                  'pg_catalog.',
+                  ''
+                ),
+                '::text',
+                ''
+              ) = expected.tenant_column
+                  || '=current_setting''app.tenant_id'',true'
+          )
         )
         AND NOT (
           SELECT table_catalog.relrowsecurity

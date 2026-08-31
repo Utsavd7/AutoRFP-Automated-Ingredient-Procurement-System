@@ -1,7 +1,18 @@
 BEGIN;
 
 DO $compact_schema_guard$
+DECLARE
+    migration_role_bypasses_row_security BOOLEAN;
 BEGIN
+    SELECT role.rolsuper OR role.rolbypassrls
+    INTO migration_role_bypasses_row_security
+    FROM pg_catalog.pg_roles AS role
+    WHERE role.rolname = CURRENT_USER;
+
+    IF COALESCE(migration_role_bypasses_row_security, false) = false THEN
+        RAISE EXCEPTION 'Compact schema migration requires a row-security-bypassing owner';
+    END IF;
+
     IF EXISTS (
         SELECT 1
         FROM (
@@ -185,6 +196,11 @@ ALTER TABLE public."Award"
     ADD COLUMN "allocationLines" JSONB NOT NULL,
     ADD CONSTRAINT "Award_allocationLines_size_check"
         CHECK (pg_catalog.octet_length("allocationLines"::TEXT) <= 2097152);
+
+ALTER TABLE public."AuditEvent"
+    DROP CONSTRAINT "AuditEvent_metadata_size_check",
+    ADD CONSTRAINT "AuditEvent_metadata_size_check"
+        CHECK (pg_catalog.octet_length("metadata"::TEXT) <= 16384);
 
 DROP INDEX public."ProcurementRequest_tenantId_status_quoteDeadline_idx";
 
@@ -569,9 +585,9 @@ ALTER TABLE public."Tenant" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."Tenant" FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON public."Tenant"
     FOR ALL TO autorfp_app
-    USING ("id" = NULLIF(pg_catalog.current_setting('app.tenant_id', true), ''))
+    USING ("id" = pg_catalog.current_setting('app.tenant_id', true))
     WITH CHECK (
-        "id" = NULLIF(pg_catalog.current_setting('app.tenant_id', true), '')
+        "id" = pg_catalog.current_setting('app.tenant_id', true)
     );
 
 DROP POLICY tenant_isolation ON public."User";
@@ -580,14 +596,10 @@ ALTER TABLE public."User" FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON public."User"
     FOR ALL TO autorfp_app
     USING (
-        "tenantId" = NULLIF(
-            pg_catalog.current_setting('app.tenant_id', true), ''
-        )
+        "tenantId" = pg_catalog.current_setting('app.tenant_id', true)
     )
     WITH CHECK (
-        "tenantId" = NULLIF(
-            pg_catalog.current_setting('app.tenant_id', true), ''
-        )
+        "tenantId" = pg_catalog.current_setting('app.tenant_id', true)
     );
 
 DROP POLICY tenant_isolation ON public."Menu";
@@ -596,14 +608,10 @@ ALTER TABLE public."Menu" FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON public."Menu"
     FOR ALL TO autorfp_app
     USING (
-        "tenantId" = NULLIF(
-            pg_catalog.current_setting('app.tenant_id', true), ''
-        )
+        "tenantId" = pg_catalog.current_setting('app.tenant_id', true)
     )
     WITH CHECK (
-        "tenantId" = NULLIF(
-            pg_catalog.current_setting('app.tenant_id', true), ''
-        )
+        "tenantId" = pg_catalog.current_setting('app.tenant_id', true)
     );
 
 DROP POLICY tenant_isolation ON public."Supplier";
@@ -612,14 +620,10 @@ ALTER TABLE public."Supplier" FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON public."Supplier"
     FOR ALL TO autorfp_app
     USING (
-        "tenantId" = NULLIF(
-            pg_catalog.current_setting('app.tenant_id', true), ''
-        )
+        "tenantId" = pg_catalog.current_setting('app.tenant_id', true)
     )
     WITH CHECK (
-        "tenantId" = NULLIF(
-            pg_catalog.current_setting('app.tenant_id', true), ''
-        )
+        "tenantId" = pg_catalog.current_setting('app.tenant_id', true)
     );
 
 DROP POLICY tenant_isolation ON public."ProcurementRequest";
@@ -628,14 +632,10 @@ ALTER TABLE public."ProcurementRequest" FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON public."ProcurementRequest"
     FOR ALL TO autorfp_app
     USING (
-        "tenantId" = NULLIF(
-            pg_catalog.current_setting('app.tenant_id', true), ''
-        )
+        "tenantId" = pg_catalog.current_setting('app.tenant_id', true)
     )
     WITH CHECK (
-        "tenantId" = NULLIF(
-            pg_catalog.current_setting('app.tenant_id', true), ''
-        )
+        "tenantId" = pg_catalog.current_setting('app.tenant_id', true)
     );
 
 DROP POLICY tenant_isolation ON public."SupplierRequest";
@@ -644,14 +644,10 @@ ALTER TABLE public."SupplierRequest" FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON public."SupplierRequest"
     FOR ALL TO autorfp_app
     USING (
-        "tenantId" = NULLIF(
-            pg_catalog.current_setting('app.tenant_id', true), ''
-        )
+        "tenantId" = pg_catalog.current_setting('app.tenant_id', true)
     )
     WITH CHECK (
-        "tenantId" = NULLIF(
-            pg_catalog.current_setting('app.tenant_id', true), ''
-        )
+        "tenantId" = pg_catalog.current_setting('app.tenant_id', true)
     );
 
 DROP POLICY tenant_isolation ON public."Award";
@@ -660,14 +656,10 @@ ALTER TABLE public."Award" FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON public."Award"
     FOR ALL TO autorfp_app
     USING (
-        "tenantId" = NULLIF(
-            pg_catalog.current_setting('app.tenant_id', true), ''
-        )
+        "tenantId" = pg_catalog.current_setting('app.tenant_id', true)
     )
     WITH CHECK (
-        "tenantId" = NULLIF(
-            pg_catalog.current_setting('app.tenant_id', true), ''
-        )
+        "tenantId" = pg_catalog.current_setting('app.tenant_id', true)
     );
 
 DROP POLICY tenant_isolation ON public."AuditEvent";
@@ -676,14 +668,10 @@ ALTER TABLE public."AuditEvent" FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON public."AuditEvent"
     FOR ALL TO autorfp_app
     USING (
-        "tenantId" = NULLIF(
-            pg_catalog.current_setting('app.tenant_id', true), ''
-        )
+        "tenantId" = pg_catalog.current_setting('app.tenant_id', true)
     )
     WITH CHECK (
-        "tenantId" = NULLIF(
-            pg_catalog.current_setting('app.tenant_id', true), ''
-        )
+        "tenantId" = pg_catalog.current_setting('app.tenant_id', true)
     );
 
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public

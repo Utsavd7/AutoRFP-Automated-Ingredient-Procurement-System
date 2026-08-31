@@ -23,6 +23,14 @@ const requiredFunctions =
   'autorfp_auth_credentials_by_email autorfp_auth_identity_by_email autorfp_auth_identity_by_google_subject autorfp_invitation_tenant_by_digest autorfp_supplier_application_grant_by_digest autorfp_supplier_grant_by_digest autorfp_user_email_exists'.split(
   ' ',
   );
+
+async function checkReadinessAsApp(prisma: PrismaClient) {
+  return prisma.$transaction(async (transaction) => {
+    await transaction.$executeRawUnsafe('SET LOCAL ROLE autorfp_app');
+    await checkRuntimeDatabase(transaction);
+  });
+}
+
 test('compact catalog keeps nine bounded tables and fixed digest grants', async () => {
   await withMigratedPostgres(async (databaseUrl) => {
     const prisma = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
@@ -191,21 +199,26 @@ test('compact catalog keeps nine bounded tables and fixed digest grants', async 
       )) expect(indexPaths).toContain(`${table}|tenantId,id`);
 
       const functions = await prisma.$queryRaw<
-        Array<{ name: string; security_definer: boolean; settings: string[] }>
+        Array<{
+          name: string;
+          security_definer: boolean;
+          settings: string[];
+          owner_bypasses_rls: boolean;
+        }>
       >`
         SELECT procedure.proname AS name, procedure.prosecdef AS security_definer,
-               procedure.proconfig::TEXT[] AS settings
+               procedure.proconfig::TEXT[] AS settings,
+               (owner.rolsuper OR owner.rolbypassrls) AS owner_bypasses_rls
         FROM pg_catalog.pg_proc AS procedure
         JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = procedure.pronamespace
+        JOIN pg_catalog.pg_roles AS owner ON owner.oid = procedure.proowner
         WHERE namespace.nspname = 'autorfp_private' ORDER BY procedure.proname
       `;
       expect(functions).toEqual(requiredFunctions.map((name) => ({
         name, security_definer: true, settings: ['search_path=pg_catalog'],
+        owner_bypasses_rls: true,
       })));
-      await prisma.$transaction(async (transaction) => {
-        await transaction.$executeRawUnsafe('SET LOCAL ROLE autorfp_app');
-        await checkRuntimeDatabase(transaction);
-      });
+      await checkReadinessAsApp(prisma);
 
       for (const statement of [
         `INSERT INTO "Tenant" ("id", "name", "addressLine", "city", "state", "pin", "phone", "updatedAt") VALUES ('compact-tenant-a', 'A', 'A', 'A', 'A', '000000', 'A', CURRENT_TIMESTAMP), ('compact-tenant-b', 'B', 'B', 'B', 'B', '000000', 'B', CURRENT_TIMESTAMP)`,
@@ -242,6 +255,71 @@ test('compact catalog keeps nine bounded tables and fixed digest grants', async 
         );
         await expect(applicationGrant()).resolves.toEqual([]);
       }
+    } finally {
+      await prisma.$disconnect();
+    }
+  });
+});
+
+test('readiness rejects tenant-policy and security-definer owner drift', async () => {
+  await withMigratedPostgres(async (databaseUrl) => {
+    const prisma = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
+    const awardPolicy = `CREATE POLICY tenant_isolation ON public."Award"
+      FOR ALL TO autorfp_app
+      USING ("tenantId" = pg_catalog.current_setting('app.tenant_id', true))
+      WITH CHECK ("tenantId" = pg_catalog.current_setting('app.tenant_id', true))`;
+    const policyDrifts: Array<[table: string | null, expression: string]> = [
+      [null, ''],
+      ['Award', 'TRUE'],
+      ['RateLimitBucket', 'TRUE'],
+    ];
+
+    try {
+      for (const [table, expression] of policyDrifts) {
+        await prisma.$executeRawUnsafe(
+          'DROP POLICY tenant_isolation ON public."Award"',
+        );
+        if (table) {
+          await prisma.$executeRawUnsafe(
+            `CREATE POLICY tenant_isolation ON public."${table}" `
+            + `FOR ALL TO autorfp_app USING (${expression}) `
+            + `WITH CHECK (${expression})`,
+          );
+        }
+        await expect(checkReadinessAsApp(prisma)).rejects.toThrow(
+          'required database migration',
+        );
+        if (table) {
+          await prisma.$executeRawUnsafe(
+            `DROP POLICY tenant_isolation ON public."${table}"`,
+          );
+        }
+        await prisma.$executeRawUnsafe(awardPolicy);
+        await expect(checkReadinessAsApp(prisma)).resolves.toBeUndefined();
+      }
+
+      await prisma.$executeRawUnsafe(`DO $unsafe_function_owners$
+        DECLARE target RECORD;
+        BEGIN
+          CREATE ROLE inherited_function_bypass NOLOGIN BYPASSRLS;
+          CREATE ROLE unsafe_function_owner NOLOGIN INHERIT NOBYPASSRLS;
+          GRANT inherited_function_bypass TO unsafe_function_owner;
+          FOR target IN
+            SELECT procedure.oid::REGPROCEDURE AS identity
+            FROM pg_catalog.pg_proc AS procedure
+            JOIN pg_catalog.pg_namespace AS namespace
+              ON namespace.oid = procedure.pronamespace
+            WHERE namespace.nspname = 'autorfp_private'
+          LOOP
+            EXECUTE pg_catalog.format(
+              'ALTER FUNCTION %s OWNER TO unsafe_function_owner', target.identity
+            );
+          END LOOP;
+        END
+      $unsafe_function_owners$`);
+      await expect(checkReadinessAsApp(prisma)).rejects.toThrow(
+        'required database migration',
+      );
     } finally {
       await prisma.$disconnect();
     }

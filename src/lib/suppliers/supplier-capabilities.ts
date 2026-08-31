@@ -125,6 +125,24 @@ export function emptySupplierCapabilities(): SupplierCapabilitiesV1 {
   return { v: 1, categories: [], items: [] };
 }
 
+export function supplierCapabilitiesForCategories(
+  categories: readonly ProcurementCategory[],
+  tier: SupplierCategoryTier,
+): SupplierCapabilitiesV1 {
+  const ordered = [...categories].sort(
+    (left, right) => categoryOrder.get(left)! - categoryOrder.get(right)!,
+  );
+  return validateSupplierCapabilities({
+    v: 1,
+    categories: ordered.map((category, index) => ({
+      category,
+      tier,
+      rank: index + 1,
+    })),
+    items: [],
+  });
+}
+
 export function validateSupplierCapabilities(input: unknown): SupplierCapabilitiesV1 {
   const root = plainRecord(input, 'Supplier capabilities', ROOT_KEYS);
   if (root.v !== 1) fail('Supplier capabilities version must be 1.');

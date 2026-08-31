@@ -577,7 +577,7 @@ export function decodeRequestCursor(value: string): RequestCursor {
 
 type RequestActor = { tenantId: string; userId: string };
 type RequestClient = Pick<PrismaClient, '$queryRaw' | '$transaction'> & TenantTransactionHost;
-type IssuedToken = { raw: string; digest: string };
+export type IssuedToken = { raw: string; digest: string };
 
 export type RequestServiceOptions = {
   now?: () => Date;
@@ -588,7 +588,7 @@ export type RequestServiceOptions = {
 };
 
 const MAX_LINK_LIFETIME_MS = 14 * 24 * 60 * 60 * 1_000;
-const EMPTY_QUOTE_REVISIONS = { v: 1, revisions: [] } as const;
+export const EMPTY_QUOTE_REVISIONS = { v: 1, revisions: [] } as const;
 
 const safeSupplierRequestSelect = {
   id: true,
@@ -707,7 +707,7 @@ async function requireActiveActor(
   if (!user) throw new AuthorizationError();
 }
 
-function issueToken(purpose: TokenPurpose, factory: () => IssuedToken) {
+export function issueToken(purpose: TokenPurpose, factory: () => IssuedToken) {
   const token = factory();
   if (
     !token ||
@@ -721,11 +721,11 @@ function issueToken(purpose: TokenPurpose, factory: () => IssuedToken) {
   return token;
 }
 
-function linkExpiry(now: Date, quoteDeadline: Date) {
+export function linkExpiry(now: Date, quoteDeadline: Date) {
   return new Date(Math.min(quoteDeadline.getTime(), now.getTime() + MAX_LINK_LIFETIME_MS));
 }
 
-function shareBaseUrl(configured: string | undefined) {
+export function shareBaseUrl(configured: string | undefined) {
   const candidate = configured ?? process.env.NEXTAUTH_URL ??
     (process.env.NODE_ENV === 'production' ? undefined : 'http://localhost:3000');
   if (!candidate) {
@@ -750,7 +750,11 @@ function shareBaseUrl(configured: string | undefined) {
   return url.origin;
 }
 
-function fragmentShareUrl(baseUrl: string, pathname: string, rawToken: string) {
+export function fragmentShareUrl(
+  baseUrl: string,
+  pathname: string,
+  rawToken: string,
+) {
   const url = new URL(pathname, `${baseUrl}/`);
   url.hash = new URLSearchParams({ token: rawToken }).toString();
   return url.toString();

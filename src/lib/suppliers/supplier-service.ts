@@ -16,6 +16,20 @@ import {
 } from '@/lib/db/tenant-transaction';
 import { prisma } from '@/lib/prisma';
 import {
+  EMPTY_QUOTE_REVISIONS,
+  fragmentShareUrl,
+  issueToken,
+  linkExpiry,
+  shareBaseUrl,
+  type IssuedToken,
+} from '@/lib/procurement/request-service';
+import {
+  requestAcceptsVerifiedApplications,
+  RequestDocumentValidationError,
+  validateRequestDocuments,
+} from '@/lib/procurement/request-document';
+import { createOpaqueToken } from '@/lib/security/tokens';
+import {
   type ParsedSupplierCsvRow,
   SUPPLIER_CSV_LIMITS,
   SupplierCsvError,
@@ -40,6 +54,11 @@ type SupplierClient = Pick<PrismaClient, '$queryRaw' | '$transaction'> &
   TenantTransactionHost;
 
 type SupplierActor = { tenantId: string; userId: string };
+
+type SupplierVerificationOptions = {
+  tokenFactory?: () => IssuedToken;
+  shareBaseUrl?: string;
+};
 
 type SupplierFilters = { active: boolean | null; search: string | null };
 
@@ -872,6 +891,59 @@ type LockedSupplierApplication = {
   verifiedByUserId: string | null;
 };
 
+type LockedApplicationRequest = {
+  id: string;
+  status: string;
+  items: Prisma.JsonValue;
+  sourcing: Prisma.JsonValue;
+  quoteDeadline: Date;
+  applicationTokenDigest: string | null;
+  applicationExpiresAt: Date | null;
+  applicationRevokedAt: Date | null;
+  now: Date;
+};
+
+const approvedSupplierRequestSelect = {
+  id: true,
+  tenantId: true,
+  requestId: true,
+  supplierId: true,
+  expiresAt: true,
+  revokedAt: true,
+  viewedAt: true,
+  quoteRevision: true,
+  createdAt: true,
+  updatedAt: true,
+} satisfies Prisma.SupplierRequestSelect;
+
+function requestAcceptsApproval(request: LockedApplicationRequest) {
+  if (
+    request.status !== 'OPEN' ||
+    !/^[a-f0-9]{64}$/.test(request.applicationTokenDigest ?? '') ||
+    request.applicationRevokedAt !== null ||
+    !(request.applicationExpiresAt instanceof Date) ||
+    !(request.quoteDeadline instanceof Date) ||
+    !(request.now instanceof Date) ||
+    Number.isNaN(request.applicationExpiresAt.getTime()) ||
+    Number.isNaN(request.quoteDeadline.getTime()) ||
+    Number.isNaN(request.now.getTime()) ||
+    request.applicationExpiresAt.getTime() <= request.now.getTime() ||
+    request.quoteDeadline.getTime() <= request.now.getTime()
+  ) {
+    return false;
+  }
+  try {
+    const documents = validateRequestDocuments(request.items, request.sourcing);
+    return requestAcceptsVerifiedApplications(
+      documents.items,
+      documents.sourcing,
+    );
+  } catch (error) {
+    if (error instanceof RequestDocumentValidationError) return false;
+    throw error;
+  }
+}
+
 export async function decideSupplierVerification(
   input: {
     actor: SupplierActor;
@@ -879,6 +951,7 @@ export async function decideSupplierVerification(
     decision: unknown;
   },
   client: SupplierClient = prisma,
+  options: SupplierVerificationOptions = {},
 ) {
   const actor = validateActor(input.actor);
   const supplierId = validateSupplierId(input.supplierId);
@@ -888,6 +961,27 @@ export async function decideSupplierVerification(
     async (transaction) => {
       const current = await requireActiveActor(transaction, actor);
       if ((current.role as UserRole) !== 'OWNER') throw new AuthorizationError();
+
+      const candidate = await transaction.supplier.findFirst({
+        where: { tenantId: actor.tenantId, id: supplierId },
+        select: { applicationRequestId: true },
+      });
+      if (!candidate) throw new SupplierNotFoundError();
+      if (!candidate.applicationRequestId) {
+        throw new SupplierVerificationConflictError();
+      }
+
+      const [request] = await transaction.$queryRaw<LockedApplicationRequest[]>`
+        SELECT "id", "status", "items", "sourcing", "quoteDeadline",
+               "applicationTokenDigest", "applicationExpiresAt",
+               "applicationRevokedAt", pg_catalog.clock_timestamp() AS "now"
+        FROM "ProcurementRequest"
+        WHERE "tenantId" = ${actor.tenantId}
+          AND "id" = ${candidate.applicationRequestId}
+        FOR UPDATE
+      `;
+      if (!request) throw new SupplierVerificationConflictError();
+
       const [supplier] = await transaction.$queryRaw<LockedSupplierApplication[]>`
         SELECT "id", "relationshipType", "verificationStatus",
                "applicationRequestId", "isActive", "verifiedAt", "verifiedByUserId"
@@ -902,9 +996,29 @@ export async function decideSupplierVerification(
         supplier.verificationStatus !== 'PENDING' ||
         supplier.isActive ||
         !supplier.applicationRequestId ||
+        supplier.applicationRequestId !== candidate.applicationRequestId ||
         supplier.verifiedAt !== null ||
         supplier.verifiedByUserId !== null
       ) {
+        throw new SupplierVerificationConflictError();
+      }
+
+      const existingSupplierRequests = await transaction.$queryRaw<
+        Array<{ id: string }>
+      >`
+        SELECT "id"
+        FROM "SupplierRequest"
+        WHERE "tenantId" = ${actor.tenantId}
+          AND "requestId" = ${request.id}
+          AND "supplierId" = ${supplierId}
+        ORDER BY "id"
+        FOR UPDATE
+      `;
+      if (existingSupplierRequests.length > 0) {
+        throw new SupplierVerificationConflictError();
+      }
+
+      if (decision === 'APPROVE' && !requestAcceptsApproval(request)) {
         throw new SupplierVerificationConflictError();
       }
 
@@ -913,7 +1027,7 @@ export async function decideSupplierVerification(
             relationshipType: 'SELECTED_NEW',
             verificationStatus: 'VERIFIED',
             applicationRequestId: supplier.applicationRequestId,
-            verifiedAt: await databaseClock(transaction),
+            verifiedAt: request.now,
             verifiedByUserId: actor.userId,
             isActive: true,
           }
@@ -925,12 +1039,46 @@ export async function decideSupplierVerification(
             verifiedByUserId: null,
             isActive: false,
           });
+
+      let supplierRequest: Prisma.SupplierRequestGetPayload<{
+        select: typeof approvedSupplierRequestSelect;
+      }> | undefined;
+      let link: { url: string; expiresAt: string } | undefined;
+      if (decision === 'APPROVE') {
+        const token = issueToken(
+          'supplier-request',
+          options.tokenFactory ?? (() => createOpaqueToken('supplier-request')),
+        );
+        const expiresAt = linkExpiry(request.now, request.quoteDeadline);
+        const baseUrl = shareBaseUrl(options.shareBaseUrl);
+        supplierRequest = await transaction.supplierRequest.create({
+          data: {
+            tenantId: actor.tenantId,
+            requestId: request.id,
+            supplierId,
+            tokenDigest: token.digest,
+            expiresAt,
+            revokedAt: null,
+            viewedAt: null,
+            quoteRevision: 0,
+            quoteRevisions:
+              EMPTY_QUOTE_REVISIONS as unknown as Prisma.InputJsonValue,
+          },
+          select: approvedSupplierRequestSelect,
+        });
+        link = {
+          url: fragmentShareUrl(baseUrl, '/quote', token.raw),
+          expiresAt: expiresAt.toISOString(),
+        };
+      }
+
       const updated = await transaction.supplier.updateMany({
         where: {
           tenantId: actor.tenantId,
           id: supplierId,
           relationshipType: 'APPLICANT',
           verificationStatus: 'PENDING',
+          isActive: false,
         },
         data: lifecycle,
       });
@@ -946,7 +1094,18 @@ export async function decideSupplierVerification(
         action: decision === 'APPROVE' ? 'supplier.verified' : 'supplier.rejected',
         entityId: supplierId,
       });
-      return validatedDetail(reviewed);
+      if (supplierRequest) {
+        await writeAuditEvent(transaction, {
+          tenantId: actor.tenantId,
+          actorUserId: actor.userId,
+          action: 'supplier-link.created',
+          entityId: supplierRequest.id,
+        });
+      }
+      return {
+        supplier: validatedDetail(reviewed),
+        ...(supplierRequest && link ? { supplierRequest, link } : {}),
+      };
     },
     client,
   );

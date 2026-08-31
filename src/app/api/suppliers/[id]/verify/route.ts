@@ -37,12 +37,12 @@ export async function POST(request: Request, context: SupplierRouteContext) {
   const { id } = await context.params;
   try {
     const decision = validateSupplierVerificationDecision(body);
-    const supplier = await decideSupplierVerification({
+    const result = await decideSupplierVerification({
       actor: supplierActor(account),
       supplierId: id,
       decision,
     });
-    return privateMutationResponse(NextResponse.json({ supplier }));
+    return privateMutationResponse(NextResponse.json(result));
   } catch (error) {
     return privateMutationResponse(supplierError(error));
   }

@@ -191,7 +191,12 @@ describe('tenant supplier API', () => {
 
   it('submits an owner verification decision and maps repeat decisions safely', async () => {
     jest.mocked(decideSupplierVerification).mockResolvedValue({
-      id: 'supplier-a', verificationStatus: 'VERIFIED',
+      supplier: { id: 'supplier-a', verificationStatus: 'VERIFIED' },
+      supplierRequest: { id: 'supplier-request-a' },
+      link: {
+        url: 'https://quoteplate.example/quote#token=one-time-token',
+        expiresAt: '2027-01-09T09:00:00.000Z',
+      },
     } as never);
     const approved = await verifySupplierRoute(
       jsonRequest('http://localhost/api/suppliers/supplier-a/verify', 'POST', {
@@ -201,6 +206,14 @@ describe('tenant supplier API', () => {
     );
     expect(approved.status).toBe(200);
     expect(approved.headers.get('cache-control')).toBe('private, no-store');
+    await expect(approved.json()).resolves.toEqual({
+      supplier: { id: 'supplier-a', verificationStatus: 'VERIFIED' },
+      supplierRequest: { id: 'supplier-request-a' },
+      link: {
+        url: 'https://quoteplate.example/quote#token=one-time-token',
+        expiresAt: '2027-01-09T09:00:00.000Z',
+      },
+    });
     expect(decideSupplierVerification).toHaveBeenCalledWith({
       actor: { tenantId: 'tenant-a', userId: 'member-a' },
       supplierId: 'supplier-a',

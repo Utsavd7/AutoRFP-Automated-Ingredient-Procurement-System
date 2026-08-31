@@ -2,14 +2,54 @@ import { randomBytes } from 'node:crypto';
 
 import { PrismaClient } from '@prisma/client';
 
+import { AuthorizationError } from '@/lib/auth/guards';
 import {
-  createPrismaPublicSupplierGrantRepository,
-  exchangeSupplierGrantToken,
+  createPrismaPublicSupplierApplicationGrantRepository,
+  exchangeSupplierApplicationGrantToken,
 } from '@/lib/security/public-grant';
-import { consumeDigestRateLimit } from '@/lib/security/rate-limit';
 import { digestOpaqueToken } from '@/lib/security/tokens';
+import {
+  submitPublicSupplierApplication,
+} from '@/lib/suppliers/public-application-service';
+import {
+  decideSupplierVerification,
+  SupplierNotFoundError,
+  SupplierVerificationConflictError,
+} from '@/lib/suppliers/supplier-service';
 
 import { withMigratedPostgres } from './setup/postgres';
+
+const applicationToken = 'A'.repeat(43);
+const firstQuoteToken = 'Q'.repeat(43);
+const concurrentQuoteToken = 'R'.repeat(43);
+const submittedAt = new Date('2027-01-08T09:00:00.000Z');
+const quoteDeadline = new Date('2099-09-01T00:00:00.000Z');
+
+const items = {
+  v: 1,
+  items: [
+    {
+      id: 'item-1',
+      itemKey: 'tomato',
+      name: 'Tomato',
+      quantity: '10',
+      unit: 'KILOGRAM',
+      specification: { v: 1, category: 'VEGETABLES' },
+      sourcingOverride: null,
+    },
+  ],
+};
+
+const sourcing = {
+  v: 1,
+  default: {
+    v: 1,
+    modes: ['VERIFIED_NEW'],
+    currentSupplierIds: [],
+    selectedNewSupplierIds: [],
+    acceptVerifiedApplications: true,
+  },
+};
 
 function appDatabaseUrl(databaseUrl: string, password: string) {
   const url = new URL(databaseUrl);
@@ -18,60 +58,83 @@ function appDatabaseUrl(databaseUrl: string, password: string) {
   return url.toString();
 }
 
-test('restricted runtime resolves only live public supplier grants', async () => {
+function quoteTokenFactory(raw: string) {
+  return () => ({
+    raw,
+    digest: digestOpaqueToken('supplier-request', raw),
+  });
+}
+
+test('restricted application grant creates and atomically decides isolated applicants', async () => {
   await withMigratedPostgres(async (databaseUrl) => {
     const admin = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
     const password = randomBytes(24).toString('hex');
     let app: PrismaClient | undefined;
-    const rawToken = 'A'.repeat(43);
-    const now = new Date('2026-08-28T10:00:00.000Z');
 
     try {
       await admin.tenant.create({
         data: {
-          id: 'public-grant-tenant',
-          name: 'Grant Kitchen',
+          id: 'application-tenant-a',
+          name: 'Application Kitchen A',
           addressLine: '1 Market Road',
           city: 'Pune',
           state: 'Maharashtra',
           pin: '411001',
           phone: '9000000000',
           users: {
-            create: {
-              id: 'public-grant-owner',
-              name: 'Owner',
-              email: 'grant-owner@example.test',
-              role: 'OWNER',
-            },
-          },
-          suppliers: {
-            create: {
-              id: 'public-grant-supplier',
-              businessName: 'Fresh Foods',
-            },
+            create: [
+              {
+                id: 'application-owner-a',
+                name: 'Owner A',
+                email: 'application-owner-a@example.test',
+                role: 'OWNER',
+              },
+              {
+                id: 'application-member-a',
+                name: 'Member A',
+                email: 'application-member-a@example.test',
+                role: 'MEMBER',
+              },
+            ],
           },
           procurementRequests: {
             create: {
-              id: 'public-grant-request',
-              title: 'Weekly vegetables',
+              id: 'application-request-a',
+              title: 'Verified new produce',
               status: 'OPEN',
-              openedAt: now,
-              deliveryDetails: { address: 'Grant Kitchen' },
+              items,
+              sourcing,
+              deliveryDetails: { addressLine: '1 Market Road' },
               deliveryDate: new Date('2099-09-02T00:00:00.000Z'),
-              quoteDeadline: new Date('2099-09-01T00:00:00.000Z'),
-              createdByUserId: 'public-grant-owner',
+              quoteDeadline,
+              applicationTokenDigest: digestOpaqueToken(
+                'supplier-application',
+                applicationToken,
+              ),
+              applicationExpiresAt: quoteDeadline,
+              openedAt: new Date('2027-01-08T08:00:00.000Z'),
+              createdByUserId: 'application-owner-a',
             },
           },
         },
       });
-      await admin.supplierRequest.create({
+      await admin.tenant.create({
         data: {
-          id: 'public-grant-link',
-          tenantId: 'public-grant-tenant',
-          requestId: 'public-grant-request',
-          supplierId: 'public-grant-supplier',
-          tokenDigest: digestOpaqueToken('supplier-request', rawToken),
-          expiresAt: new Date('2099-09-01T00:00:00.000Z'),
+          id: 'application-tenant-b',
+          name: 'Application Kitchen B',
+          addressLine: '2 Market Road',
+          city: 'Mumbai',
+          state: 'Maharashtra',
+          pin: '400001',
+          phone: '9000000001',
+          users: {
+            create: {
+              id: 'application-owner-b',
+              name: 'Owner B',
+              email: 'application-owner-b@example.test',
+              role: 'OWNER',
+            },
+          },
         },
       });
 
@@ -82,163 +145,323 @@ test('restricted runtime resolves only live public supplier grants', async () =>
         datasources: { db: { url: appDatabaseUrl(databaseUrl, password) } },
       });
       await app.$connect();
-      const repository = createPrismaPublicSupplierGrantRepository(app);
 
-      await expect(
-        exchangeSupplierGrantToken({ token: rawToken, now }, repository),
-      ).resolves.toEqual({
-        tenantId: 'public-grant-tenant',
-        supplierRequestId: 'public-grant-link',
-      });
-      await expect(app.supplierRequest.findMany()).resolves.toEqual([]);
-      expect(await admin.rateLimitBucket.count()).toBe(1);
+      const repository =
+        createPrismaPublicSupplierApplicationGrantRepository(app);
+      const exchange = (input: { token: unknown; now: Date }) =>
+        exchangeSupplierApplicationGrantToken(input, repository);
 
-      for (let index = 0; index < 16; index += 1) {
-        const unknownToken = index.toString(36).padStart(43, 'Z');
-        await expect(
-          exchangeSupplierGrantToken({ token: unknownToken, now }, repository),
-        ).rejects.toMatchObject({ code: 'GRANT_UNAVAILABLE', status: 410 });
-      }
-      expect(await admin.rateLimitBucket.count()).toBe(1);
+      await expect(exchange({ token: applicationToken, now: submittedAt }))
+        .resolves.toEqual({
+          tenantId: 'application-tenant-a',
+          requestId: 'application-request-a',
+        });
+      await expect(app.procurementRequest.findMany()).resolves.toEqual([]);
 
-      await admin.rateLimitBucket.createMany({
-        data: [
-          ...Array.from({ length: 40 }, (_, index) => ({
-            keyDigest: index.toString(16).padStart(64, '0'),
-            count: 1,
-            resetAt: new Date(now.getTime() - 1_000),
-          })),
-          {
-            keyDigest: 'f'.repeat(64),
-            count: 1,
-            resetAt: new Date(now.getTime() + 60_000),
-          },
-        ],
-      });
-      await consumeDigestRateLimit(
+      const submit = (input: {
+        businessName: string;
+        phone: string;
+        categories?: string[];
+      }) => submitPublicSupplierApplication(
         {
-          scope: 'supplier-request',
-          subjectDigest: 'e'.repeat(64),
-          limit: 5,
-          windowMs: 60_000,
-          now,
+          application: {
+            token: applicationToken,
+            businessName: input.businessName,
+            phone: input.phone,
+            categories: input.categories ?? ['VEGETABLES'],
+          },
+          now: submittedAt,
+        },
+        app!,
+        { exchange },
+      );
+
+      await expect(submit({
+        businessName: 'Primary Applicant',
+        phone: '9876500001',
+        categories: ['FRUITS', 'VEGETABLES'],
+      })).resolves.toEqual({ accepted: true });
+      await expect(submit({
+        businessName: 'Duplicate Attempt',
+        phone: '+91 98765 00001',
+      })).resolves.toEqual({ accepted: true });
+
+      const primary = await admin.supplier.findFirstOrThrow({
+        where: {
+          tenantId: 'application-tenant-a',
+          phone: '+919876500001',
+        },
+      });
+      expect(primary).toEqual(expect.objectContaining({
+        relationshipType: 'APPLICANT',
+        verificationStatus: 'PENDING',
+        applicationRequestId: 'application-request-a',
+        isActive: false,
+        verifiedAt: null,
+        verifiedByUserId: null,
+        capabilities: {
+          v: 1,
+          categories: [
+            { category: 'VEGETABLES', tier: 'BACKUP', rank: 1 },
+            { category: 'FRUITS', tier: 'BACKUP', rank: 2 },
+          ],
+          items: [],
+        },
+      }));
+      expect(await admin.supplier.count({
+        where: { tenantId: 'application-tenant-a', phone: '+919876500001' },
+      })).toBe(1);
+
+      await expect(decideSupplierVerification(
+        {
+          actor: {
+            tenantId: 'application-tenant-a',
+            userId: 'application-member-a',
+          },
+          supplierId: primary.id,
+          decision: 'APPROVE',
         },
         app,
+      )).rejects.toBeInstanceOf(AuthorizationError);
+      await expect(decideSupplierVerification(
+        {
+          actor: {
+            tenantId: 'application-tenant-b',
+            userId: 'application-owner-b',
+          },
+          supplierId: primary.id,
+          decision: 'APPROVE',
+        },
+        app,
+      )).rejects.toBeInstanceOf(SupplierNotFoundError);
+
+      const approved = await decideSupplierVerification(
+        {
+          actor: {
+            tenantId: 'application-tenant-a',
+            userId: 'application-owner-a',
+          },
+          supplierId: primary.id,
+          decision: 'APPROVE',
+        },
+        app,
+        {
+          tokenFactory: quoteTokenFactory(firstQuoteToken),
+          shareBaseUrl: 'https://quoteplate.example',
+        },
       );
-      expect(
-        await admin.rateLimitBucket.count({
-          where: { resetAt: { lte: now } },
+      expect(approved).toEqual({
+        supplier: expect.objectContaining({
+          id: primary.id,
+          relationshipType: 'SELECTED_NEW',
+          verificationStatus: 'VERIFIED',
+          isActive: true,
+          verifiedByUserId: 'application-owner-a',
+          verifiedAt: expect.any(Date),
         }),
-      ).toBe(15);
-      await expect(
-        admin.rateLimitBucket.findUnique({
-          where: { keyDigest: 'f'.repeat(64) },
+        supplierRequest: expect.objectContaining({
+          requestId: 'application-request-a',
+          supplierId: primary.id,
+          quoteRevision: 0,
         }),
-      ).resolves.not.toBeNull();
-
-      const [functionAcl] = await admin.$queryRaw<
-        Array<{
-          securityDefiner: boolean;
-          settings: string[];
-          appCanExecute: boolean;
-          publicCanExecute: boolean;
-        }>
-      >`
-        SELECT
-          procedure.prosecdef AS "securityDefiner",
-          procedure.proconfig AS settings,
-          has_function_privilege('autorfp_app', procedure.oid, 'EXECUTE')
-            AS "appCanExecute",
-          EXISTS (
-            SELECT 1
-            FROM aclexplode(
-              COALESCE(procedure.proacl, acldefault('f', procedure.proowner))
-            ) AS permission
-            WHERE permission.grantee = 0
-              AND permission.privilege_type = 'EXECUTE'
-          ) AS "publicCanExecute"
-        FROM pg_proc AS procedure
-        JOIN pg_namespace AS namespace ON namespace.oid = procedure.pronamespace
-        WHERE namespace.nspname = 'autorfp_private'
-          AND procedure.proname = 'autorfp_supplier_grant_by_digest'
-      `;
-      expect(functionAcl).toEqual({
-        securityDefiner: true,
-        settings: ['search_path=pg_catalog'],
-        appCanExecute: true,
-        publicCanExecute: false,
+        link: expect.objectContaining({
+          url: `https://quoteplate.example/quote#token=${firstQuoteToken}`,
+        }),
       });
+      if (!approved.link) throw new Error('Approval did not return its one-time link.');
+      expect(new Date(approved.link.expiresAt).getTime())
+        .toBeLessThanOrEqual(quoteDeadline.getTime());
+      expect(await admin.supplierRequest.count({
+        where: { requestId: 'application-request-a', supplierId: primary.id },
+      })).toBe(1);
+      const storedPrimaryGrant = await admin.supplierRequest.findFirstOrThrow({
+        where: { requestId: 'application-request-a', supplierId: primary.id },
+      });
+      expect(storedPrimaryGrant).toEqual(expect.objectContaining({
+        tokenDigest: digestOpaqueToken('supplier-request', firstQuoteToken),
+        quoteRevision: 0,
+        quoteRevisions: { v: 1, revisions: [] },
+      }));
+      await expect(decideSupplierVerification(
+        {
+          actor: {
+            tenantId: 'application-tenant-a',
+            userId: 'application-owner-a',
+          },
+          supplierId: primary.id,
+          decision: 'REJECT',
+        },
+        app,
+      )).rejects.toBeInstanceOf(SupplierVerificationConflictError);
+      expect(await admin.supplierRequest.count({
+        where: { requestId: 'application-request-a', supplierId: primary.id },
+      })).toBe(1);
 
-      for (const unavailable of [
-        () => admin.supplier.update({
-          where: {
-            tenantId_id: {
-              tenantId: 'public-grant-tenant',
-              id: 'public-grant-supplier',
-            },
+      await submit({ businessName: 'Collision Applicant', phone: '9876500002' });
+      const collision = await admin.supplier.findFirstOrThrow({
+        where: { tenantId: 'application-tenant-a', phone: '+919876500002' },
+      });
+      await expect(decideSupplierVerification(
+        {
+          actor: {
+            tenantId: 'application-tenant-a',
+            userId: 'application-owner-a',
           },
-          data: { isActive: false },
-        }),
-        () => admin.procurementRequest.update({
-          where: {
-            tenantId_id: {
-              tenantId: 'public-grant-tenant',
-              id: 'public-grant-request',
-            },
-          },
-          data: { status: 'DRAFT' },
-        }),
-        () => admin.supplierRequest.update({
-          where: {
-            tenantId_id: {
-              tenantId: 'public-grant-tenant',
-              id: 'public-grant-link',
-            },
-          },
-          data: { revokedAt: now },
-        }),
-        () => admin.tenant.update({
-          where: { id: 'public-grant-tenant' },
-          data: { isActive: false },
-        }),
-      ]) {
-        await admin.supplier.update({
-          where: {
-            tenantId_id: {
-              tenantId: 'public-grant-tenant',
-              id: 'public-grant-supplier',
-            },
-          },
-          data: { isActive: true },
-        });
-        await admin.procurementRequest.update({
-          where: {
-            tenantId_id: {
-              tenantId: 'public-grant-tenant',
-              id: 'public-grant-request',
-            },
-          },
-          data: { status: 'OPEN' },
-        });
-        await admin.supplierRequest.update({
-          where: {
-            tenantId_id: {
-              tenantId: 'public-grant-tenant',
-              id: 'public-grant-link',
-            },
-          },
-          data: { revokedAt: null },
-        });
-        await admin.tenant.update({
-          where: { id: 'public-grant-tenant' },
-          data: { isActive: true },
-        });
+          supplierId: collision.id,
+          decision: 'APPROVE',
+        },
+        app,
+        {
+          tokenFactory: quoteTokenFactory(firstQuoteToken),
+          shareBaseUrl: 'https://quoteplate.example',
+        },
+      )).rejects.toMatchObject({ code: 'P2002' });
+      expect(await admin.supplier.findUniqueOrThrow({ where: { id: collision.id } }))
+        .toEqual(expect.objectContaining({
+          relationshipType: 'APPLICANT',
+          verificationStatus: 'PENDING',
+          isActive: false,
+        }));
+      expect(await admin.supplierRequest.count({
+        where: { supplierId: collision.id },
+      })).toBe(0);
 
-        await unavailable();
-        await expect(
-          exchangeSupplierGrantToken({ token: rawToken, now }, repository),
-        ).rejects.toMatchObject({ code: 'GRANT_UNAVAILABLE', status: 410 });
-      }
+      await submit({ businessName: 'Concurrent Applicant', phone: '9876500003' });
+      const concurrent = await admin.supplier.findFirstOrThrow({
+        where: { tenantId: 'application-tenant-a', phone: '+919876500003' },
+      });
+      const concurrentDecisions = await Promise.allSettled([
+        decideSupplierVerification(
+          {
+            actor: {
+              tenantId: 'application-tenant-a',
+              userId: 'application-owner-a',
+            },
+            supplierId: concurrent.id,
+            decision: 'APPROVE',
+          },
+          app,
+          {
+            tokenFactory: quoteTokenFactory(concurrentQuoteToken),
+            shareBaseUrl: 'https://quoteplate.example',
+          },
+        ),
+        decideSupplierVerification(
+          {
+            actor: {
+              tenantId: 'application-tenant-a',
+              userId: 'application-owner-a',
+            },
+            supplierId: concurrent.id,
+            decision: 'REJECT',
+          },
+          app,
+        ),
+      ]);
+      expect(concurrentDecisions.filter(({ status }) => status === 'fulfilled'))
+        .toHaveLength(1);
+      expect(concurrentDecisions.filter(({ status }) => status === 'rejected'))
+        .toEqual([
+          expect.objectContaining({
+            reason: expect.any(SupplierVerificationConflictError),
+          }),
+        ]);
+      expect(await admin.supplierRequest.count({
+        where: { supplierId: concurrent.id },
+      })).toBeLessThanOrEqual(1);
+      expect(await admin.auditEvent.count({
+        where: {
+          entityId: concurrent.id,
+          action: { in: ['supplier.verified', 'supplier.rejected'] },
+        },
+      })).toBe(1);
+
+      await submit({ businessName: 'Close Race Applicant', phone: '9876500004' });
+      const closeRace = await admin.supplier.findFirstOrThrow({
+        where: { tenantId: 'application-tenant-a', phone: '+919876500004' },
+      });
+      let releaseRequestLock!: () => void;
+      let reportRequestLocked!: () => void;
+      const releaseRequest = new Promise<void>((resolve) => {
+        releaseRequestLock = resolve;
+      });
+      const requestLocked = new Promise<void>((resolve) => {
+        reportRequestLocked = resolve;
+      });
+      const closeRequest = admin.$transaction(async (transaction) => {
+        await transaction.$queryRaw`
+          SELECT "id"
+          FROM "ProcurementRequest"
+          WHERE "tenantId" = 'application-tenant-a'
+            AND "id" = 'application-request-a'
+          FOR UPDATE
+        `;
+        await transaction.procurementRequest.update({
+          where: {
+            tenantId_id: {
+              tenantId: 'application-tenant-a',
+              id: 'application-request-a',
+            },
+          },
+          data: {
+            status: 'CANCELLED',
+            cancelledAt: new Date(),
+            applicationRevokedAt: new Date(),
+          },
+        });
+        reportRequestLocked();
+        await releaseRequest;
+      });
+      await requestLocked;
+      const racedApproval = decideSupplierVerification(
+        {
+          actor: {
+            tenantId: 'application-tenant-a',
+            userId: 'application-owner-a',
+          },
+          supplierId: closeRace.id,
+          decision: 'APPROVE',
+        },
+        app,
+        {
+          tokenFactory: quoteTokenFactory('S'.repeat(43)),
+          shareBaseUrl: 'https://quoteplate.example',
+        },
+      );
+      releaseRequestLock();
+      await closeRequest;
+      await expect(racedApproval).rejects.toBeInstanceOf(
+        SupplierVerificationConflictError,
+      );
+      expect(await admin.supplier.findUniqueOrThrow({ where: { id: closeRace.id } }))
+        .toEqual(expect.objectContaining({
+          relationshipType: 'APPLICANT',
+          verificationStatus: 'PENDING',
+          isActive: false,
+        }));
+      expect(await admin.supplierRequest.count({
+        where: { supplierId: closeRace.id },
+      })).toBe(0);
+
+      await expect(exchange({ token: applicationToken, now: submittedAt }))
+        .rejects.toMatchObject({ code: 'GRANT_UNAVAILABLE', status: 410 });
+      expect(await admin.rateLimitBucket.count()).toBe(1);
+      expect(await admin.auditEvent.findMany({
+        where: { action: 'supplier.applied' },
+        orderBy: { createdAt: 'asc' },
+        select: { actorUserId: true, entityType: true, metadata: true },
+      })).toEqual([
+        {
+          actorUserId: null,
+          entityType: 'Supplier',
+          metadata: { requestId: 'application-request-a', categoryCount: 2 },
+        },
+        ...Array.from({ length: 3 }, () => ({
+          actorUserId: null,
+          entityType: 'Supplier',
+          metadata: { requestId: 'application-request-a', categoryCount: 1 },
+        })),
+      ]);
     } finally {
       await app?.$disconnect();
       await admin.$disconnect();

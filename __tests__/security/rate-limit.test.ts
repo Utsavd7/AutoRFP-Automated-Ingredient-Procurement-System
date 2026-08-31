@@ -8,10 +8,15 @@ describe('database rate-limit keys', () => {
       subjectDigest,
     );
     const supplierKey = digestRateLimitKey('supplier-request', subjectDigest);
+    const applicationKey = digestRateLimitKey(
+      'supplier-application',
+      subjectDigest,
+    );
 
     expect(invitationKey).toMatch(/^[a-f0-9]{64}$/);
     expect(invitationKey).not.toBe(subjectDigest);
     expect(invitationKey).not.toBe(supplierKey);
+    expect(applicationKey).not.toBe(supplierKey);
   });
 
   it('rejects malformed subject digests before database access', () => {

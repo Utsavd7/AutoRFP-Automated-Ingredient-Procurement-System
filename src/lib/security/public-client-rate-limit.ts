@@ -16,7 +16,8 @@ export type PublicClientOperation =
   | 'invitation-accept'
   | 'quote-access'
   | 'quote-read'
-  | 'quote-submit';
+  | 'quote-submit'
+  | 'supplier-application';
 
 const limits = {
   'invitation-accept': {
@@ -33,6 +34,10 @@ const limits = {
   },
   'quote-submit': {
     scope: 'supplier-quote-submit-client',
+    limit: 30,
+  },
+  'supplier-application': {
+    scope: 'supplier-application-client',
     limit: 30,
   },
 } as const;
@@ -53,13 +58,29 @@ function normalizedHeader(value: string | null) {
 
 function clientIdentifier(
   headers: Headers,
-  environment: { NODE_ENV?: string; VERCEL?: string } = process.env,
+  environment: {
+    NODE_ENV?: string;
+    VERCEL?: string;
+    NETLIFY?: string;
+    SITE_ID?: string;
+    URL?: string;
+  } = process.env,
 ) {
   if (environment.NODE_ENV === 'production') {
-    if (environment.VERCEL !== '1') return 'production-unidentified';
-    return normalizedHeader(
-      headers.get('x-vercel-forwarded-for')?.split(',')[0] ?? null,
-    ) ?? 'production-unidentified';
+    if (environment.VERCEL === '1') {
+      return normalizedHeader(
+        headers.get('x-vercel-forwarded-for')?.split(',')[0] ?? null,
+      ) ?? 'production-unidentified';
+    }
+    if (
+      normalizedHeader(environment.SITE_ID ?? null) &&
+      normalizedHeader(environment.URL ?? null)
+    ) {
+      return normalizedHeader(
+        headers.get('x-nf-client-connection-ip'),
+      ) ?? 'production-unidentified';
+    }
+    return 'production-unidentified';
   }
   const direct =
     normalizedHeader(headers.get('cf-connecting-ip')) ??
@@ -73,7 +94,13 @@ function clientIdentifier(
 export function publicClientRateLimitDigest(
   operation: PublicClientOperation,
   headers: Headers,
-  environment: { NODE_ENV?: string; VERCEL?: string } = process.env,
+  environment: {
+    NODE_ENV?: string;
+    VERCEL?: string;
+    NETLIFY?: string;
+    SITE_ID?: string;
+    URL?: string;
+  } = process.env,
 ) {
   return createHash('sha256')
     .update(`quoteplate:v1:public-client:${operation}:`, 'utf8')

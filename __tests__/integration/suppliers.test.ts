@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 
 import { PrismaClient } from '@prisma/client';
 
+import { digestOpaqueToken } from '@/lib/security/tokens';
 import { parseSupplierCsv } from '@/lib/suppliers/csv';
 import {
   createSupplier,
@@ -417,25 +418,50 @@ test('only an owner can approve or reject a pending tenant applicant once', asyn
         },
       });
       app = await provisionAppClient(admin, databaseUrl);
+      const requestItems = {
+        v: 1,
+        items: [{
+          id: 'item-1', itemKey: 'tomato', name: 'Tomato', quantity: '10',
+          unit: 'KILOGRAM',
+          specification: { v: 1, category: 'VEGETABLES' },
+          sourcingOverride: null,
+        }],
+      };
+      const requestSourcing = {
+        v: 1,
+        default: {
+          v: 1, modes: ['VERIFIED_NEW'], currentSupplierIds: [],
+          selectedNewSupplierIds: [], acceptVerifiedApplications: true,
+        },
+      };
       const requestA = await admin.procurementRequest.create({
         data: {
           tenantId: 'tenant-a',
           title: 'Tenant A request',
           status: 'OPEN',
-          items: { v: 1, items: [] },
-          sourcing: { v: 1, default: { modes: ['VERIFIED_NEW'] } },
+          items: requestItems,
+          sourcing: requestSourcing,
           deliveryDetails: { address: '1 Market Road' },
           deliveryDate: new Date('2027-01-03T00:00:00.000Z'),
           quoteDeadline: new Date('2027-01-02T10:00:00.000Z'),
+          applicationTokenDigest: digestOpaqueToken(
+            'supplier-application', 'A'.repeat(43),
+          ),
+          applicationExpiresAt: new Date('2027-01-02T10:00:00.000Z'),
           createdByUserId: 'owner-a',
         },
       });
       const requestB = await admin.procurementRequest.create({
         data: {
           tenantId: 'tenant-b', title: 'Tenant B request', status: 'OPEN',
-          items: { v: 1, items: [] }, sourcing: { v: 1, default: { modes: ['VERIFIED_NEW'] } },
+          items: requestItems, sourcing: requestSourcing,
           deliveryDetails: {}, deliveryDate: new Date('2027-01-03T00:00:00.000Z'),
-          quoteDeadline: new Date('2027-01-02T10:00:00.000Z'), createdByUserId: 'owner-b',
+          quoteDeadline: new Date('2027-01-02T10:00:00.000Z'),
+          applicationTokenDigest: digestOpaqueToken(
+            'supplier-application', 'B'.repeat(43),
+          ),
+          applicationExpiresAt: new Date('2027-01-02T10:00:00.000Z'),
+          createdByUserId: 'owner-b',
         },
       });
       const applicant = (tenantId: string, requestId: string, name: string) =>
@@ -462,16 +488,24 @@ test('only an owner can approve or reject a pending tenant applicant once', asyn
         actor: { tenantId: 'tenant-a', userId: 'owner-a' },
         supplierId: approve.id, decision: 'APPROVE',
       }, app)).resolves.toEqual(expect.objectContaining({
-        relationshipType: 'SELECTED_NEW', verificationStatus: 'VERIFIED',
-        isActive: true, verifiedByUserId: 'owner-a', verifiedAt: expect.any(Date),
+        supplier: expect.objectContaining({
+          relationshipType: 'SELECTED_NEW', verificationStatus: 'VERIFIED',
+          isActive: true, verifiedByUserId: 'owner-a', verifiedAt: expect.any(Date),
+        }),
+        supplierRequest: expect.objectContaining({
+          requestId: requestA.id, supplierId: approve.id, quoteRevision: 0,
+        }),
+        link: expect.objectContaining({ url: expect.stringContaining('/quote#token=') }),
       }));
       await expect(decideSupplierVerification({
         actor: { tenantId: 'tenant-a', userId: 'owner-a' },
         supplierId: reject.id, decision: 'REJECT',
-      }, app)).resolves.toEqual(expect.objectContaining({
-        relationshipType: 'APPLICANT', verificationStatus: 'REJECTED',
-        isActive: false, verifiedAt: null,
-      }));
+      }, app)).resolves.toEqual({
+        supplier: expect.objectContaining({
+          relationshipType: 'APPLICANT', verificationStatus: 'REJECTED',
+          isActive: false, verifiedAt: null,
+        }),
+      });
       await expect(decideSupplierVerification({
         actor: { tenantId: 'tenant-a', userId: 'owner-a' },
         supplierId: approve.id, decision: 'APPROVE',
@@ -497,6 +531,9 @@ test('only an owner can approve or reject a pending tenant applicant once', asyn
       expect((await listSuppliersForExport({
         actor: { tenantId: 'tenant-a', userId: 'owner-a' }, active: 'all',
       }, app)).suppliers.map(({ id }) => id)).toEqual([approve.id]);
+      expect(await admin.supplierRequest.count({ where: {
+        tenantId: 'tenant-a', requestId: requestA.id, supplierId: approve.id,
+      } })).toBe(1);
       expect(await admin.auditEvent.count({ where: {
         tenantId: 'tenant-a', action: { in: ['supplier.verified', 'supplier.rejected'] },
       } })).toBe(2);

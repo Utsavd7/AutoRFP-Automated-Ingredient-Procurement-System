@@ -44,4 +44,39 @@ describe('public client rate-limit identity', () => {
       { NODE_ENV: 'production', VERCEL: '1' },
     ));
   });
+
+  it('uses Netlify client metadata only with trusted Netlify runtime markers', () => {
+    const first = new Headers({
+      'x-nf-client-connection-ip': '198.51.100.30',
+      'x-forwarded-for': '192.0.2.1',
+    });
+    const second = new Headers({
+      'x-nf-client-connection-ip': '203.0.113.30',
+      'x-forwarded-for': '192.0.2.1',
+    });
+    const trustedNetlify = {
+      NODE_ENV: 'production',
+      SITE_ID: 'site-a',
+      URL: 'https://quoteplate.example',
+    };
+
+    expect(publicClientRateLimitDigest(
+      'supplier-application', first, trustedNetlify,
+    )).not.toBe(publicClientRateLimitDigest(
+      'supplier-application', second, trustedNetlify,
+    ));
+
+    expect(publicClientRateLimitDigest(
+      'supplier-application', first, { NODE_ENV: 'production' },
+    )).toBe(publicClientRateLimitDigest(
+      'supplier-application', second, { NODE_ENV: 'production' },
+    ));
+    expect(publicClientRateLimitDigest(
+      'supplier-application', first,
+      { NODE_ENV: 'production', NETLIFY: 'true' },
+    )).toBe(publicClientRateLimitDigest(
+      'supplier-application', second,
+      { NODE_ENV: 'production', NETLIFY: 'true' },
+    ));
+  });
 });

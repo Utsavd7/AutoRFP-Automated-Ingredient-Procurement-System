@@ -1,323 +1,195 @@
+import type { MenuDocumentV1 } from '@/lib/menu/menu-document';
 import {
-  createDeterministicMenuDraft,
-  MENU_LIMITS,
+  approveReviewedMenu,
+  createReviewedMenuDraft,
+  getReviewedMenu,
+  listReviewedMenus,
   MenuValidationError,
+  updateReviewedMenuDraft,
   validateMenuDraftInput,
 } from '@/lib/menu/menu-service';
 
-const ingredient = {
-  name: 'Tomato',
-  quantity: '1.250',
-  unit: 'kg',
-};
-
-describe('menu draft validation', () => {
-  it('normalizes only reviewable menu facts for persistence', () => {
-    expect(
-      validateMenuDraftInput({
-        name: '  Dinner menu  ',
-        sourceText: '  Paneer Tikka\nMasala Dosa  ',
-        dishes: [
-          {
-            id: ' recipe-1 ',
-            name: '  Paneer Tikka  ',
-            ingredients: [
-              {
-                id: ' ingredient-1 ',
-                name: '  Paneer  ',
-                quantity: '1.250',
-                unit: 'kg',
-                ignoredPrice: 900,
-              },
-            ],
-            ignoredClaim: 'verified',
-          },
-        ],
-        ignoredRecommendation: 'Buy now',
-      }),
-    ).toEqual({
-      name: 'Dinner menu',
-      sourceText: 'Paneer Tikka\nMasala Dosa',
-      dishes: [
+const document: MenuDocumentV1 = {
+  v: 1,
+  source: {
+    kind: 'MANUAL',
+    canonicalUrl: null,
+    permissionConfirmed: false,
+  },
+  dishes: [
+    {
+      id: 'd1',
+      name: 'Dal Makhani',
+      position: 0,
+      ingredients: [
         {
-          id: 'recipe-1',
-          name: 'Paneer Tikka',
-          ingredients: [
-            {
-              id: 'ingredient-1',
-              name: 'Paneer',
-              quantity: '1.25',
-              unit: 'KILOGRAM',
-            },
-          ],
+          id: 'i1',
+          itemKey: 'urad-dal',
+          name: 'Urad dal',
+          quantity: '2.5',
+          unit: 'KILOGRAM',
+          specification: { v: 1, category: 'OTHER' },
         },
       ],
+    },
+  ],
+};
+
+function clientWith(transaction: Record<string, unknown>) {
+  return {
+    $queryRaw: jest.fn().mockResolvedValue([
+      {
+        currentUser: 'autorfp_app',
+        rolsuper: false,
+        rolbypassrls: false,
+        hasBypassMembership: false,
+      },
+    ]),
+    $transaction: jest.fn(async (callback: (tx: unknown) => unknown) =>
+      callback(transaction),
+    ),
+  };
+}
+
+const actor = { tenantId: 'tenant-a', userId: 'member-a' };
+
+describe('document-backed menu service', () => {
+  it('validates the full document before persisting one Menu row', async () => {
+    const create = jest.fn().mockResolvedValue({
+      id: 'menu-a',
+      tenantId: actor.tenantId,
+      name: 'Dinner menu',
+      status: 'DRAFT',
+      version: 1,
+      document,
+      sourceText: null,
     });
-  });
-
-  test.each([
-    ['blank menu name', { name: ' ', dishes: [] }],
-    [
-      'oversized menu name',
-      { name: '₹'.repeat(Math.ceil(MENU_LIMITS.nameBytes / 3) + 1), dishes: [] },
-    ],
-    [
-      'oversized source text',
-      { name: 'Menu', sourceText: '₹'.repeat(33_334), dishes: [] },
-    ],
-    [
-      'too many dishes',
-      {
-        name: 'Menu',
-        dishes: Array.from(
-          { length: MENU_LIMITS.dishes + 1 },
-          (_, index) => ({ name: `Dish ${index}`, ingredients: [] }),
-        ),
-      },
-    ],
-    [
-      'too many ingredients in one dish',
-      {
-        name: 'Menu',
-        dishes: [
-          {
-            name: 'Dish',
-            ingredients: Array.from(
-              { length: MENU_LIMITS.ingredientsPerDish + 1 },
-              (_, index) => ({ ...ingredient, name: `Ingredient ${index}` }),
-            ),
-          },
-        ],
-      },
-    ],
-    [
-      'too many ingredients in total',
-      {
-        name: 'Menu',
-        dishes: Array.from({ length: 21 }, (_, dishIndex) => ({
-          name: `Dish ${dishIndex}`,
-          ingredients: Array.from({ length: 50 }, (_, ingredientIndex) => ({
-            ...ingredient,
-            name: `Ingredient ${dishIndex}-${ingredientIndex}`,
-          })),
-        })),
-      },
-    ],
-    [
-      'oversized dish name',
-      {
-        name: 'Menu',
-        dishes: [{ name: 'a'.repeat(MENU_LIMITS.factBytes + 1), ingredients: [] }],
-      },
-    ],
-    [
-      'oversized ingredient name',
-      {
-        name: 'Menu',
-        dishes: [
-          {
-            name: 'Dish',
-            ingredients: [
-              { ...ingredient, name: 'a'.repeat(MENU_LIMITS.factBytes + 1) },
-            ],
-          },
-        ],
-      },
-    ],
-    [
-      'unsupported unit',
-      {
-        name: 'Menu',
-        dishes: [
-          { name: 'Dish', ingredients: [{ ...ingredient, unit: 'bunch' }] },
-        ],
-      },
-    ],
-    [
-      'zero quantity',
-      {
-        name: 'Menu',
-        dishes: [
-          { name: 'Dish', ingredients: [{ ...ingredient, quantity: '0' }] },
-        ],
-      },
-    ],
-    [
-      'over-precise quantity',
-      {
-        name: 'Menu',
-        dishes: [
-          { name: 'Dish', ingredients: [{ ...ingredient, quantity: '1.0001' }] },
-        ],
-      },
-    ],
-    [
-      'overflowing quantity',
-      {
-        name: 'Menu',
-        dishes: [
-          {
-            name: 'Dish',
-            ingredients: [
-              { ...ingredient, quantity: '1000000000000000.000' },
-            ],
-          },
-        ],
-      },
-    ],
-  ])('rejects %s', (_label, input) => {
-    expect(() => validateMenuDraftInput(input)).toThrow(MenuValidationError);
-  });
-
-  it('rejects duplicate or unbounded nested IDs', () => {
-    expect(() =>
-      validateMenuDraftInput({
-        name: 'Menu',
-        dishes: [
-          { id: 'recipe-1', name: 'A', ingredients: [] },
-          { id: 'recipe-1', name: 'B', ingredients: [] },
-        ],
-      }),
-    ).toThrow(MenuValidationError);
-
-    expect(() =>
-      validateMenuDraftInput({
-        name: 'Menu',
-        dishes: [
-          {
-            name: 'A',
-            ingredients: [{ ...ingredient, id: 'x'.repeat(201) }],
-          },
-        ],
-      }),
-    ).toThrow(MenuValidationError);
-  });
-
-  it('bounds raw deterministic input before splitting it into dishes', async () => {
-    await expect(
-      createDeterministicMenuDraft({
-        actor: { tenantId: 'tenant-a', userId: 'member-a' },
-        name: 'Menu',
-        menuText: 'a'.repeat(MENU_LIMITS.sourceBytes + 1),
-      }),
-    ).rejects.toBeInstanceOf(MenuValidationError);
-  });
-
-  it('maps an overlong deterministic dish to a reviewable validation error', async () => {
-    await expect(
-      createDeterministicMenuDraft({
-        actor: { tenantId: 'tenant-a', userId: 'member-a' },
-        name: 'Menu',
-        menuText: '₹'.repeat(54),
-      }),
-    ).rejects.toMatchObject({
-      code: 'INVALID_MENU',
-      errors: { menuText: [expect.stringMatching(/160 UTF-8 bytes/)] },
-    });
-  });
-
-  it('maps deterministic overflow to a validation error requiring correction', async () => {
-    await expect(
-      createDeterministicMenuDraft({
-        actor: { tenantId: 'tenant-a', userId: 'member-a' },
-        name: 'Menu',
-        menuText: Array.from(
-          { length: MENU_LIMITS.dishes + 1 },
-          (_, index) => `Dish ${index + 1}`,
-        ).join('\n'),
-      }),
-    ).rejects.toMatchObject({
-      code: 'INVALID_MENU',
-      errors: { menuText: [expect.stringMatching(/at most 250 unique dishes/)] },
-    });
-  });
-
-  it('requires a positive expected version for edits and approvals', async () => {
-    const transactionHost = {
+    const transaction = {
       $queryRaw: jest.fn(),
-      $transaction: jest.fn(),
+      $executeRaw: jest.fn().mockResolvedValue(0),
+      menu: { create },
+    };
+    const client = clientWith(transaction);
+
+    await expect(
+      createReviewedMenuDraft(
+        { actor, draft: { name: 'Dinner menu', document } },
+        client as never,
+      ),
+    ).resolves.toMatchObject({ id: 'menu-a', document });
+
+    expect(create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        name: 'Dinner menu',
+        status: 'DRAFT',
+        sourceText: null,
+        document,
+      }),
+      select: expect.objectContaining({ document: true }),
+    });
+    expect(create.mock.calls[0]![0].data).not.toHaveProperty('recipes');
+    expect(transaction.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(transaction).not.toHaveProperty('recipe');
+    expect(transaction).not.toHaveProperty('ingredient');
+  });
+
+  it('rejects an invalid or oversized document before opening Prisma', async () => {
+    const client = clientWith({});
+    const invalid = { ...document, ignored: true };
+
+    expect(() =>
+      validateMenuDraftInput({ name: 'Dinner menu', document: invalid }),
+    ).toThrow(MenuValidationError);
+    await expect(
+      createReviewedMenuDraft(
+        { actor, draft: { name: 'Dinner menu', document: invalid } },
+        client as never,
+      ),
+    ).rejects.toBeInstanceOf(MenuValidationError);
+    expect(client.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('lists summary scalars without loading documents, relation counts, or mutating source text', async () => {
+    const findMany = jest.fn().mockResolvedValue([
+      {
+        id: 'menu-a',
+        name: 'Dinner menu',
+        status: 'DRAFT',
+        version: 1,
+        approvedAt: null,
+        approvedByUserId: null,
+        createdByUserId: 'member-a',
+        createdAt: new Date('2026-08-31T00:00:00.000Z'),
+        updatedAt: new Date('2026-08-31T00:00:00.000Z'),
+      },
+    ]);
+    const transaction = { $queryRaw: jest.fn(), menu: { findMany } };
+
+    await expect(
+      listReviewedMenus({ actor }, clientWith(transaction) as never),
+    ).resolves.toMatchObject({ menus: [{ id: 'menu-a' }], nextCursor: null });
+
+    const query = findMany.mock.calls[0]![0];
+    expect(query.select).not.toHaveProperty('document');
+    expect(query.select).not.toHaveProperty('_count');
+    expect(transaction).not.toHaveProperty('$executeRaw');
+  });
+
+  it('validates detail documents and returns bounded cleanup and ingredient proposals without GET writes', async () => {
+    const current = {
+      id: 'menu-a',
+      tenantId: 'tenant-a',
+      name: 'Dinner menu',
+      status: 'DRAFT',
+      version: 1,
+      document,
+      sourceText: 'Dal Makhani',
+      approvedAt: null,
+      approvedByUserId: null,
+      createdByUserId: 'member-a',
+      createdAt: new Date('2026-08-31T00:00:00.000Z'),
+      updatedAt: new Date('2026-08-31T00:00:00.000Z'),
+    };
+    const findFirst = jest.fn().mockResolvedValue(current);
+    const findMany = jest.fn().mockResolvedValue([]);
+    const transaction = {
+      $queryRaw: jest.fn(),
+      menu: { findFirst, findMany },
     };
 
-    const { approveReviewedMenu, updateReviewedMenuDraft } = await import(
-      '@/lib/menu/menu-service'
+    await expect(
+      getReviewedMenu({ actor, menuId: 'menu-a' }, clientWith(transaction) as never),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        document,
+        cleanupProposals: expect.any(Array),
+        ingredientSuggestionsByDishId: expect.objectContaining({
+          d1: expect.any(Array),
+        }),
+      }),
     );
+    expect(transaction).not.toHaveProperty('$executeRaw');
+  });
+
+  it('rejects bad optimistic versions before update or approval work', async () => {
+    const client = clientWith({});
     await expect(
       updateReviewedMenuDraft(
         {
-          actor: { tenantId: 'tenant-a', userId: 'member-a' },
+          actor,
           menuId: 'menu-a',
           expectedVersion: 0,
-          draft: { name: 'Menu', dishes: [] },
+          draft: { name: 'Dinner menu', document },
         },
-        transactionHost as never,
+        client as never,
       ),
     ).rejects.toBeInstanceOf(MenuValidationError);
     await expect(
       approveReviewedMenu(
-        {
-          actor: { tenantId: 'tenant-a', userId: 'member-a' },
-          menuId: 'menu-a',
-          expectedVersion: Number.NaN,
-        },
-        transactionHost as never,
+        { actor, menuId: 'menu-a', expectedVersion: Number.NaN },
+        client as never,
       ),
     ).rejects.toBeInstanceOf(MenuValidationError);
-    expect(transactionHost.$transaction).not.toHaveBeenCalled();
-  });
-
-  it('rejects total ingredient overflow before inspecting ingredient fields', () => {
-    let deepReads = 0;
-    const guardedIngredient = Object.defineProperties(
-      {},
-      {
-        name: {
-          enumerable: true,
-          get() {
-            deepReads += 1;
-            throw new Error('deep ingredient validation must not run');
-          },
-        },
-        quantity: {
-          enumerable: true,
-          get() {
-            deepReads += 1;
-            throw new Error('deep ingredient validation must not run');
-          },
-        },
-        unit: {
-          enumerable: true,
-          get() {
-            deepReads += 1;
-            throw new Error('deep ingredient validation must not run');
-          },
-        },
-      },
-    );
-    const oversized = {
-      name: 'Oversized menu',
-      dishes: Array.from({ length: 21 }, (_, index) => ({
-        name: `Dish ${index + 1}`,
-        ingredients: Array(50).fill(guardedIngredient),
-      })),
-    };
-
-    let caught: unknown;
-    try {
-      validateMenuDraftInput(oversized);
-    } catch (error) {
-      caught = error;
-    }
-
-    expect(caught).toBeInstanceOf(MenuValidationError);
-    expect(caught).toMatchObject({
-      errors: {
-        dishes: ['A menu may contain at most 1,000 ingredients in total.'],
-      },
-    });
-    expect(Object.keys((caught as MenuValidationError).errors)).toEqual([
-      'dishes',
-    ]);
-    expect(JSON.stringify((caught as MenuValidationError).errors).length).toBeLessThan(120);
-    expect(deepReads).toBe(0);
+    expect(client.$transaction).not.toHaveBeenCalled();
   });
 });

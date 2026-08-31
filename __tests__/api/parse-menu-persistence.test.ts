@@ -39,12 +39,22 @@ describe('parse-menu persistence', () => {
     } as never);
   });
 
-  it('persists the menu and every recipe with one nested create', async () => {
-    const recipes = [
-      { id: 'recipe-1', name: 'Paneer Tikka', ingredients: [] },
-      { id: 'recipe-2', name: 'Masala Dosa', ingredients: [] },
-    ];
-    menuCreate.mockResolvedValue({ id: 'menu-1', recipes } as never);
+  it('persists one v1 menu document and keeps the exact response contract', async () => {
+    menuCreate.mockResolvedValue({
+      id: 'menu-1',
+      document: {
+        v: 1,
+        source: {
+          kind: 'PASTE',
+          canonicalUrl: null,
+          permissionConfirmed: false,
+        },
+        dishes: [
+          { id: 'd1', name: 'Paneer Tikka', position: 0, ingredients: [] },
+          { id: 'd2', name: 'Masala Dosa', position: 1, ingredients: [] },
+        ],
+      },
+    } as never);
 
     const response = await postMenu('Paneer Tikka\nMasala Dosa');
 

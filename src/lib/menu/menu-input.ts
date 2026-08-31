@@ -1,4 +1,4 @@
-const MAX_MENU_BYTES = 100_000;
+export const MENU_TEXT_BYTES = 100_000;
 
 type MenuInputErrors = Record<string, string[]>;
 
@@ -33,7 +33,7 @@ export function parseMenuInput(body: unknown): MenuInputResult {
     errors.menuText = ['Menu text is required.'];
   } else if (isUrlLike(menuText)) {
     errors.menuText = ['URLs are not accepted. Paste the menu text instead.'];
-  } else if (new TextEncoder().encode(menuText).byteLength > MAX_MENU_BYTES) {
+  } else if (new TextEncoder().encode(menuText).byteLength > MENU_TEXT_BYTES) {
     errors.menuText = ['Menu text must be 100,000 UTF-8 bytes or fewer.'];
   }
 

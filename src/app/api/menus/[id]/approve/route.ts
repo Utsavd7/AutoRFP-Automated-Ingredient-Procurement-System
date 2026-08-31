@@ -72,6 +72,10 @@ export async function POST(request: Request, context: MenuRouteContext) {
     if (error instanceof AuthorizationError) {
       return privateMutationResponse(problemResponse(403, 'Forbidden', 'You cannot approve this menu.'));
     }
-    throw error;
+    return privateMutationResponse(problemResponse(
+      500,
+      'Unable to approve menu',
+      'The menu could not be approved. Try again.',
+    ));
   }
 }

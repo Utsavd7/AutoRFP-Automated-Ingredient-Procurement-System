@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { privateNoStoreResponse } from '@/lib/api/private-response';
 import { problemResponse } from '@/lib/api/problem';
 import {
   InvalidJsonBodyError,
@@ -48,13 +49,19 @@ function menuError(error: unknown) {
   if (error instanceof AuthorizationError) {
     return problemResponse(403, 'Forbidden', 'You cannot access this menu.');
   }
-  throw error;
+  return problemResponse(
+    500,
+    'Unable to complete menu request',
+    'The menu request could not be completed. Try again.',
+  );
 }
 
 export async function GET(_request: Request, context: MenuRouteContext) {
   const account = await requireAccountContext();
   if (!account) {
-    return problemResponse(401, 'Unauthorized', 'Authentication is required.');
+    return privateNoStoreResponse(
+      problemResponse(401, 'Unauthorized', 'Authentication is required.'),
+    );
   }
 
   const { id } = await context.params;
@@ -63,9 +70,9 @@ export async function GET(_request: Request, context: MenuRouteContext) {
       actor: actorFrom(account),
       menuId: id,
     });
-    return NextResponse.json({ menu });
+    return privateNoStoreResponse(NextResponse.json({ menu }));
   } catch (error) {
-    return menuError(error);
+    return privateNoStoreResponse(menuError(error));
   }
 }
 

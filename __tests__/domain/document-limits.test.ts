@@ -27,6 +27,9 @@ describe('bounded PostgreSQL JSON documents', () => {
 
     expect(postgresJsonByteLength({ a: [1, 'x'] })).toBe(bytes('{"a": [1, "x"]}'));
     expect(postgresJsonByteLength({ emoji: '🥕' })).toBe(bytes('{"emoji": "🥕"}'));
+    expect(postgresJsonByteLength({ a: 1, bb: ['x'] })).toBe(
+      bytes('{"a": 1, "bb": ["x"]}'),
+    );
     expect(postgresJsonByteLength({ longer: 1e21, b: 2 })).toBe(
       postgresJsonByteLength({ b: 2, longer: 1e21 }),
     );
@@ -71,14 +74,11 @@ describe('bounded PostgreSQL JSON documents', () => {
     }
   });
 
-  test('rejects excessive nesting with a deterministic TypeError', () => {
+  test('serializes deeply nested valid JSON without using the JavaScript call stack', () => {
     let value: unknown = null;
-    for (let depth = 0; depth < 100; depth += 1) value = [value];
-    expect(() => postgresJsonByteLength(value)).not.toThrow();
+    for (let depth = 0; depth < 10_000; depth += 1) value = [value];
 
-    value = [value];
-    expect(() => postgresJsonByteLength(value)).toThrow(TypeError);
-    expect(() => postgresJsonByteLength(value)).toThrow(/nesting.*100/i);
+    expect(postgresJsonByteLength(value)).toBe(20_004);
   });
 
   test('allows an exact byte limit and rejects over-limit documents or invalid caps', () => {

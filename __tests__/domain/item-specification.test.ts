@@ -79,6 +79,32 @@ describe('procurement categories and item specification v1', () => {
     ).toThrow(/unknown.*arbitrary/i);
   });
 
+  test('enforces every nullable text field boundary and canonical form', () => {
+    const limits = {
+      description: 500,
+      preferredBrand: 120,
+      packSize: 120,
+      qualityGrade: 120,
+      notes: 1000,
+    } as const;
+    const ambiguous = ['', ' leading', 'trailing ', 'before\rafter', 'before\u0000after', '\ud800'];
+
+    for (const [field, limit] of Object.entries(limits)) {
+      expect(
+        validateItemSpecification({ v: 1, category: 'OTHER', [field]: 'x'.repeat(limit) }),
+      ).toBeDefined();
+      expect(validateItemSpecification({ v: 1, category: 'OTHER', [field]: null })).toBeDefined();
+      expect(() =>
+        validateItemSpecification({ v: 1, category: 'OTHER', [field]: 'x'.repeat(limit + 1) }),
+      ).toThrow(ItemSpecificationValidationError);
+      for (const value of ambiguous) {
+        expect(() =>
+          validateItemSpecification({ v: 1, category: 'OTHER', [field]: value }),
+        ).toThrow(ItemSpecificationValidationError);
+      }
+    }
+  });
+
   test('accepts canonical HTTPS URLs and rejects unsafe or ambiguous forms', () => {
     for (const referenceUrl of [
       'https://example.com/reference?item=tomato',

@@ -1,4 +1,12 @@
-import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import {
+  chmodSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { PrismaClient } from '@prisma/client';
@@ -217,11 +225,16 @@ test('compact catalog keeps nine bounded tables and fixed digest grants', async 
           security_definer: boolean;
           settings: string[];
           owner_bypasses_rls: boolean;
+          owner_attested: boolean;
         }>
       >`
         SELECT procedure.proname AS name, procedure.prosecdef AS security_definer,
                procedure.proconfig::TEXT[] AS settings,
-               (owner.rolsuper OR owner.rolbypassrls) AS owner_bypasses_rls
+               (owner.rolsuper OR owner.rolbypassrls) AS owner_bypasses_rls,
+               pg_catalog.obj_description(procedure.oid, 'pg_proc') =
+                 pg_catalog.format(
+                   'quoteplate:rls-owner-attestation:direct:%s', owner.rolname
+                 ) AS owner_attested
         FROM pg_catalog.pg_proc AS procedure
         JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = procedure.pronamespace
         JOIN pg_catalog.pg_roles AS owner ON owner.oid = procedure.proowner
@@ -229,7 +242,7 @@ test('compact catalog keeps nine bounded tables and fixed digest grants', async 
       `;
       expect(functions).toEqual(requiredFunctions.map((name) => ({
         name, security_definer: true, settings: ['search_path=pg_catalog'],
-        owner_bypasses_rls: true,
+        owner_bypasses_rls: true, owner_attested: true,
       })));
       await checkReadinessAsApp(prisma);
 
@@ -324,13 +337,55 @@ test('restore verification mirrors the exact compact catalog contract', () => {
   }
   expect(script.match(/^ensure_restore_owner$/gm)).toHaveLength(2);
   expect(script).toContain('quoteplate_restore_owner_check');
+  expect(script).toContain('pg_temp.autorfp_restore_rls_probe');
   expect(script).toMatch(/pg_get_expr\(\s+policy_catalog\.polqual/);
   expect(script).toMatch(/pg_get_expr\(\s+policy_catalog\.polwithcheck/);
   expect(script).toMatch(/pg_get_expr\(\s+constraint_catalog\.conbin/);
-  expect(script).toContain('owner_role.rolsuper OR owner_role.rolbypassrls');
+  expect(script).toMatch(
+    /pg_has_role\(\s*owner_role\.oid,\s*bypass_role\.oid,\s*'USAGE'/,
+  );
+  expect(script).toContain('pg_catalog.aclexplode');
   expect(script).toContain('--dbname=service=quoteplate_restore');
   expect(script).not.toContain('PGDATABASE="$RESTORE_DATABASE_URL"');
+  expect(script).toMatch(
+    /private libpq service'\n\nunset RESTORE_DATABASE_URL PGDATABASE\n/,
+  );
   expect(script).toContain('=NULLIFcurrent_setting');
+});
+
+test('malformed restore URLs never expose embedded credentials', () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'quoteplate-restore-url-'));
+  const backup = path.join(directory, 'backup.dump.gz.age');
+  const identity = path.join(directory, 'identity.txt');
+  const age = path.join(directory, 'age');
+  const secret = 'restore-password-must-not-leak';
+  try {
+    writeFileSync(backup, 'encrypted');
+    writeFileSync(identity, 'identity');
+    writeFileSync(age, '#!/bin/sh\nexit 99\n');
+    chmodSync(age, 0o755);
+    const result = spawnSync(
+      'sh',
+      [path.resolve(__dirname, '../../scripts/restore-verify.sh'), backup],
+      {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          PATH: `${directory}:${process.env.PATH}`,
+          RESTORE_DATABASE_URL:
+            `postgresql://operator:${secret}@[invalid/quoteplate_restore_malformed`,
+          AGE_IDENTITY_FILE: identity,
+        },
+      },
+    );
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain(
+      'RESTORE_DATABASE_URL could not be converted to a private libpq service',
+    );
+    expect(`${result.stdout}${result.stderr}`).not.toContain(secret);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test('readiness rejects compact catalog security drift', async () => {
@@ -412,12 +467,22 @@ test('readiness rejects compact catalog security drift', async () => {
       `);
       await expect(checkReadinessAsApp(prisma)).resolves.toBeUndefined();
 
+      await prisma.$executeRawUnsafe(
+        'GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA autorfp_private TO PUBLIC',
+      );
+      await expect(checkReadinessAsApp(prisma)).rejects.toThrow(
+        'required database migration',
+      );
+      await prisma.$executeRawUnsafe(
+        'REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA autorfp_private FROM PUBLIC',
+      );
+      await expect(checkReadinessAsApp(prisma)).resolves.toBeUndefined();
+
       await prisma.$executeRawUnsafe(`DO $unsafe_function_owners$
         DECLARE target RECORD;
         BEGIN
           CREATE ROLE inherited_function_bypass NOLOGIN BYPASSRLS;
-          CREATE ROLE unsafe_function_owner NOLOGIN INHERIT NOBYPASSRLS;
-          GRANT inherited_function_bypass TO unsafe_function_owner;
+          CREATE ROLE unsafe_function_owner NOLOGIN INHERIT BYPASSRLS;
           FOR target IN
             SELECT procedure.oid::REGPROCEDURE AS identity
             FROM pg_catalog.pg_proc AS procedure
@@ -428,9 +493,26 @@ test('readiness rejects compact catalog security drift', async () => {
             EXECUTE pg_catalog.format(
               'ALTER FUNCTION %s OWNER TO unsafe_function_owner', target.identity
             );
+            EXECUTE pg_catalog.format(
+              'COMMENT ON FUNCTION %s IS %L',
+              target.identity,
+              'quoteplate:rls-owner-attestation:direct:unsafe_function_owner'
+            );
           END LOOP;
         END
       $unsafe_function_owners$`);
+      await expect(checkReadinessAsApp(prisma)).resolves.toBeUndefined();
+      await prisma.$executeRawUnsafe(
+        'ALTER ROLE unsafe_function_owner NOBYPASSRLS',
+      );
+      await prisma.$executeRawUnsafe(
+        'GRANT inherited_function_bypass TO unsafe_function_owner',
+      );
+      await expect(prisma.$queryRaw<Array<{ usable: boolean }>>`
+        SELECT pg_catalog.pg_has_role(
+          'unsafe_function_owner', 'inherited_function_bypass', 'USAGE'
+        ) AS usable
+      `).resolves.toEqual([{ usable: true }]);
       await expect(checkReadinessAsApp(prisma)).rejects.toThrow(
         'required database migration',
       );

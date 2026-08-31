@@ -137,11 +137,60 @@ export async function checkRuntimeDatabase(client: ReadinessDatabaseClient) {
               procedure.proconfig = ARRAY['search_path=pg_catalog']::TEXT[]
             )
             AND pg_catalog.bool_and(
-              owner_role.rolsuper OR owner_role.rolbypassrls
+              (
+                (owner_role.rolsuper OR owner_role.rolbypassrls)
+                AND pg_catalog.obj_description(procedure.oid, 'pg_proc') =
+                  pg_catalog.format(
+                    'quoteplate:rls-owner-attestation:direct:%s',
+                    owner_role.rolname
+                  )
+              )
+              OR (
+                NOT (owner_role.rolsuper OR owner_role.rolbypassrls)
+                AND EXISTS (
+                  SELECT 1
+                  FROM pg_catalog.pg_roles AS bypass_role
+                  WHERE (bypass_role.rolsuper OR bypass_role.rolbypassrls)
+                    AND pg_catalog.pg_has_role(
+                      owner_role.oid,
+                      bypass_role.oid,
+                      'USAGE'
+                    )
+                )
+                AND pg_catalog.obj_description(procedure.oid, 'pg_proc') =
+                  pg_catalog.format(
+                    'quoteplate:rls-owner-attestation:inherited:%s',
+                    owner_role.rolname
+                  )
+              )
             )
             AND pg_catalog.bool_and(
-              pg_catalog.has_function_privilege(
-                'autorfp_app', procedure.oid, 'EXECUTE'
+              EXISTS (
+                SELECT 1
+                FROM pg_catalog.aclexplode(
+                  COALESCE(
+                    procedure.proacl,
+                    pg_catalog.acldefault('f', procedure.proowner)
+                  )
+                ) AS permission
+                WHERE permission.grantee = 'autorfp_app'::pg_catalog.regrole
+                  AND permission.privilege_type = 'EXECUTE'
+              )
+            )
+            AND pg_catalog.bool_and(
+              NOT EXISTS (
+                SELECT 1
+                FROM pg_catalog.aclexplode(
+                  COALESCE(
+                    procedure.proacl,
+                    pg_catalog.acldefault('f', procedure.proowner)
+                  )
+                ) AS permission
+                WHERE permission.privilege_type = 'EXECUTE'
+                  AND permission.grantee NOT IN (
+                    procedure.proowner,
+                    'autorfp_app'::pg_catalog.regrole
+                  )
               )
             )
           FROM pg_catalog.pg_proc AS procedure

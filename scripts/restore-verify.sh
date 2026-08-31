@@ -36,6 +36,7 @@ trap cleanup_connection_service EXIT HUP INT TERM
 
 RESTORE_SERVICE_FILE="$connection_service_file" node -e '
 const { writeFileSync } = require("node:fs");
+try {
 const url = new URL(process.env.RESTORE_DATABASE_URL);
 if (!new Set(["postgres:", "postgresql:"]).has(url.protocol)) process.exit(2);
 const database = decodeURIComponent(url.pathname.replace(/^\/+/, ""));
@@ -58,9 +59,12 @@ for (const [key, value] of parameters) {
   lines.push(key + "=" + value);
 }
 writeFileSync(process.env.RESTORE_SERVICE_FILE, lines.join("\n") + "\n", { mode: 0o600 });
+} catch {
+  process.exit(2);
+}
 ' || fail 'RESTORE_DATABASE_URL could not be converted to a private libpq service'
 
-unset PGDATABASE
+unset RESTORE_DATABASE_URL PGDATABASE
 PGSERVICEFILE=$connection_service_file
 PGSERVICE=quoteplate_restore
 export PGSERVICEFILE PGSERVICE
@@ -80,14 +84,39 @@ ensure_restore_owner() {
     --tuples-only \
     --no-align \
     --quiet \
-    --command="SELECT CASE WHEN
+    --command="BEGIN;
+CREATE TEMPORARY TABLE pg_temp.autorfp_restore_rls_probe (
+  marker BOOLEAN NOT NULL
+) ON COMMIT DROP;
+INSERT INTO pg_temp.autorfp_restore_rls_probe (marker) VALUES (true);
+ALTER TABLE pg_temp.autorfp_restore_rls_probe ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pg_temp.autorfp_restore_rls_probe FORCE ROW LEVEL SECURITY;
+CREATE POLICY autorfp_restore_rls_probe_deny
+ON pg_temp.autorfp_restore_rls_probe
+USING (false)
+WITH CHECK (false);
+SELECT CASE WHEN
   pg_catalog.to_regclass('pg_catalog.pg_roles') IS NOT NULL
   AND EXISTS (
-  SELECT 1
-  FROM pg_catalog.pg_roles AS connection_role
-  WHERE connection_role.rolname = CURRENT_USER
-    AND (connection_role.rolsuper OR connection_role.rolbypassrls)
-) THEN 1 ELSE 0 END /* quoteplate_restore_owner_check */;") \
+    SELECT 1
+    FROM pg_catalog.pg_roles AS connection_role
+    CROSS JOIN pg_catalog.pg_roles AS bypass_role
+    WHERE connection_role.rolname = CURRENT_USER
+      AND (bypass_role.rolsuper OR bypass_role.rolbypassrls)
+      AND (
+        bypass_role.oid = connection_role.oid
+        OR pg_catalog.pg_has_role(
+          connection_role.oid,
+          bypass_role.oid,
+          'USAGE'
+        )
+      )
+  )
+  AND EXISTS (
+    SELECT 1 FROM pg_temp.autorfp_restore_rls_probe WHERE marker
+  )
+THEN 1 ELSE 0 END /* quoteplate_restore_owner_check */;
+ROLLBACK;") \
     || fail 'could not verify the disposable restore owner'
   [ "$restore_owner_safe" = '1' ] \
     || fail 'restore connection must be a row-security-bypassing owner'
@@ -306,9 +335,47 @@ verification_result=$(psql \
         )
         AND procedure.prosecdef
         AND procedure.proconfig = ARRAY['search_path=pg_catalog']::TEXT[]
-        AND (owner_role.rolsuper OR owner_role.rolbypassrls)
-        AND pg_catalog.has_function_privilege(
-          'autorfp_app', procedure.oid, 'EXECUTE'
+        AND (
+          owner_role.rolsuper
+          OR owner_role.rolbypassrls
+          OR (
+            procedure.proowner = CURRENT_USER::pg_catalog.regrole
+            AND EXISTS (
+              SELECT 1
+              FROM pg_catalog.pg_roles AS bypass_role
+              WHERE (bypass_role.rolsuper OR bypass_role.rolbypassrls)
+                AND pg_catalog.pg_has_role(
+                  owner_role.oid,
+                  bypass_role.oid,
+                  'USAGE'
+                )
+            )
+          )
+        )
+        AND EXISTS (
+          SELECT 1
+          FROM pg_catalog.aclexplode(
+            COALESCE(
+              procedure.proacl,
+              pg_catalog.acldefault('f', procedure.proowner)
+            )
+          ) AS permission
+          WHERE permission.grantee = 'autorfp_app'::pg_catalog.regrole
+            AND permission.privilege_type = 'EXECUTE'
+        )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM pg_catalog.aclexplode(
+            COALESCE(
+              procedure.proacl,
+              pg_catalog.acldefault('f', procedure.proowner)
+            )
+          ) AS permission
+          WHERE permission.privilege_type = 'EXECUTE'
+            AND permission.grantee NOT IN (
+              procedure.proowner,
+              'autorfp_app'::pg_catalog.regrole
+            )
         )
     )
   )

@@ -374,7 +374,7 @@ test('all migrations run as a managed Postgres database owner without true super
   });
 });
 
-test('compact replacement proves RLS bypass before checking for populated data', async () => {
+test('compact replacement empirically rejects inherited-only RLS bypass', async () => {
   const sql = readFileSync(
     path.resolve(
       __dirname,
@@ -397,13 +397,54 @@ test('compact replacement proves RLS bypass before checking for populated data',
   expect(sql.slice(guardStart, guardEnd)).not.toMatch(
     /ALTER ROLE|DISABLE ROW LEVEL SECURITY/,
   );
+  expect(sql.slice(guardStart, guardEnd)).toContain('pg_temp.autorfp_rls_probe');
+  expect(sql.slice(guardStart, guardEnd)).toContain('ON COMMIT DROP');
+  expect(sql.slice(guardStart, guardEnd)).toContain('FORCE ROW LEVEL SECURITY');
+  expect(sql.slice(guardStart, guardEnd)).toContain("'USAGE'");
   expect(firstDestructive).toBeGreaterThan(guardStart);
 
   await withPostgres(async ({ databaseUrl, migrateTo, applyMigrationAs }) => {
     await migrateTo('20260827001200_current_user_credentials');
     const prisma = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
-    const role = 'compact_non_bypass_owner';
-    const password = 'compact-non-bypass-owner-password';
+    const bypassRole = 'compact_provider_bypass';
+    const inheritedRole = 'compact_inherited_bypass_owner';
+    const inheritedPassword = 'compact-inherited-bypass-password';
+    const setOnlyRole = 'compact_set_only_owner';
+    const setOnlyPassword = 'compact-set-only-owner-password';
+    const transferOwnership = (role: string) => prisma.$executeRawUnsafe(`DO $transfer_compact_ownership$
+      DECLARE target RECORD;
+      BEGIN
+        EXECUTE pg_catalog.format(
+          'GRANT CREATE ON DATABASE %I TO ${role}', current_database()
+        );
+        FOR target IN
+          SELECT pg_catalog.format(
+            'ALTER TABLE public.%I OWNER TO ${role}', tablename
+          ) AS statement
+          FROM pg_catalog.pg_tables WHERE schemaname = 'public'
+        LOOP EXECUTE target.statement; END LOOP;
+        FOR target IN
+          SELECT pg_catalog.format(
+            'ALTER TYPE public.%I OWNER TO ${role}', type.typname
+          ) AS statement
+          FROM pg_catalog.pg_type AS type
+          JOIN pg_catalog.pg_namespace AS namespace
+            ON namespace.oid = type.typnamespace
+          WHERE namespace.nspname = 'public' AND type.typtype = 'e'
+        LOOP EXECUTE target.statement; END LOOP;
+        FOR target IN
+          SELECT pg_catalog.format(
+            'ALTER FUNCTION %s OWNER TO ${role}', procedure.oid::REGPROCEDURE
+          ) AS statement
+          FROM pg_catalog.pg_proc AS procedure
+          JOIN pg_catalog.pg_namespace AS namespace
+            ON namespace.oid = procedure.pronamespace
+          WHERE namespace.nspname = 'autorfp_private'
+        LOOP EXECUTE target.statement; END LOOP;
+        ALTER SCHEMA autorfp_private OWNER TO ${role};
+        ALTER SCHEMA public OWNER TO ${role};
+      END
+    $transfer_compact_ownership$`);
 
     try {
       await prisma.tenant.create({
@@ -424,50 +465,56 @@ test('compact replacement proves RLS bypass before checking for populated data',
         'Compact schema migration requires an empty pre-launch database',
       );
 
-      await prisma.$executeRawUnsafe(`
-        CREATE ROLE ${role} LOGIN PASSWORD '${password}'
-          NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS
-      `);
-      await prisma.$executeRawUnsafe(`DO $transfer_compact_ownership$
-        DECLARE target RECORD;
-        BEGIN
-          EXECUTE pg_catalog.format(
-            'GRANT CREATE ON DATABASE %I TO ${role}', current_database()
-          );
-          FOR target IN
-            SELECT pg_catalog.format(
-              'ALTER TABLE public.%I OWNER TO ${role}', tablename
-            ) AS statement
-            FROM pg_catalog.pg_tables WHERE schemaname = 'public'
-          LOOP EXECUTE target.statement; END LOOP;
-          FOR target IN
-            SELECT pg_catalog.format(
-              'ALTER TYPE public.%I OWNER TO ${role}', type.typname
-            ) AS statement
-            FROM pg_catalog.pg_type AS type
-            JOIN pg_catalog.pg_namespace AS namespace
-              ON namespace.oid = type.typnamespace
-            WHERE namespace.nspname = 'public' AND type.typtype = 'e'
-          LOOP EXECUTE target.statement; END LOOP;
-          FOR target IN
-            SELECT pg_catalog.format(
-              'ALTER FUNCTION %s OWNER TO ${role}', procedure.oid::REGPROCEDURE
-            ) AS statement
-            FROM pg_catalog.pg_proc AS procedure
-            JOIN pg_catalog.pg_namespace AS namespace
-              ON namespace.oid = procedure.pronamespace
-            WHERE namespace.nspname = 'autorfp_private'
-          LOOP EXECUTE target.statement; END LOOP;
-          ALTER SCHEMA autorfp_private OWNER TO ${role};
-          ALTER SCHEMA public OWNER TO ${role};
-        END
-      $transfer_compact_ownership$`);
+      for (const statement of [
+        `CREATE ROLE ${bypassRole} NOLOGIN BYPASSRLS`,
+        `CREATE ROLE ${inheritedRole} LOGIN INHERIT NOBYPASSRLS PASSWORD '${inheritedPassword}'`,
+        `CREATE ROLE ${setOnlyRole} LOGIN NOINHERIT NOBYPASSRLS PASSWORD '${setOnlyPassword}'`,
+        `GRANT ${bypassRole} TO ${inheritedRole}`,
+        `GRANT ${bypassRole} TO ${setOnlyRole}`,
+      ]) await prisma.$executeRawUnsafe(statement);
 
-      const ownerUrl = new URL(databaseUrl);
-      ownerUrl.username = role;
-      ownerUrl.password = password;
+      const membership = await prisma.$queryRawUnsafe<
+        Array<{ role: string; usable: boolean }>
+      >(`
+        SELECT member.rolname AS role,
+               pg_catalog.pg_has_role(member.oid, bypass.oid, 'USAGE') AS usable
+        FROM pg_catalog.pg_roles AS member
+        CROSS JOIN pg_catalog.pg_roles AS bypass
+        WHERE member.rolname IN ('${inheritedRole}', '${setOnlyRole}')
+          AND bypass.rolname = '${bypassRole}'
+        ORDER BY member.rolname
+      `);
+      expect(membership).toEqual([
+        { role: inheritedRole, usable: true },
+        { role: setOnlyRole, usable: false },
+      ]);
+
+      await transferOwnership(inheritedRole);
+      const inheritedUrl = new URL(databaseUrl);
+      inheritedUrl.username = inheritedRole;
+      inheritedUrl.password = inheritedPassword;
+      const inheritedOwner = new PrismaClient({
+        datasources: { db: { url: inheritedUrl.toString() } },
+      });
+      try {
+        await expect(inheritedOwner.$queryRaw<Array<{ id: string }>>`
+          SELECT "id" FROM public."Tenant" WHERE "id" = 'guarded-tenant'
+        `).resolves.toEqual([]);
+      } finally {
+        await inheritedOwner.$disconnect();
+      }
       await expect(
-        applyMigrationAs(compactMigration, ownerUrl.toString()),
+        applyMigrationAs(compactMigration, inheritedUrl.toString()),
+      ).rejects.toThrow(
+        'Compact schema migration requires a row-security-bypassing owner',
+      );
+
+      await transferOwnership(setOnlyRole);
+      const setOnlyUrl = new URL(databaseUrl);
+      setOnlyUrl.username = setOnlyRole;
+      setOnlyUrl.password = setOnlyPassword;
+      await expect(
+        applyMigrationAs(compactMigration, setOnlyUrl.toString()),
       ).rejects.toThrow(
         'Compact schema migration requires a row-security-bypassing owner',
       );

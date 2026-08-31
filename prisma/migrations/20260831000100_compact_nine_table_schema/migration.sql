@@ -2,12 +2,47 @@ BEGIN;
 
 DO $compact_schema_guard$
 DECLARE
+    migration_role_is_candidate BOOLEAN;
     migration_role_bypasses_row_security BOOLEAN;
 BEGIN
-    SELECT role.rolsuper OR role.rolbypassrls
-    INTO migration_role_bypasses_row_security
-    FROM pg_catalog.pg_roles AS role
-    WHERE role.rolname = CURRENT_USER;
+    SELECT pg_catalog.bool_or(
+        (bypass_role.rolsuper OR bypass_role.rolbypassrls)
+        AND (
+            bypass_role.oid = migration_role.oid
+            OR pg_catalog.pg_has_role(
+                migration_role.oid,
+                bypass_role.oid,
+                'USAGE'
+            )
+        )
+    )
+    INTO migration_role_is_candidate
+    FROM pg_catalog.pg_roles AS migration_role
+    CROSS JOIN pg_catalog.pg_roles AS bypass_role
+    WHERE migration_role.rolname = CURRENT_USER;
+
+    IF COALESCE(migration_role_is_candidate, false) = false THEN
+        RAISE EXCEPTION 'Compact schema migration requires a row-security-bypassing owner';
+    END IF;
+
+    BEGIN
+        CREATE TEMPORARY TABLE pg_temp.autorfp_rls_probe (
+            marker BOOLEAN NOT NULL
+        ) ON COMMIT DROP;
+        INSERT INTO pg_temp.autorfp_rls_probe (marker) VALUES (true);
+        ALTER TABLE pg_temp.autorfp_rls_probe ENABLE ROW LEVEL SECURITY;
+        ALTER TABLE pg_temp.autorfp_rls_probe FORCE ROW LEVEL SECURITY;
+        CREATE POLICY autorfp_rls_probe_deny
+        ON pg_temp.autorfp_rls_probe
+        USING (false)
+        WITH CHECK (false);
+        SELECT EXISTS (
+            SELECT 1 FROM pg_temp.autorfp_rls_probe WHERE marker
+        )
+        INTO migration_role_bypasses_row_security;
+    EXCEPTION WHEN OTHERS THEN
+        migration_role_bypasses_row_security := false;
+    END;
 
     IF COALESCE(migration_role_bypasses_row_security, false) = false THEN
         RAISE EXCEPTION 'Compact schema migration requires a row-security-bypassing owner';
@@ -731,6 +766,72 @@ GRANT EXECUTE ON FUNCTION
     autorfp_private.autorfp_supplier_grant_by_digest(TEXT),
     autorfp_private.autorfp_supplier_application_grant_by_digest(TEXT)
 TO autorfp_app;
+
+DO $attest_function_owners$
+DECLARE
+    attestation TEXT;
+    attested_function_count INTEGER := 0;
+    owner_mode TEXT;
+    owner_name TEXT;
+    target RECORD;
+BEGIN
+    SELECT
+        migration_role.rolname,
+        CASE
+            WHEN migration_role.rolsuper OR migration_role.rolbypassrls
+                THEN 'direct'
+            ELSE 'inherited'
+        END
+    INTO owner_name, owner_mode
+    FROM pg_catalog.pg_roles AS migration_role
+    WHERE migration_role.rolname = CURRENT_USER
+      AND (
+          migration_role.rolsuper
+          OR migration_role.rolbypassrls
+          OR EXISTS (
+              SELECT 1
+              FROM pg_catalog.pg_roles AS bypass_role
+              WHERE (bypass_role.rolsuper OR bypass_role.rolbypassrls)
+                AND pg_catalog.pg_has_role(
+                    migration_role.oid,
+                    bypass_role.oid,
+                    'USAGE'
+                )
+          )
+      )
+      AND EXISTS (
+          SELECT 1 FROM pg_temp.autorfp_rls_probe WHERE marker
+      );
+
+    IF owner_name IS NULL THEN
+        RAISE EXCEPTION 'Compact schema migration requires a row-security-bypassing owner';
+    END IF;
+
+    attestation := pg_catalog.format(
+        'quoteplate:rls-owner-attestation:%s:%s',
+        owner_mode,
+        owner_name
+    );
+    FOR target IN
+        SELECT procedure.oid::pg_catalog.regprocedure AS identity
+        FROM pg_catalog.pg_proc AS procedure
+        JOIN pg_catalog.pg_namespace AS namespace
+          ON namespace.oid = procedure.pronamespace
+        WHERE namespace.nspname = 'autorfp_private'
+    LOOP
+        EXECUTE pg_catalog.format(
+            'COMMENT ON FUNCTION %s IS %L',
+            target.identity,
+            attestation
+        );
+        attested_function_count := attested_function_count + 1;
+    END LOOP;
+
+    IF attested_function_count <> 7 THEN
+        RAISE EXCEPTION 'Compact schema migration function attestation is incomplete';
+    END IF;
+END
+$attest_function_owners$;
 
 GRANT USAGE ON SCHEMA public TO autorfp_backup;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO autorfp_backup;

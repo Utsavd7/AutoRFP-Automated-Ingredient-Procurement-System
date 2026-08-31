@@ -1,6 +1,7 @@
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import {
   chmodSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -62,6 +63,19 @@ async function checkReadinessAsApp(prisma: PrismaClient) {
     await transaction.$executeRawUnsafe('SET LOCAL ROLE autorfp_app');
     await checkRuntimeDatabase(transaction);
   });
+}
+
+function functionOwnerSecurity(prisma: PrismaClient) {
+  return prisma.$queryRaw<Array<{ attestation: string | null; owner: string }>>`
+    SELECT DISTINCT
+      pg_catalog.obj_description(procedure.oid, 'pg_proc') AS attestation,
+      owner.rolname AS owner
+    FROM pg_catalog.pg_proc AS procedure
+    JOIN pg_catalog.pg_namespace AS namespace
+      ON namespace.oid = procedure.pronamespace
+    JOIN pg_catalog.pg_roles AS owner ON owner.oid = procedure.proowner
+    WHERE namespace.nspname = 'autorfp_private'
+  `;
 }
 
 test('compact catalog keeps nine bounded tables and fixed digest grants', async () => {
@@ -335,9 +349,16 @@ test('restore verification mirrors the exact compact catalog contract', () => {
   for (const name of requiredFunctions) {
     expect(script).toContain(`('${name}', 'text')`);
   }
-  expect(script.match(/^ensure_restore_owner$/gm)).toHaveLength(2);
+  expect(script.match(/^ensure_restore_owner(?: 1)?$/gm)).toHaveLength(2);
+  expect(script).toContain('ensure_restore_owner 1');
   expect(script).toContain('quoteplate_restore_owner_check');
   expect(script).toContain('pg_temp.autorfp_restore_rls_probe');
+  expect(script).toContain('quoteplate:rls-owner-attestation:%s:%s');
+  expect(script).toContain(
+    'procedure.proowner = CURRENT_USER::pg_catalog.regrole',
+  );
+  expect(script).toContain('ALTER DEFAULT PRIVILEGES FOR ROLE');
+  expect(script).toContain('recreate_restore_default_privileges');
   expect(script).toMatch(/pg_get_expr\(\s+policy_catalog\.polqual/);
   expect(script).toMatch(/pg_get_expr\(\s+policy_catalog\.polwithcheck/);
   expect(script).toMatch(/pg_get_expr\(\s+constraint_catalog\.conbin/);
@@ -386,6 +407,160 @@ test('malformed restore URLs never expose embedded credentials', () => {
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test('cross-owner archives restore with target-owner function readiness', async () => {
+  await withMigratedPostgres(async (databaseUrl) => {
+    const admin = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
+    const directory = mkdtempSync(path.join(tmpdir(), 'quoteplate-cross-owner-'));
+    const restoreRole = 'archive_restore_owner';
+    const targetDatabase = 'quoteplate_restore_cross_owner';
+    const readinessDatabase = 'quoteplate_cross_owner_readiness';
+    const restorePassword = 'restore-owner-password';
+    const nativeSourceUrl = new URL(databaseUrl);
+    nativeSourceUrl.searchParams.delete('schema');
+    const targetUrl = new URL(databaseUrl);
+    targetUrl.pathname = `/${targetDatabase}`;
+    targetUrl.username = restoreRole;
+    targetUrl.password = restorePassword;
+    const readinessUrl = new URL(databaseUrl);
+    readinessUrl.pathname = `/${readinessDatabase}`;
+    const dumpFile = path.join(directory, 'archive.dump');
+    const backupFile = path.join(directory, 'archive.dump.gz.age');
+    const identityFile = path.join(directory, 'identity.txt');
+    const toolsDirectory = path.join(directory, 'bin');
+    const cloneMarker = path.join(directory, 'cloned');
+
+    try {
+      const [sourceSecurity] = await functionOwnerSecurity(admin);
+      expect(sourceSecurity.attestation).toBe(
+        `quoteplate:rls-owner-attestation:direct:${sourceSecurity.owner}`,
+      );
+      expect(sourceSecurity.owner).not.toBe(restoreRole);
+
+      await admin.$executeRawUnsafe(`
+        CREATE ROLE ${restoreRole} LOGIN PASSWORD '${restorePassword}'
+          NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION BYPASSRLS
+      `);
+      execFileSync('createdb', [
+        `--maintenance-db=${nativeSourceUrl}`,
+        `--owner=${restoreRole}`,
+        targetDatabase,
+      ]);
+      const targetAdminUrl = new URL(nativeSourceUrl);
+      targetAdminUrl.pathname = `/${targetDatabase}`;
+      execFileSync('psql', [
+        `--dbname=${targetAdminUrl}`,
+        '--set=ON_ERROR_STOP=1',
+        `--command=ALTER SCHEMA public OWNER TO ${restoreRole}`,
+      ]);
+      await admin.$executeRawUnsafe(`GRANT autorfp_app TO ${restoreRole}`);
+      await admin.$executeRawUnsafe(`GRANT autorfp_backup TO ${restoreRole}`);
+      execFileSync('pg_dump', [
+        '--format=custom',
+        `--file=${dumpFile}`,
+        `--dbname=${nativeSourceUrl}`,
+      ]);
+      const archiveList = execFileSync('pg_restore', ['--list', dumpFile], {
+        encoding: 'utf8',
+      });
+      expect(archiveList).toMatch(/^\d+; \d+ \d+ ACL /m);
+      expect(archiveList).toMatch(
+        new RegExp(`DEFAULT ACL .*${sourceSecurity.owner}`),
+      );
+      writeFileSync(backupFile, execFileSync('gzip', ['-c', dumpFile]));
+      writeFileSync(identityFile, 'test-identity');
+      mkdirSync(toolsDirectory);
+      const agePath = path.join(toolsDirectory, 'age');
+      writeFileSync(agePath, `#!/bin/sh
+set -eu
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --decrypt) shift ;;
+    --identity) shift 2 ;;
+    --output) output_file=$2; shift 2 ;;
+    *) input_file=$1; shift ;;
+  esac
+done
+cp "$input_file" "$output_file"
+`);
+      chmodSync(agePath, 0o755);
+      const realPsql = execFileSync('which', ['psql'], { encoding: 'utf8' }).trim();
+      const realCreatedb = execFileSync('which', ['createdb'], {
+        encoding: 'utf8',
+      }).trim();
+      const psqlPath = path.join(toolsDirectory, 'psql');
+      writeFileSync(psqlPath, `#!/bin/sh
+set -eu
+"$REAL_PSQL" "$@"
+case "$*" in
+  *"SET LOCAL ROLE autorfp_backup"*)
+    if [ ! -f "$CROSS_OWNER_CLONE_MARKER" ]; then
+      "$REAL_CREATEDB" \
+        --maintenance-db="$CROSS_OWNER_ADMIN_URL" \
+        --template="$CROSS_OWNER_TARGET_DATABASE" \
+        "$CROSS_OWNER_READINESS_DATABASE"
+      : > "$CROSS_OWNER_CLONE_MARKER"
+    fi
+    ;;
+esac
+`);
+      chmodSync(psqlPath, 0o755);
+
+      const restored = spawnSync(
+        'sh',
+        [path.resolve(__dirname, '../../scripts/restore-verify.sh'), backupFile],
+        {
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            PATH: `${toolsDirectory}:${process.env.PATH}`,
+            RESTORE_DATABASE_URL: targetUrl.toString(),
+            AGE_IDENTITY_FILE: identityFile,
+            REAL_PSQL: realPsql,
+            REAL_CREATEDB: realCreatedb,
+            CROSS_OWNER_ADMIN_URL: nativeSourceUrl.toString(),
+            CROSS_OWNER_TARGET_DATABASE: targetDatabase,
+            CROSS_OWNER_READINESS_DATABASE: readinessDatabase,
+            CROSS_OWNER_CLONE_MARKER: cloneMarker,
+          },
+        },
+      );
+      expect(
+        `status=${restored.status}\n${restored.stdout}${restored.stderr}`,
+      ).toMatch(/^status=0\n/);
+
+      const readiness = new PrismaClient({
+        datasources: { db: { url: readinessUrl.toString() } },
+      });
+      try {
+        const functionSecurity = await functionOwnerSecurity(readiness);
+        expect(functionSecurity).toEqual([{
+          attestation:
+            `quoteplate:rls-owner-attestation:direct:${restoreRole}`,
+          owner: restoreRole,
+        }]);
+        expect(functionSecurity[0]?.attestation).not.toBe(
+          sourceSecurity.attestation,
+        );
+        const [defaultAclOwner] = await readiness.$queryRaw<
+          Array<{ target_owner_only: boolean }>
+        >`
+          SELECT pg_catalog.bool_and(
+            defaults.defaclrole = ${restoreRole}::pg_catalog.regrole
+          ) AS target_owner_only
+          FROM pg_catalog.pg_default_acl AS defaults
+        `;
+        expect(defaultAclOwner).toEqual({ target_owner_only: true });
+        await expect(checkReadinessAsApp(readiness)).resolves.toBeUndefined();
+      } finally {
+        await readiness.$disconnect();
+      }
+    } finally {
+      await admin.$disconnect();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
 });
 
 test('readiness rejects compact catalog security drift', async () => {

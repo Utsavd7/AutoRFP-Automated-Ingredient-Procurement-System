@@ -79,6 +79,7 @@ connected_database=$(psql \
   || fail 'connected database did not match the validated disposable database name'
 
 ensure_restore_owner() {
+  reattest_functions=${1:-0}
   restore_owner_safe=$(psql \
     --set=ON_ERROR_STOP=1 \
     --tuples-only \
@@ -95,14 +96,30 @@ CREATE POLICY autorfp_restore_rls_probe_deny
 ON pg_temp.autorfp_restore_rls_probe
 USING (false)
 WITH CHECK (false);
-SELECT CASE WHEN
-  pg_catalog.to_regclass('pg_catalog.pg_roles') IS NOT NULL
-  AND EXISTS (
+DO \$quoteplate_restore_owner_check\$
+DECLARE
+  attestation TEXT;
+  function_count INTEGER;
+  functions_have_restore_owner BOOLEAN;
+  owner_mode TEXT;
+  owner_name TEXT;
+  target RECORD;
+BEGIN
+  SELECT
+    connection_role.rolname,
+    CASE
+      WHEN connection_role.rolsuper OR connection_role.rolbypassrls
+        THEN 'direct'
+      ELSE 'inherited'
+    END
+  INTO owner_name, owner_mode
+  FROM pg_catalog.pg_roles AS connection_role
+  WHERE connection_role.rolname = CURRENT_USER
+    AND pg_catalog.to_regclass('pg_catalog.pg_roles') IS NOT NULL
+    AND EXISTS (
     SELECT 1
-    FROM pg_catalog.pg_roles AS connection_role
-    CROSS JOIN pg_catalog.pg_roles AS bypass_role
-    WHERE connection_role.rolname = CURRENT_USER
-      AND (bypass_role.rolsuper OR bypass_role.rolbypassrls)
+    FROM pg_catalog.pg_roles AS bypass_role
+    WHERE (bypass_role.rolsuper OR bypass_role.rolbypassrls)
       AND (
         bypass_role.oid = connection_role.oid
         OR pg_catalog.pg_has_role(
@@ -111,15 +128,109 @@ SELECT CASE WHEN
           'USAGE'
         )
       )
-  )
-  AND EXISTS (
+    )
+    AND EXISTS (
     SELECT 1 FROM pg_temp.autorfp_restore_rls_probe WHERE marker
-  )
-THEN 1 ELSE 0 END /* quoteplate_restore_owner_check */;
-ROLLBACK;") \
+    );
+
+  IF owner_name IS NULL THEN
+    RAISE EXCEPTION 'restore connection must bypass row security';
+  END IF;
+
+  IF $reattest_functions = 1 THEN
+    SELECT
+      COUNT(*),
+      pg_catalog.bool_and(
+        procedure.proowner = CURRENT_USER::pg_catalog.regrole
+      )
+    INTO function_count, functions_have_restore_owner
+    FROM pg_catalog.pg_proc AS procedure
+    JOIN pg_catalog.pg_namespace AS namespace
+      ON namespace.oid = procedure.pronamespace
+    WHERE namespace.nspname = 'autorfp_private';
+
+    IF function_count <> 7
+       OR COALESCE(functions_have_restore_owner, false) = false
+    THEN
+      RAISE EXCEPTION 'restored security functions must be owned by the restore connection role';
+    END IF;
+
+    attestation := pg_catalog.format(
+      'quoteplate:rls-owner-attestation:%s:%s',
+      owner_mode,
+      owner_name
+    );
+    FOR target IN
+      SELECT procedure.oid::pg_catalog.regprocedure AS identity
+      FROM pg_catalog.pg_proc AS procedure
+      JOIN pg_catalog.pg_namespace AS namespace
+        ON namespace.oid = procedure.pronamespace
+      WHERE namespace.nspname = 'autorfp_private'
+    LOOP
+      EXECUTE pg_catalog.format(
+        'COMMENT ON FUNCTION %s IS %L',
+        target.identity,
+        attestation
+      );
+    END LOOP;
+
+  END IF;
+END
+\$quoteplate_restore_owner_check\$;
+SELECT 1;
+COMMIT;") \
     || fail 'could not verify the disposable restore owner'
   [ "$restore_owner_safe" = '1' ] \
     || fail 'restore connection must be a row-security-bypassing owner'
+}
+
+recreate_restore_default_privileges() {
+  psql \
+    --set=ON_ERROR_STOP=1 \
+    --quiet \
+    --command="DO \$restore_default_privileges\$
+DECLARE
+  grantee_sql TEXT;
+  target RECORD;
+  target_role TEXT;
+BEGIN
+  FOREACH target_role IN ARRAY ARRAY[
+    'PUBLIC', 'autorfp_app', 'autorfp_backup', 'anon', 'authenticated',
+    'service_role', 'dashboard_user', 'authenticator'
+  ]
+  LOOP
+    IF target_role = 'PUBLIC' OR EXISTS (
+      SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = target_role
+    ) THEN
+      grantee_sql := CASE
+        WHEN target_role = 'PUBLIC' THEN 'PUBLIC'
+        ELSE pg_catalog.quote_ident(target_role)
+      END;
+      FOR target IN
+        SELECT * FROM (VALUES
+          ('', 'EXECUTE', 'FUNCTIONS'),
+          ('IN SCHEMA public', 'ALL PRIVILEGES', 'TABLES'),
+          ('IN SCHEMA public', 'ALL PRIVILEGES', 'SEQUENCES'),
+          ('IN SCHEMA public', 'ALL PRIVILEGES', 'FUNCTIONS'),
+          ('IN SCHEMA autorfp_private', 'ALL PRIVILEGES', 'TABLES'),
+          ('IN SCHEMA autorfp_private', 'ALL PRIVILEGES', 'SEQUENCES'),
+          ('IN SCHEMA autorfp_private', 'ALL PRIVILEGES', 'FUNCTIONS')
+        ) AS revocation(scope, privileges, objects)
+      LOOP
+        EXECUTE pg_catalog.format(
+          'ALTER DEFAULT PRIVILEGES %s REVOKE %s ON %s FROM %s',
+          target.scope,
+          target.privileges,
+          target.objects,
+          grantee_sql
+        );
+      END LOOP;
+    END IF;
+  END LOOP;
+  ALTER DEFAULT PRIVILEGES IN SCHEMA public
+    GRANT SELECT ON TABLES TO autorfp_backup;
+END
+\$restore_default_privileges\$;"
 }
 
 ensure_restricted_runtime_role() {
@@ -190,6 +301,8 @@ ensure_restricted_runtime_role
 temporary_directory=$(mktemp -d "${TMPDIR:-/tmp}/quoteplate-restore.XXXXXX")
 compressed_file="$temporary_directory/quoteplate.dump.gz"
 dump_file="$temporary_directory/quoteplate.dump"
+filtered_restore_sql="$temporary_directory/quoteplate.filtered.sql"
+restore_sql="$temporary_directory/quoteplate.sql"
 restore_started=0
 
 clear_disposable_database() {
@@ -203,7 +316,9 @@ cleanup() {
   if [ "$restore_started" -eq 1 ]; then
     clear_disposable_database >/dev/null 2>&1 || true
   fi
-  rm -f "$compressed_file" "$dump_file" "$connection_service_file"
+  rm -f \
+    "$compressed_file" "$dump_file" "$filtered_restore_sql" \
+    "$restore_sql" "$connection_service_file"
   rmdir "$temporary_directory" 2>/dev/null || true
 }
 trap cleanup EXIT HUP INT TERM
@@ -213,14 +328,34 @@ gzip -dc "$compressed_file" > "$dump_file"
 
 restore_started=1
 clear_disposable_database
-# The private libpq service keeps the credential out of process arguments.
+: > "$restore_sql"
 pg_restore \
-  --dbname=service=quoteplate_restore \
   --exit-on-error \
   --no-owner \
+  --file="$restore_sql" \
   "$dump_file"
 
-ensure_restore_owner
+RESTORE_SQL="$restore_sql" FILTERED_RESTORE_SQL="$filtered_restore_sql" node -e '
+const { readFileSync, writeFileSync } = require("node:fs");
+const source = readFileSync(process.env.RESTORE_SQL, "utf8");
+const filtered = source
+  .split("\n")
+  .filter((line) => !/^ALTER DEFAULT PRIVILEGES FOR ROLE .*;$/.test(line))
+  .join("\n");
+if (/^ALTER DEFAULT PRIVILEGES/m.test(filtered)) process.exit(2);
+writeFileSync(process.env.FILTERED_RESTORE_SQL, filtered, { mode: 0o600 });
+' || fail 'archive default privileges could not be scoped to the restore owner'
+
+# The private libpq service keeps the credential out of process arguments.
+psql \
+  --set=ON_ERROR_STOP=1 \
+  --quiet \
+  --dbname=service=quoteplate_restore \
+  --file="$filtered_restore_sql" \
+  || fail 'archive contents could not be restored'
+
+recreate_restore_default_privileges
+ensure_restore_owner 1
 
 verification_result=$(psql \
   --set=ON_ERROR_STOP=1 \
@@ -335,6 +470,7 @@ verification_result=$(psql \
         )
         AND procedure.prosecdef
         AND procedure.proconfig = ARRAY['search_path=pg_catalog']::TEXT[]
+        AND procedure.proowner = CURRENT_USER::pg_catalog.regrole
         AND (
           owner_role.rolsuper
           OR owner_role.rolbypassrls
@@ -352,6 +488,16 @@ verification_result=$(psql \
             )
           )
         )
+        AND pg_catalog.obj_description(procedure.oid, 'pg_proc') =
+          pg_catalog.format(
+            'quoteplate:rls-owner-attestation:%s:%s',
+            CASE
+              WHEN owner_role.rolsuper OR owner_role.rolbypassrls
+                THEN 'direct'
+              ELSE 'inherited'
+            END,
+            owner_role.rolname
+          )
         AND EXISTS (
           SELECT 1
           FROM pg_catalog.aclexplode(
@@ -379,6 +525,38 @@ verification_result=$(psql \
         )
     )
   )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_default_acl AS defaults
+    WHERE defaults.defaclrole <> CURRENT_USER::pg_catalog.regrole
+  )
+  AND EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_default_acl AS defaults
+    WHERE defaults.defaclrole = CURRENT_USER::pg_catalog.regrole
+      AND defaults.defaclnamespace = 0
+      AND defaults.defaclobjtype = 'f'
+  )
+  AND ARRAY(
+    SELECT pg_catalog.concat_ws(
+      ':',
+      namespace.nspname,
+      defaults.defaclobjtype,
+      grantee.rolname,
+      permission.privilege_type
+    )
+    FROM pg_catalog.pg_default_acl AS defaults
+    LEFT JOIN pg_catalog.pg_namespace AS namespace
+      ON namespace.oid = defaults.defaclnamespace
+    CROSS JOIN LATERAL pg_catalog.aclexplode(
+      defaults.defaclacl
+    ) AS permission
+    LEFT JOIN pg_catalog.pg_roles AS grantee
+      ON grantee.oid = permission.grantee
+    WHERE defaults.defaclrole = CURRENT_USER::pg_catalog.regrole
+      AND permission.grantee <> CURRENT_USER::pg_catalog.regrole
+    ORDER BY 1
+  ) = ARRAY['public:r:autorfp_backup:SELECT']::TEXT[]
   AND (
     SELECT COUNT(*) = 8
       AND bool_and(table_catalog.relrowsecurity)

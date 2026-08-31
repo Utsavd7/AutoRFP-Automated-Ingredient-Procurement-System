@@ -599,18 +599,37 @@ AS $function$
       AND request."applicationRevokedAt" IS NULL
       AND request."applicationExpiresAt" > pg_catalog.clock_timestamp()
       AND request."status"::TEXT = 'OPEN'
+      AND request."quoteDeadline" > pg_catalog.clock_timestamp()
       AND request."sourcing" -> 'v' = '1'::JSONB
       AND request."sourcing" #> '{default,v}' = '1'::JSONB
-      AND pg_catalog.jsonb_typeof(
-          request."sourcing" #> '{default,acceptVerifiedApplications}'
-      ) = 'boolean'
-      AND request."sourcing" #> '{default,acceptVerifiedApplications}'
-          = 'true'::JSONB
-      AND pg_catalog.jsonb_typeof(
-          request."sourcing" #> '{default,modes}'
-      ) = 'array'
-      AND request."sourcing" #> '{default,modes}'
-          @> '["VERIFIED_NEW"]'::JSONB
+      AND request."items" -> 'v' = '1'::JSONB
+      AND pg_catalog.jsonb_typeof(request."items" -> 'items') = 'array'
+      AND EXISTS (
+          SELECT 1
+          FROM pg_catalog.jsonb_array_elements(
+              request."items" -> 'items'
+          ) AS request_item(value)
+          CROSS JOIN LATERAL (
+              SELECT CASE
+                  WHEN request_item.value -> 'sourcingOverride' = 'null'::JSONB
+                      THEN request."sourcing" -> 'default'
+                  WHEN pg_catalog.jsonb_typeof(
+                      request_item.value -> 'sourcingOverride'
+                  ) = 'object'
+                      THEN request_item.value -> 'sourcingOverride'
+                  ELSE NULL
+              END AS selection
+          ) AS effective
+          WHERE effective.selection -> 'v' = '1'::JSONB
+            AND pg_catalog.jsonb_typeof(
+                effective.selection -> 'acceptVerifiedApplications'
+            ) = 'boolean'
+            AND effective.selection -> 'acceptVerifiedApplications'
+                = 'true'::JSONB
+            AND pg_catalog.jsonb_typeof(effective.selection -> 'modes') = 'array'
+            AND effective.selection -> 'modes'
+                @> '["VERIFIED_NEW"]'::JSONB
+      )
       AND tenant."isActive" = true
     LIMIT 1
 $function$;

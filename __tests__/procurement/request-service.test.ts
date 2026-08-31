@@ -1,7 +1,20 @@
+import { DOCUMENT_LIMITS } from '@/lib/domain/document-limits';
+import {
+  collectExplicitSupplierIds,
+  RequestDocumentValidationError,
+  requestAcceptsVerifiedApplications,
+  resolveItemSourcing,
+  type RequestItemsV1,
+  type RequestSourcingV1,
+  type SourcingSelectionV1,
+  validateExplicitRequestSuppliers,
+  validateRequestDocuments,
+  validateRequestItems,
+  validateRequestSourcing,
+} from '@/lib/procurement/request-document';
 import {
   decodeRequestCursor,
   encodeRequestCursor,
-  PROCUREMENT_REQUEST_LIMITS,
   ProcurementRequestValidationError,
   validateDraftPatchInput,
   validateLinkActionInput,
@@ -12,182 +25,310 @@ import {
 
 const now = new Date('2027-01-08T09:00:00.000Z');
 
-const validDraft = {
-  title: ' Weekly vegetables — Indiranagar ',
-  menuId: 'menu-a',
-  ingredientSelection: {
-    mode: 'SELECTED',
-    ingredientIds: ['ingredient-a', 'ingredient-b'],
-  },
-  supplierIds: ['supplier-a', 'supplier-b'],
-  deliveryDetails: {
-    addressLine: '12, 100 Feet Road',
-    city: 'Bengaluru',
-    state: 'Karnataka',
-    pin: '560038',
-    instructions: ' Deliver before 8:00 AM. ',
-  },
-  deliveryDate: '2027-01-10',
-  quoteDeadline: '2027-01-09T10:00:00.000Z',
-  commercialTerms: ' Payment in 15 days. ',
+const specification = {
+  v: 1 as const,
+  category: 'DAIRY' as const,
+  description: 'Unsalted table butter',
+  preferredBrand: null,
+  packSize: '500 g',
+  qualityGrade: null,
+  notes: null,
+  referenceUrl: null,
+  thumbnailWebpBase64: null,
 };
 
-describe('procurement request input boundaries', () => {
-  it('uses realistic launch ceilings for suppliers and ingredient lines', () => {
-    expect(PROCUREMENT_REQUEST_LIMITS.suppliers).toBe(20);
-    expect(PROCUREMENT_REQUEST_LIMITS.ingredients).toBe(250);
-    expect(() =>
-      validateProcurementRequestDraftInput(
-        {
-          ...validDraft,
-          supplierIds: Array.from({ length: 21 }, (_, index) => `supplier-${index}`),
-        },
-        now,
-      ),
-    ).toThrow(ProcurementRequestValidationError);
-    expect(() =>
-      validateProcurementRequestDraftInput(
-        {
-          ...validDraft,
-          ingredientSelection: {
-            mode: 'SELECTED',
-            ingredientIds: Array.from(
-              { length: 251 },
-              (_, index) => `ingredient-${index}`,
-            ),
-          },
-        },
-        now,
-      ),
-    ).toThrow(ProcurementRequestValidationError);
-  });
+const currentOnly: SourcingSelectionV1 = {
+  v: 1,
+  modes: ['CURRENT'],
+  currentSupplierIds: ['supplier-current'],
+  selectedNewSupplierIds: [],
+  acceptVerifiedApplications: false,
+};
 
-  it('normalizes a selected-ingredient India request without losing exact IDs', () => {
-    expect(validateProcurementRequestDraftInput(validDraft, now)).toEqual({
-      title: 'Weekly vegetables — Indiranagar',
-      menuId: 'menu-a',
-      ingredientSelection: {
-        mode: 'SELECTED',
-        ingredientIds: ['ingredient-a', 'ingredient-b'],
-      },
-      supplierIds: ['supplier-a', 'supplier-b'],
-      deliveryDetails: {
-        addressLine: '12, 100 Feet Road',
-        city: 'Bengaluru',
-        state: 'Karnataka',
-        pin: '560038',
-        instructions: 'Deliver before 8:00 AM.',
-      },
-      deliveryDate: new Date('2027-01-10T00:00:00.000Z'),
-      quoteDeadline: new Date('2027-01-09T10:00:00.000Z'),
-      commercialTerms: 'Payment in 15 days.',
+const verifiedNew: SourcingSelectionV1 = {
+  v: 1,
+  modes: ['VERIFIED_NEW'],
+  currentSupplierIds: [],
+  selectedNewSupplierIds: [],
+  acceptVerifiedApplications: true,
+};
+
+const currentAndVerified: SourcingSelectionV1 = {
+  v: 1,
+  modes: ['CURRENT', 'VERIFIED_NEW'],
+  currentSupplierIds: ['supplier-current'],
+  selectedNewSupplierIds: [],
+  acceptVerifiedApplications: true,
+};
+
+const selectedNewOnly: SourcingSelectionV1 = {
+  v: 1,
+  modes: ['SELECTED_NEW'],
+  currentSupplierIds: [],
+  selectedNewSupplierIds: ['supplier-selected'],
+  acceptVerifiedApplications: false,
+};
+
+function item(
+  id: string,
+  override: SourcingSelectionV1 | null = null,
+): RequestItemsV1['items'][number] {
+  return {
+    id,
+    itemKey: 'butter',
+    name: 'Butter',
+    quantity: '4.25',
+    unit: 'KILOGRAM',
+    specification,
+    sourcingOverride: override,
+  };
+}
+
+const requestItems: RequestItemsV1 = { v: 1, items: [item('ingredient-a')] };
+const requestSourcing: RequestSourcingV1 = { v: 1, default: currentAndVerified };
+
+describe('compact request documents and request commands', () => {
+  it('validates the exact item shape while preserving exact quantities, specifications, and duplicate item keys', () => {
+    expect(validateRequestItems({
+      v: 1,
+      items: [
+        { ...item('ingredient-a'), quantity: '4.250', unit: 'kg' },
+        { ...item('ingredient-b'), quantity: '1.125' },
+      ],
+    })).toEqual({
+      v: 1,
+      items: [
+        { ...item('ingredient-a'), quantity: '4.25' },
+        { ...item('ingredient-b'), quantity: '1.125' },
+      ],
     });
-  });
 
-  it('defines full-menu selection explicitly and never accepts a hidden empty selection', () => {
-    expect(
-      validateProcurementRequestDraftInput(
-        {
-          ...validDraft,
-          ingredientSelection: { mode: 'ALL' },
-        },
-        now,
-      ).ingredientSelection,
-    ).toEqual({ mode: 'ALL' });
-
-    expect(() =>
-      validateProcurementRequestDraftInput(
-        {
-          ...validDraft,
-          ingredientSelection: { mode: 'SELECTED', ingredientIds: [] },
-        },
-        now,
-      ),
-    ).toThrow(ProcurementRequestValidationError);
-  });
-
-  it.each([
-    ['duplicate suppliers', { supplierIds: ['supplier-a', 'supplier-a'] }],
-    [
-      'duplicate ingredients',
+    for (const invalid of [
+      { ...requestItems, unexpected: true },
+      { ...requestItems, items: [{ ...item('ingredient-a'), clientFact: true }] },
+      { ...requestItems, items: [item('ingredient-a'), item('ingredient-a')] },
+      { ...requestItems, items: [{ ...item('ingredient-a'), quantity: '0' }] },
+      { ...requestItems, items: [{ ...item('ingredient-a'), itemKey: 'Butter Key' }] },
+      { ...requestItems, items: [] },
       {
-        ingredientSelection: {
-          mode: 'SELECTED',
-          ingredientIds: ['ingredient-a', 'ingredient-a'],
-        },
+        ...requestItems,
+        items: Array.from(
+          { length: DOCUMENT_LIMITS.requestItems.items + 1 },
+          (_, index) => item(`ingredient-${index}`),
+        ),
       },
-    ],
-    ['past deadline', { quoteDeadline: '2027-01-08T08:59:59.000Z' }],
-    ['deadline at delivery', { quoteDeadline: '2027-01-09T18:30:00.000Z' }],
-    ['invalid India date', { deliveryDate: '2027-02-30' }],
-    ['invalid India PIN', { deliveryDetails: { ...validDraft.deliveryDetails, pin: '56003' } }],
-    ['unknown delivery data', { deliveryDetails: { ...validDraft.deliveryDetails, latitude: 13 } }],
-    ['unbounded title', { title: 'a'.repeat(161) }],
-    ['client authority fields', { tenantId: 'tenant-b', status: 'OPEN' }],
-  ])('rejects %s', (_label, change) => {
-    expect(() =>
-      validateProcurementRequestDraftInput({ ...validDraft, ...change }, now),
-    ).toThrow(ProcurementRequestValidationError);
+    ]) {
+      expect(() => validateRequestItems(invalid)).toThrow(RequestDocumentValidationError);
+    }
   });
 
-  it('allows only mutable draft metadata and an explicit active supplier set in PATCH', () => {
-    expect(
-      validateDraftPatchInput(
-        {
-          title: 'Updated vegetables',
-          supplierIds: ['supplier-b'],
-          deliveryDetails: validDraft.deliveryDetails,
-          deliveryDate: validDraft.deliveryDate,
-          quoteDeadline: validDraft.quoteDeadline,
-          commercialTerms: null,
-        },
-        now,
-      ),
-    ).toMatchObject({
-      title: 'Updated vegetables',
-      supplierIds: ['supplier-b'],
-      commercialTerms: null,
-    });
+  it('enforces the 512 KiB item and 64 KiB sourcing limits from one source of truth', () => {
+    expect(DOCUMENT_LIMITS.requestItems.jsonBytes).toBe(512 * 1024);
+    expect(DOCUMENT_LIMITS.requestSourcing.jsonBytes).toBe(64 * 1024);
 
-    expect(() =>
-      validateDraftPatchInput({ menuId: 'menu-b' }, now),
-    ).toThrow(ProcurementRequestValidationError);
-    expect(() => validateDraftPatchInput({}, now)).toThrow(
-      ProcurementRequestValidationError,
+    const largeItems = {
+      v: 1,
+      items: Array.from({ length: 250 }, (_, index) => ({
+        ...item(`ingredient-${index}`),
+        specification: {
+          ...specification,
+          notes: 'x'.repeat(1_000),
+          referenceUrl: `https://example.test/${'a'.repeat(1_950)}?i=${index}`,
+        },
+      })),
+    };
+    expect(() => validateRequestItems(largeItems)).toThrow(/512 KiB/i);
+
+    const longId = (prefix: string) => `${prefix}-${'x'.repeat(190)}`;
+    const largeSourcing = {
+      v: 1,
+      default: currentOnly,
+      items: Array.from({ length: 200 }, (_, index) => ({
+        id: `item-${index}`,
+        selection: {
+          ...currentOnly,
+          currentSupplierIds: Array.from({ length: 20 }, (_, supplier) =>
+            longId(`${index}-${supplier}`),
+          ),
+        },
+      })),
+    };
+    expect(() => validateRequestSourcing(largeSourcing)).toThrow(
+      RequestDocumentValidationError,
     );
   });
 
-  it('validates versioned rotate and revoke actions with bounded IDs', () => {
-    expect(
-      validateLinkActionInput({
-        action: 'rotate',
-        supplierRequestId: 'grant-a',
-        expectedVersion: 2,
-      }),
-    ).toEqual({
-      action: 'rotate',
-      supplierRequestId: 'grant-a',
-      expectedVersion: 2,
+  it('accepts canonical nonempty mode subsets and resolves a full item replacement override', () => {
+    const canonical = validateRequestSourcing({
+      v: 1,
+      default: {
+        ...currentAndVerified,
+        modes: ['VERIFIED_NEW', 'CURRENT'],
+      },
     });
-    expect(() =>
-      validateLinkActionInput({
-        action: 'delete',
-        supplierRequestId: 'grant-a',
-        expectedVersion: 2,
-      }),
-    ).toThrow(ProcurementRequestValidationError);
+    expect(canonical.default.modes).toEqual(['CURRENT', 'VERIFIED_NEW']);
+
+    expect(resolveItemSourcing(canonical, selectedNewOnly)).toEqual(
+      selectedNewOnly,
+    );
+    expect(resolveItemSourcing(canonical, null)).toEqual(currentAndVerified);
+
+    for (const defaultSelection of [
+      { ...currentOnly, modes: [] },
+      { ...currentOnly, modes: ['CURRENT', 'CURRENT'] },
+      { ...currentOnly, modes: ['CURRENT', 'OTHER'] },
+      { ...currentOnly, currentSupplierIds: ['supplier-current', 'supplier-current'] },
+      { ...currentOnly, selectedNewSupplierIds: ['supplier-selected'] },
+      { ...currentOnly, unexpected: true },
+    ]) {
+      expect(() => validateRequestSourcing({ v: 1, default: defaultSelection }))
+        .toThrow(RequestDocumentValidationError);
+    }
   });
 
-  it('accepts only a closed versioned open body', () => {
-    expect(validateOpenRequestInput({ expectedVersion: 2 })).toEqual({
-      expectedVersion: 2,
+  it('allows verified-new-only demand, bounds the explicit union at 20, and rejects an unsourced effective item', () => {
+    expect(validateRequestDocuments(
+      { v: 1, items: [item('ingredient-a')] },
+      { v: 1, default: verifiedNew },
+    )).toEqual({
+      items: { v: 1, items: [item('ingredient-a')] },
+      sourcing: { v: 1, default: verifiedNew },
+      explicitSupplierIds: [],
     });
-    expect(() =>
-      validateOpenRequestInput({ expectedVersion: 2, status: 'OPEN' }),
-    ).toThrow(ProcurementRequestValidationError);
+
+    const twenty = Array.from({ length: 20 }, (_, index) => `supplier-${index}`);
+    expect(collectExplicitSupplierIds(
+      { v: 1, items: [item('ingredient-a')] },
+      {
+        v: 1,
+        default: { ...currentOnly, currentSupplierIds: twenty },
+      },
+    )).toEqual(twenty);
+    expect(collectExplicitSupplierIds(
+      {
+        v: 1,
+        items: [
+          item('ingredient-a', selectedNewOnly),
+          item('ingredient-b', selectedNewOnly),
+        ],
+      },
+      { v: 1, default: currentOnly },
+    )).toEqual(['supplier-selected']);
+    expect(() => validateRequestDocuments(
+      { v: 1, items: [item('ingredient-a')] },
+      {
+        v: 1,
+        default: {
+          ...currentOnly,
+          currentSupplierIds: [...twenty, 'supplier-20'],
+        },
+      },
+    )).toThrow(/20/);
+    expect(() => validateRequestDocuments(
+      { v: 1, items: [item('ingredient-a', { ...currentOnly, currentSupplierIds: [] })] },
+      { v: 1, default: currentOnly },
+    )).toThrow(/effective sourcing/i);
   });
 
-  it('accepts only bounded future dates when running a completed request again', () => {
+  it('validates active VERIFIED suppliers against the exact CURRENT or SELECTED_NEW relationship', () => {
+    const items = { v: 1 as const, items: [item('ingredient-a', selectedNewOnly)] };
+    const sourcing = { v: 1 as const, default: currentOnly };
+    const valid = [
+      {
+        id: 'supplier-selected', relationshipType: 'SELECTED_NEW' as const,
+        verificationStatus: 'VERIFIED' as const, isActive: true,
+        applicationRequestId: null,
+        verifiedAt: new Date('2027-01-01T00:00:00.000Z'),
+        verifiedByUserId: 'owner-a',
+      },
+    ];
+    expect(() => validateExplicitRequestSuppliers(items, sourcing, valid)).not.toThrow();
+
+    for (const suppliers of [
+      [],
+      valid.map((supplier) => ({
+        ...supplier,
+        relationshipType: 'CURRENT' as const,
+      })),
+      valid.map((supplier) => supplier.id === 'supplier-selected'
+        ? { ...supplier, verificationStatus: 'PENDING' as const }
+        : supplier),
+      valid.map((supplier) => supplier.id === 'supplier-selected'
+        ? { ...supplier, isActive: false }
+        : supplier),
+    ]) {
+      expect(() => validateExplicitRequestSuppliers(items, sourcing, suppliers))
+        .toThrow(RequestDocumentValidationError);
+    }
+  });
+
+  it('enables applications only when one effective item has both the boolean and VERIFIED_NEW mode', () => {
+    expect(requestAcceptsVerifiedApplications(
+      { v: 1, items: [item('ingredient-a', selectedNewOnly)] },
+      { v: 1, default: currentAndVerified },
+    )).toBe(false);
+    expect(requestAcceptsVerifiedApplications(
+      {
+        v: 1,
+        items: [
+          item('ingredient-a', selectedNewOnly),
+          item('ingredient-b', currentAndVerified),
+        ],
+      },
+      { v: 1, default: currentOnly },
+    )).toBe(true);
+    expect(requestAcceptsVerifiedApplications(
+      { v: 1, items: [item('ingredient-a')] },
+      {
+        v: 1,
+        default: {
+          ...currentOnly,
+          acceptVerifiedApplications: true,
+        },
+      },
+    )).toBe(false);
+  });
+
+  it('parses create and patch documents without accepting initial client-authored item facts', () => {
+    const create = validateProcurementRequestDraftInput({
+      title: ' Weekly vegetables — Indiranagar ',
+      menuId: 'menu-a',
+      selectedItemIds: ['ingredient-a', 'ingredient-b'],
+      defaultSourcing: currentAndVerified,
+      sourcingOverrides: { 'ingredient-b': selectedNewOnly },
+      deliveryDetails: {
+        addressLine: '12, 100 Feet Road', city: 'Bengaluru',
+        state: 'Karnataka', pin: '560038', instructions: ' Deliver before 8:00 AM. ',
+      },
+      deliveryDate: '2027-01-10',
+      quoteDeadline: '2027-01-09T10:00:00.000Z',
+      commercialTerms: ' Payment in 15 days. ',
+    }, now);
+    expect(create).toMatchObject({
+      title: 'Weekly vegetables — Indiranagar',
+      selectedItemIds: ['ingredient-a', 'ingredient-b'],
+      defaultSourcing: currentAndVerified,
+      sourcingOverrides: { 'ingredient-b': selectedNewOnly },
+      commercialTerms: 'Payment in 15 days.',
+    });
+    expect(create.deliveryDate).toEqual(new Date('2027-01-10T00:00:00.000Z'));
+
+    expect(() => validateProcurementRequestDraftInput({
+      ...create,
+      items: requestItems,
+    }, now)).toThrow(ProcurementRequestValidationError);
+    expect(validateDraftPatchInput({ items: requestItems, sourcing: requestSourcing }, now))
+      .toEqual({ items: requestItems, sourcing: requestSourcing });
+  });
+
+  it('keeps version, dates, delivery, cursor, and closed action validation', () => {
+    expect(validateOpenRequestInput({ expectedVersion: 2 })).toEqual({ expectedVersion: 2 });
+    expect(validateLinkActionInput({
+      action: 'rotate', supplierRequestId: 'grant-a', expectedVersion: 2,
+    })).toEqual({ action: 'rotate', supplierRequestId: 'grant-a', expectedVersion: 2 });
+    expect(() => validateOpenRequestInput({ expectedVersion: 2, status: 'OPEN' }))
+      .toThrow(ProcurementRequestValidationError);
+
     expect(validateRepeatRequestInput({
       expectedSourceVersion: 3,
       title: 'Weekly vegetables · 17 January',
@@ -199,27 +340,15 @@ describe('procurement request input boundaries', () => {
       deliveryDate: new Date('2027-01-17T00:00:00.000Z'),
       quoteDeadline: new Date('2027-01-16T10:00:00.000Z'),
     });
-    expect(() => validateRepeatRequestInput({
-      expectedSourceVersion: 3,
-      title: 'Weekly vegetables',
-      deliveryDate: '2027-01-10',
-      quoteDeadline: '2027-01-10T00:00:00.000Z',
-      sourceRequestId: 'client-controlled',
-    }, now)).toThrow(ProcurementRequestValidationError);
-  });
 
-  it('round-trips an opaque bounded list cursor and rejects tampering', () => {
     const cursor = encodeRequestCursor({
-      createdAt: new Date('2027-01-08T10:00:00.000Z'),
-      id: 'request-a',
+      createdAt: new Date('2027-01-08T10:00:00.000Z'), id: 'request-a',
     });
     expect(cursor).not.toContain('request-a');
     expect(decodeRequestCursor(cursor)).toEqual({
-      createdAt: new Date('2027-01-08T10:00:00.000Z'),
-      id: 'request-a',
+      createdAt: new Date('2027-01-08T10:00:00.000Z'), id: 'request-a',
     });
-    expect(() => decodeRequestCursor(`${cursor}x`)).toThrow(
-      ProcurementRequestValidationError,
-    );
+    expect(() => decodeRequestCursor(`${cursor}x`))
+      .toThrow(ProcurementRequestValidationError);
   });
 });

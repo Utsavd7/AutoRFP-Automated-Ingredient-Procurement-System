@@ -19,6 +19,9 @@ export const DOCUMENT_LIMITS = {
     jsonBytes: 512 * KIBIBYTE,
     items: 250,
   },
+  requestSourcing: {
+    jsonBytes: 64 * KIBIBYTE,
+  },
   selectedSuppliers: 20,
   quoteRevisions: {
     jsonBytes: 2 * MEBIBYTE,

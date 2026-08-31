@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { problemResponse } from '@/lib/api/problem';
+import { privateNoStoreResponse } from '@/lib/api/private-response';
 import {
   InvalidJsonBodyError,
   readBoundedJson,
@@ -31,22 +32,22 @@ export function requestActor(
 
 export function requestServiceError(error: unknown) {
   if (error instanceof ProcurementRequestValidationError) {
-    return problemResponse(422, 'Invalid procurement request', error.message, {
+    return privateNoStoreResponse(problemResponse(422, 'Invalid procurement request', error.message, {
       errors: error.errors,
-    });
+    }));
   }
   if (error instanceof ProcurementRequestNotFoundError) {
-    return problemResponse(
+    return privateNoStoreResponse(problemResponse(
       404,
       'Procurement request not found',
       'The procurement request is unavailable.',
-    );
+    ));
   }
   if (error instanceof ProcurementRequestConflictError) {
-    return problemResponse(409, 'Procurement request could not be changed', error.message);
+    return privateNoStoreResponse(problemResponse(409, 'Procurement request could not be changed', error.message));
   }
   if (error instanceof AuthorizationError) {
-    return problemResponse(403, 'Forbidden', 'You cannot access this procurement request.');
+    return privateNoStoreResponse(problemResponse(403, 'Forbidden', 'You cannot access this procurement request.'));
   }
   throw error;
 }
@@ -66,7 +67,7 @@ export async function readRequestBody(request: Request) {
 export async function GET(request: Request) {
   const account = await requireAccountContext();
   if (!account) {
-    return problemResponse(401, 'Unauthorized', 'Authentication is required.');
+    return privateNoStoreResponse(problemResponse(401, 'Unauthorized', 'Authentication is required.'));
   }
 
   const url = new URL(request.url);
@@ -77,7 +78,7 @@ export async function GET(request: Request) {
       cursor: url.searchParams.get('cursor') ?? undefined,
       limit: limitText === null ? undefined : Number(limitText),
     });
-    return NextResponse.json(result);
+    return privateNoStoreResponse(NextResponse.json(result));
   } catch (error) {
     return requestServiceError(error);
   }

@@ -311,7 +311,7 @@ test('compact catalog keeps nine bounded tables and fixed digest grants', async 
         `INSERT INTO "Tenant" ("id", "name", "addressLine", "city", "state", "pin", "phone", "updatedAt") VALUES ('compact-tenant-a', 'A', 'A', 'A', 'A', '000000', 'A', CURRENT_TIMESTAMP), ('compact-tenant-b', 'B', 'B', 'B', 'B', '000000', 'B', CURRENT_TIMESTAMP)`,
         `INSERT INTO "User" ("id", "tenantId", "name", "email", "role", "accountState", "updatedAt") VALUES ('compact-user-a', 'compact-tenant-a', 'A', 'a@example.test', 'OWNER', 'ACTIVE', CURRENT_TIMESTAMP), ('compact-user-b', 'compact-tenant-b', 'B', 'b@example.test', 'OWNER', 'ACTIVE', CURRENT_TIMESTAMP)`,
         `INSERT INTO "Menu" ("id", "tenantId", "name", "status", "version", "document", "createdByUserId", "updatedAt") VALUES ('compact-menu-a', 'compact-tenant-a', 'A', 'DRAFT', 1, '{}', 'compact-user-a', CURRENT_TIMESTAMP)`,
-        `INSERT INTO "ProcurementRequest" ("id", "tenantId", "title", "status", "version", "items", "sourcing", "deliveryDetails", "deliveryDate", "quoteDeadline", "applicationTokenDigest", "applicationExpiresAt", "createdByUserId", "createdAt", "updatedAt") VALUES ('compact-request-a', 'compact-tenant-a', 'A', 'OPEN', 1, '[]', '{"v":1,"default":{"v":1,"modes":["VERIFIED_NEW"],"currentSupplierIds":[],"selectedNewSupplierIds":[],"acceptVerifiedApplications":true}}', '{}', CURRENT_DATE + 2, CURRENT_TIMESTAMP + INTERVAL '1 day', repeat('a', 64), CURRENT_TIMESTAMP + INTERVAL '1 day', 'compact-user-a', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+        `INSERT INTO "ProcurementRequest" ("id", "tenantId", "title", "status", "version", "items", "sourcing", "deliveryDetails", "deliveryDate", "quoteDeadline", "applicationTokenDigest", "applicationExpiresAt", "createdByUserId", "createdAt", "updatedAt") VALUES ('compact-request-a', 'compact-tenant-a', 'A', 'OPEN', 1, '{"v":1,"items":[{"id":"item-a","sourcingOverride":null}]}', '{"v":1,"default":{"v":1,"modes":["VERIFIED_NEW"],"currentSupplierIds":[],"selectedNewSupplierIds":[],"acceptVerifiedApplications":true}}', '{}', CURRENT_DATE + 2, CURRENT_TIMESTAMP + INTERVAL '1 day', repeat('a', 64), CURRENT_TIMESTAMP + INTERVAL '1 day', 'compact-user-a', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
       ]) await prisma.$executeRawUnsafe(statement);
       await expect(prisma.$executeRawUnsafe(`
         INSERT INTO "Supplier" ("id", "tenantId", "businessName", "relationshipType", "verificationStatus", "applicationRequestId", "capabilities", "updatedAt")
@@ -331,6 +331,30 @@ test('compact catalog keeps nine bounded tables and fixed digest grants', async 
       await expect(applicationGrant()).resolves.toEqual([
         { tenantId: 'compact-tenant-a', requestId: 'compact-request-a' },
       ]);
+
+      await prisma.$executeRawUnsafe(
+        `UPDATE "ProcurementRequest" SET "items" = $1::JSONB WHERE "id" = 'compact-request-a'`,
+        '{"v":1,"items":[{"id":"item-a","sourcingOverride":{"v":1,"modes":["CURRENT"],"currentSupplierIds":["supplier-a"],"selectedNewSupplierIds":[],"acceptVerifiedApplications":false}}]}',
+      );
+      await expect(applicationGrant()).resolves.toEqual([]);
+
+      await prisma.$executeRawUnsafe(
+        `UPDATE "ProcurementRequest" SET "items" = $1::JSONB, "sourcing" = $2::JSONB WHERE "id" = 'compact-request-a'`,
+        '{"v":1,"items":[{"id":"item-a","sourcingOverride":{"v":1,"modes":["VERIFIED_NEW"],"currentSupplierIds":[],"selectedNewSupplierIds":[],"acceptVerifiedApplications":true}}]}',
+        '{"v":1,"default":{"v":1,"modes":["CURRENT"],"currentSupplierIds":["supplier-a"],"selectedNewSupplierIds":[],"acceptVerifiedApplications":false}}',
+      );
+      await expect(applicationGrant()).resolves.toEqual([
+        { tenantId: 'compact-tenant-a', requestId: 'compact-request-a' },
+      ]);
+
+      await prisma.$executeRawUnsafe(
+        `UPDATE "ProcurementRequest" SET "items" = $1::JSONB, "createdAt" = CURRENT_TIMESTAMP - INTERVAL '2 seconds', "quoteDeadline" = CURRENT_TIMESTAMP - INTERVAL '1 second' WHERE "id" = 'compact-request-a'`,
+        '{"v":1,"items":[{"id":"item-a","sourcingOverride":null}]}',
+      );
+      await expect(applicationGrant()).resolves.toEqual([]);
+      await prisma.$executeRawUnsafe(
+        `UPDATE "ProcurementRequest" SET "createdAt" = CURRENT_TIMESTAMP, "quoteDeadline" = CURRENT_TIMESTAMP + INTERVAL '1 day' WHERE "id" = 'compact-request-a'`,
+      );
       for (const sourcing of [
         '{"v":1,"default":{"v":1,"modes":["CURRENT"],"acceptVerifiedApplications":true}}',
         '{"v":1,"default":{"v":1,"modes":["VERIFIED_NEW"],"acceptVerifiedApplications":"true"}}',

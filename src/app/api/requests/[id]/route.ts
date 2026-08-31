@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { problemResponse } from '@/lib/api/problem';
+import { privateNoStoreResponse } from '@/lib/api/private-response';
 import {
   getProcurementRequest,
   updateProcurementRequestDraft,
@@ -27,7 +28,7 @@ function record(value: unknown): Record<string, unknown> {
 export async function GET(_request: Request, context: RequestRouteContext) {
   const account = await requireAccountContext();
   if (!account) {
-    return problemResponse(401, 'Unauthorized', 'Authentication is required.');
+    return privateNoStoreResponse(problemResponse(401, 'Unauthorized', 'Authentication is required.'));
   }
   const { id } = await context.params;
   try {
@@ -35,7 +36,7 @@ export async function GET(_request: Request, context: RequestRouteContext) {
       actor: requestActor(account),
       requestId: id,
     });
-    return NextResponse.json({ request: procurementRequest });
+    return privateNoStoreResponse(NextResponse.json({ request: procurementRequest }));
   } catch (error) {
     return requestServiceError(error);
   }

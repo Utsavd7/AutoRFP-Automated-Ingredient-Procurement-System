@@ -6,13 +6,33 @@ import {
   type TenantTransactionHost,
   withTenant,
 } from '@/lib/db/tenant-transaction';
+import { DOCUMENT_LIMITS } from '@/lib/domain/document-limits';
+import { validateMenuDocument } from '@/lib/menu/menu-document';
 import { prisma } from '@/lib/prisma';
+import {
+  collectExplicitSupplierIds,
+  type ExplicitRequestSupplier,
+  type RequestItemsV1,
+  type RequestSourcingV1,
+  RequestDocumentValidationError,
+  requestAcceptsVerifiedApplications,
+  resolveItemSourcing,
+  type SourcingSelectionV1,
+  validateExplicitRequestSuppliers,
+  validateRequestDocuments,
+  validateRequestItems,
+  validateRequestSourcing,
+} from '@/lib/procurement/request-document';
 import {
   createOpaqueToken,
   digestOpaqueToken,
+  type TokenPurpose,
 } from '@/lib/security/tokens';
 
-export const PROCUREMENT_REQUEST_BODY_BYTES = 64 * 1_024;
+export const PROCUREMENT_REQUEST_BODY_BYTES =
+  DOCUMENT_LIMITS.requestItems.jsonBytes +
+  DOCUMENT_LIMITS.requestSourcing.jsonBytes +
+  64 * 1_024;
 
 export const PROCUREMENT_REQUEST_LIMITS = {
   idBytes: 200,
@@ -21,8 +41,8 @@ export const PROCUREMENT_REQUEST_LIMITS = {
   placeBytes: 120,
   instructionsBytes: 1_000,
   termsBytes: 2_000,
-  suppliers: 20,
-  ingredients: 250,
+  suppliers: DOCUMENT_LIMITS.selectedSuppliers,
+  ingredients: DOCUMENT_LIMITS.requestItems.items,
   listPage: 50,
 } as const;
 
@@ -58,10 +78,6 @@ export class ProcurementRequestConflictError extends Error {
   }
 }
 
-type IngredientSelection =
-  | { mode: 'ALL' }
-  | { mode: 'SELECTED'; ingredientIds: string[] };
-
 type DeliveryDetails = {
   addressLine: string;
   city: string;
@@ -73,8 +89,9 @@ type DeliveryDetails = {
 export type ValidProcurementRequestDraft = {
   title: string;
   menuId: string;
-  ingredientSelection: IngredientSelection;
-  supplierIds: string[];
+  selectedItemIds: string[];
+  defaultSourcing: SourcingSelectionV1;
+  sourcingOverrides: Record<string, SourcingSelectionV1>;
   deliveryDetails: DeliveryDetails;
   deliveryDate: Date;
   quoteDeadline: Date;
@@ -82,7 +99,8 @@ export type ValidProcurementRequestDraft = {
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
+  return value !== null && typeof value === 'object' && !Array.isArray(value) &&
+    Object.getPrototypeOf(value) === Object.prototype;
 }
 
 function byteLength(value: string) {
@@ -99,9 +117,14 @@ function rejectUnknownKeys(
   errors: ValidationErrors,
   path = '',
 ) {
-  for (const key of Object.keys(value)) {
-    if (!allowed.includes(key)) {
-      addError(errors, path ? `${path}.${key}` : key, 'This field is not allowed.');
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key !== 'string' || !allowed.includes(key)) {
+      addError(errors, path ? `${path}.${String(key)}` : String(key), 'This field is not allowed.');
+      continue;
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor?.enumerable || !('value' in descriptor)) {
+      addError(errors, path ? `${path}.${key}` : key, 'This field must be an enumerable data property.');
     }
   }
 }
@@ -220,9 +243,7 @@ function parseDeliveryDate(value: unknown, errors: ValidationErrors) {
 function parseQuoteDeadline(value: unknown, now: Date, errors: ValidationErrors) {
   if (
     typeof value !== 'string' ||
-    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(
-      value,
-    )
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(value)
   ) {
     addError(errors, 'quoteDeadline', 'Use an ISO timestamp with an explicit timezone.');
     return new Date(Number.NaN);
@@ -248,35 +269,60 @@ function validateDeadlineBeforeIndiaDelivery(
   }
 }
 
-function parseSelection(value: unknown, errors: ValidationErrors): IngredientSelection {
-  if (!isRecord(value)) {
-    addError(errors, 'ingredientSelection', 'Choose all menu ingredients or an explicit selection.');
-    return { mode: 'ALL' };
-  }
-  if (value.mode === 'ALL') {
-    rejectUnknownKeys(value, ['mode'], errors, 'ingredientSelection');
-    return { mode: 'ALL' };
-  }
-  if (value.mode === 'SELECTED') {
-    rejectUnknownKeys(value, ['mode', 'ingredientIds'], errors, 'ingredientSelection');
-    return {
-      mode: 'SELECTED',
-      ingredientIds: uniqueIds(
-        value.ingredientIds,
-        'ingredientSelection.ingredientIds',
-        PROCUREMENT_REQUEST_LIMITS.ingredients,
-        errors,
-      ),
-    };
-  }
-  addError(errors, 'ingredientSelection.mode', 'Choose ALL or SELECTED.');
-  return { mode: 'ALL' };
-}
-
 function throwIfInvalid(errors: ValidationErrors) {
   if (Object.keys(errors).length > 0) {
     throw new ProcurementRequestValidationError(errors);
   }
+}
+
+function parseSourcingSelection(
+  value: unknown,
+  path: string,
+  errors: ValidationErrors,
+) {
+  try {
+    return validateRequestSourcing({ v: 1, default: value }).default;
+  } catch (error) {
+    if (!(error instanceof RequestDocumentValidationError)) throw error;
+    addError(errors, path, error.message);
+    return {
+      v: 1,
+      modes: ['VERIFIED_NEW'],
+      currentSupplierIds: [],
+      selectedNewSupplierIds: [],
+      acceptVerifiedApplications: true,
+    } satisfies SourcingSelectionV1;
+  }
+}
+
+function parseSourcingOverrides(
+  value: unknown,
+  selectedItemIds: string[],
+  errors: ValidationErrors,
+) {
+  if (!isRecord(value)) {
+    addError(errors, 'sourcingOverrides', 'Provide sourcing overrides keyed by selected item ID.');
+    return {};
+  }
+  const selected = new Set(selectedItemIds);
+  const result: Record<string, SourcingSelectionV1> = {};
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key !== 'string' || !selected.has(key)) {
+      addError(errors, `sourcingOverrides.${String(key)}`, 'Only selected item IDs may have sourcing overrides.');
+      continue;
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor?.enumerable || !('value' in descriptor)) {
+      addError(errors, `sourcingOverrides.${key}`, 'This override must be an enumerable data property.');
+      continue;
+    }
+    result[key] = parseSourcingSelection(
+      descriptor.value,
+      `sourcingOverrides.${key}`,
+      errors,
+    );
+  }
+  return result;
 }
 
 export function validateProcurementRequestDraftInput(
@@ -294,8 +340,9 @@ export function validateProcurementRequestDraftInput(
     [
       'title',
       'menuId',
-      'ingredientSelection',
-      'supplierIds',
+      'selectedItemIds',
+      'defaultSourcing',
+      'sourcingOverrides',
       'deliveryDetails',
       'deliveryDate',
       'quoteDeadline',
@@ -310,11 +357,20 @@ export function validateProcurementRequestDraftInput(
     errors,
   ) ?? '';
   const menuId = boundedId(input.menuId, 'menuId', errors);
-  const ingredientSelection = parseSelection(input.ingredientSelection, errors);
-  const supplierIds = uniqueIds(
-    input.supplierIds,
-    'supplierIds',
-    PROCUREMENT_REQUEST_LIMITS.suppliers,
+  const selectedItemIds = uniqueIds(
+    input.selectedItemIds,
+    'selectedItemIds',
+    DOCUMENT_LIMITS.requestItems.items,
+    errors,
+  );
+  const defaultSourcing = parseSourcingSelection(
+    input.defaultSourcing,
+    'defaultSourcing',
+    errors,
+  );
+  const sourcingOverrides = parseSourcingOverrides(
+    input.sourcingOverrides,
+    selectedItemIds,
     errors,
   );
   const deliveryDetails = parseDeliveryDetails(input.deliveryDetails, errors);
@@ -332,8 +388,9 @@ export function validateProcurementRequestDraftInput(
   return {
     title,
     menuId,
-    ingredientSelection,
-    supplierIds,
+    selectedItemIds,
+    defaultSourcing,
+    sourcingOverrides,
     deliveryDetails,
     deliveryDate,
     quoteDeadline,
@@ -341,17 +398,15 @@ export function validateProcurementRequestDraftInput(
   };
 }
 
-export type ValidDraftPatch = Partial<
-  Pick<
-    ValidProcurementRequestDraft,
-    | 'title'
-    | 'supplierIds'
-    | 'deliveryDetails'
-    | 'deliveryDate'
-    | 'quoteDeadline'
-    | 'commercialTerms'
-  >
->;
+export type ValidDraftPatch = Partial<{
+  title: string;
+  items: RequestItemsV1;
+  sourcing: RequestSourcingV1;
+  deliveryDetails: DeliveryDetails;
+  deliveryDate: Date;
+  quoteDeadline: Date;
+  commercialTerms: string | null;
+}>;
 
 export function validateDraftPatchInput(input: unknown, now = new Date()): ValidDraftPatch {
   const errors: ValidationErrors = {};
@@ -360,7 +415,8 @@ export function validateDraftPatchInput(input: unknown, now = new Date()): Valid
   }
   const allowed = [
     'title',
-    'supplierIds',
+    'items',
+    'sourcing',
     'deliveryDetails',
     'deliveryDate',
     'quoteDeadline',
@@ -377,13 +433,21 @@ export function validateDraftPatchInput(input: unknown, now = new Date()): Valid
       errors,
     ) ?? '';
   }
-  if (Object.hasOwn(input, 'supplierIds')) {
-    patch.supplierIds = uniqueIds(
-      input.supplierIds,
-      'supplierIds',
-      PROCUREMENT_REQUEST_LIMITS.suppliers,
-      errors,
-    );
+  if (Object.hasOwn(input, 'items')) {
+    try {
+      patch.items = validateRequestItems(input.items);
+    } catch (error) {
+      if (!(error instanceof RequestDocumentValidationError)) throw error;
+      addError(errors, 'items', error.message);
+    }
+  }
+  if (Object.hasOwn(input, 'sourcing')) {
+    try {
+      patch.sourcing = validateRequestSourcing(input.sourcing);
+    } catch (error) {
+      if (!(error instanceof RequestDocumentValidationError)) throw error;
+      addError(errors, 'sourcing', error.message);
+    }
   }
   if (Object.hasOwn(input, 'deliveryDetails')) {
     patch.deliveryDetails = parseDeliveryDetails(input.deliveryDetails, errors);
@@ -447,11 +511,7 @@ export function validateLinkActionInput(input: unknown) {
   rejectUnknownKeys(input, ['action', 'supplierRequestId', 'expectedVersion'], errors);
   const action = input.action === 'rotate' || input.action === 'revoke' ? input.action : null;
   if (!action) addError(errors, 'action', 'Choose rotate or revoke.');
-  const supplierRequestId = boundedId(
-    input.supplierRequestId,
-    'supplierRequestId',
-    errors,
-  );
+  const supplierRequestId = boundedId(input.supplierRequestId, 'supplierRequestId', errors);
   let expectedVersion = 0;
   try {
     expectedVersion = validateExpectedVersion(input.expectedVersion);
@@ -516,20 +576,19 @@ export function decodeRequestCursor(value: string): RequestCursor {
 }
 
 type RequestActor = { tenantId: string; userId: string };
-
-type RequestClient = Pick<PrismaClient, '$queryRaw' | '$transaction'> &
-  TenantTransactionHost;
-
+type RequestClient = Pick<PrismaClient, '$queryRaw' | '$transaction'> & TenantTransactionHost;
 type IssuedToken = { raw: string; digest: string };
 
 export type RequestServiceOptions = {
   now?: () => Date;
   transactionClock?: (transaction: Prisma.TransactionClient) => Promise<Date>;
   tokenFactory?: () => IssuedToken;
+  applicationTokenFactory?: () => IssuedToken;
   shareBaseUrl?: string;
 };
 
 const MAX_LINK_LIFETIME_MS = 14 * 24 * 60 * 60 * 1_000;
+const EMPTY_QUOTE_REVISIONS = { v: 1, revisions: [] } as const;
 
 const safeSupplierRequestSelect = {
   id: true,
@@ -539,7 +598,9 @@ const safeSupplierRequestSelect = {
   expiresAt: true,
   revokedAt: true,
   viewedAt: true,
+  quoteRevision: true,
   createdAt: true,
+  updatedAt: true,
   supplier: {
     select: {
       id: true,
@@ -548,24 +609,42 @@ const safeSupplierRequestSelect = {
       phone: true,
       whatsappNumber: true,
       email: true,
+      relationshipType: true,
+      verificationStatus: true,
       isActive: true,
     },
   },
 } satisfies Prisma.SupplierRequestSelect;
 
-const requestDetailInclude = {
-  items: {
-    orderBy: [{ createdAt: 'asc' as const }, { id: 'asc' as const }],
-  },
+const safeRequestDetailSelect = {
+  id: true,
+  tenantId: true,
+  title: true,
+  status: true,
+  version: true,
+  menuId: true,
+  sourceRequestId: true,
+  items: true,
+  sourcing: true,
+  deliveryDetails: true,
+  deliveryDate: true,
+  quoteDeadline: true,
+  commercialTerms: true,
+  applicationExpiresAt: true,
+  applicationRevokedAt: true,
+  openedAt: true,
+  awardedAt: true,
+  cancelledAt: true,
+  createdByUserId: true,
+  createdAt: true,
+  updatedAt: true,
   supplierRequests: {
     orderBy: [{ createdAt: 'asc' as const }, { id: 'asc' as const }],
     select: safeSupplierRequestSelect,
   },
-} satisfies Prisma.ProcurementRequestInclude;
+} satisfies Prisma.ProcurementRequestSelect;
 
-async function postgresTransactionClock(
-  transaction: Prisma.TransactionClient,
-) {
+async function postgresTransactionClock(transaction: Prisma.TransactionClient) {
   const [clock] = await transaction.$queryRaw<Array<{ now: Date }>>`
     SELECT clock_timestamp() AS "now"
   `;
@@ -579,8 +658,9 @@ function optionsWithDefaults(options: RequestServiceOptions | undefined) {
   return {
     now: options?.now ?? (() => new Date()),
     transactionClock: options?.transactionClock ?? postgresTransactionClock,
-    tokenFactory:
-      options?.tokenFactory ?? (() => createOpaqueToken('supplier-request')),
+    tokenFactory: options?.tokenFactory ?? (() => createOpaqueToken('supplier-request')),
+    applicationTokenFactory:
+      options?.applicationTokenFactory ?? (() => createOpaqueToken('supplier-application')),
     shareBaseUrl: options?.shareBaseUrl,
   };
 }
@@ -627,60 +707,30 @@ async function requireActiveActor(
   if (!user) throw new AuthorizationError();
 }
 
-async function activeSuppliers(
-  transaction: Prisma.TransactionClient,
-  tenantId: string,
-  supplierIds: string[],
-) {
-  const suppliers = await transaction.$queryRaw<
-    Array<{ id: string; isActive: boolean }>
-  >`
-    SELECT "id", "isActive"
-    FROM "Supplier"
-    WHERE "tenantId" = ${tenantId}
-      AND "id" IN (${Prisma.join(supplierIds)})
-    ORDER BY "id"
-    FOR UPDATE
-  `;
-  if (suppliers.length !== supplierIds.length) {
-    throw new ProcurementRequestNotFoundError();
-  }
-  if (suppliers.some(({ isActive }) => !isActive)) {
-    throw new ProcurementRequestConflictError(
-      'Only active suppliers can receive this procurement request.',
-    );
-  }
-  return suppliers;
-}
-
-function issueToken(factory: () => IssuedToken) {
+function issueToken(purpose: TokenPurpose, factory: () => IssuedToken) {
   const token = factory();
   if (
     !token ||
     typeof token.raw !== 'string' ||
     typeof token.digest !== 'string' ||
     !/^[a-f0-9]{64}$/.test(token.digest) ||
-    digestOpaqueToken('supplier-request', token.raw) !== token.digest
+    digestOpaqueToken(purpose, token.raw) !== token.digest
   ) {
-    throw new TypeError('The supplier link token generator returned invalid output.');
+    throw new TypeError('The public link token generator returned invalid output.');
   }
   return token;
 }
 
 function linkExpiry(now: Date, quoteDeadline: Date) {
-  return new Date(
-    Math.min(quoteDeadline.getTime(), now.getTime() + MAX_LINK_LIFETIME_MS),
-  );
+  return new Date(Math.min(quoteDeadline.getTime(), now.getTime() + MAX_LINK_LIFETIME_MS));
 }
 
 function shareBaseUrl(configured: string | undefined) {
-  const candidate =
-    configured ??
-    process.env.NEXTAUTH_URL ??
+  const candidate = configured ?? process.env.NEXTAUTH_URL ??
     (process.env.NODE_ENV === 'production' ? undefined : 'http://localhost:3000');
   if (!candidate) {
     throw new ProcurementRequestConflictError(
-      'Configure the application URL before issuing supplier links.',
+      'Configure the application URL before issuing public links.',
     );
   }
   let url: URL;
@@ -688,20 +738,20 @@ function shareBaseUrl(configured: string | undefined) {
     url = new URL(candidate);
   } catch {
     throw new ProcurementRequestConflictError(
-      'Configure a valid application URL before issuing supplier links.',
+      'Configure a valid application URL before issuing public links.',
     );
   }
   const local = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
   if (url.username || url.password || url.search || url.hash || (!local && url.protocol !== 'https:')) {
     throw new ProcurementRequestConflictError(
-      'Configure a secure application URL before issuing supplier links.',
+      'Configure a secure application URL before issuing public links.',
     );
   }
   return url.origin;
 }
 
-function supplierShareUrl(baseUrl: string, rawToken: string) {
-  const url = new URL('/quote', `${baseUrl}/`);
+function fragmentShareUrl(baseUrl: string, pathname: string, rawToken: string) {
+  const url = new URL(pathname, `${baseUrl}/`);
   url.hash = new URLSearchParams({ token: rawToken }).toString();
   return url.toString();
 }
@@ -710,6 +760,8 @@ type LockedRequest = {
   id: string;
   status: 'DRAFT' | 'OPEN' | 'AWARDED' | 'CANCELLED';
   version: number;
+  items: Prisma.JsonValue;
+  sourcing: Prisma.JsonValue;
   deliveryDate: Date;
   quoteDeadline: Date;
 };
@@ -720,7 +772,7 @@ async function lockRequest(
   requestId: string,
 ) {
   const [locked] = await transaction.$queryRaw<LockedRequest[]>`
-    SELECT "id", "status", "version", "deliveryDate", "quoteDeadline"
+    SELECT "id", "status", "version", "items", "sourcing", "deliveryDate", "quoteDeadline"
     FROM "ProcurementRequest"
     WHERE "tenantId" = ${actor.tenantId}
       AND "id" = ${requestId}
@@ -749,6 +801,19 @@ function assertVersionAndStatus(
   }
 }
 
+function requestDocuments(items: unknown, sourcing: unknown) {
+  try {
+    return validateRequestDocuments(items, sourcing);
+  } catch (error) {
+    if (!(error instanceof RequestDocumentValidationError)) throw error;
+    throw new ProcurementRequestValidationError({ documents: [error.message] });
+  }
+}
+
+function jsonDocument(value: object) {
+  return value as unknown as Prisma.InputJsonValue;
+}
+
 async function requestDetails(
   transaction: Prisma.TransactionClient,
   tenantId: string,
@@ -756,10 +821,63 @@ async function requestDetails(
 ) {
   const request = await transaction.procurementRequest.findFirst({
     where: { tenantId, id: requestId },
-    include: requestDetailInclude,
+    select: safeRequestDetailSelect,
   });
   if (!request) throw new ProcurementRequestNotFoundError();
-  return request;
+  const documents = requestDocuments(request.items, request.sourcing);
+  return {
+    ...request,
+    items: documents.items,
+    sourcing: documents.sourcing,
+    effectiveSourcing: documents.items.items.map((item) => ({
+      itemId: item.id,
+      selection: resolveItemSourcing(documents.sourcing, item.sourcingOverride),
+    })),
+  };
+}
+
+async function eligibleSuppliers(
+  transaction: Prisma.TransactionClient,
+  tenantId: string,
+  items: RequestItemsV1,
+  sourcing: RequestSourcingV1,
+) {
+  const supplierIds = collectExplicitSupplierIds(items, sourcing);
+  if (supplierIds.length === 0) return [];
+  const suppliers = await transaction.$queryRaw<ExplicitRequestSupplier[]>`
+    SELECT "id", "relationshipType", "verificationStatus", "applicationRequestId",
+           "verifiedAt", "verifiedByUserId", "isActive"
+    FROM "Supplier"
+    WHERE "tenantId" = ${tenantId}
+      AND "id" IN (${Prisma.join(supplierIds)})
+    ORDER BY "id"
+    FOR UPDATE
+  `;
+  if (suppliers.length !== supplierIds.length) throw new ProcurementRequestNotFoundError();
+  try {
+    validateExplicitRequestSuppliers(items, sourcing, suppliers);
+  } catch (error) {
+    if (!(error instanceof RequestDocumentValidationError)) throw error;
+    throw new ProcurementRequestConflictError(
+      'Only active verified suppliers in the selected relationship can receive this request.',
+    );
+  }
+  return suppliers;
+}
+
+async function lockedSupplierRequests(
+  transaction: Prisma.TransactionClient,
+  tenantId: string,
+  requestId: string,
+) {
+  return transaction.$queryRaw<Array<{ id: string; supplierId: string }>>`
+    SELECT "id", "supplierId"
+    FROM "SupplierRequest"
+    WHERE "tenantId" = ${tenantId}
+      AND "requestId" = ${requestId}
+    ORDER BY "id"
+    FOR UPDATE
+  `;
 }
 
 async function replaceSupplierRequestTokens(
@@ -771,6 +889,7 @@ async function replaceSupplierRequestTokens(
     grants: Array<{ id: string; tokenDigest: string }>;
   },
 ) {
+  if (input.grants.length === 0) return;
   const rows = input.grants.map(({ id, tokenDigest }) =>
     Prisma.sql`(${id}, ${tokenDigest})`,
   );
@@ -779,15 +898,14 @@ async function replaceSupplierRequestTokens(
     SET "tokenDigest" = issued."tokenDigest"::CHAR(64),
         "expiresAt" = ${input.expiresAt},
         "revokedAt" = NULL,
-        "viewedAt" = NULL
+        "viewedAt" = NULL,
+        "updatedAt" = clock_timestamp()
     FROM (VALUES ${Prisma.join(rows)}) AS issued("id", "tokenDigest")
     WHERE target."tenantId" = ${input.tenantId}
       AND target."requestId" = ${input.requestId}
       AND target."id" = issued."id"
   `;
-  if (updated !== input.grants.length) {
-    throw new ProcurementRequestNotFoundError();
-  }
+  if (updated !== input.grants.length) throw new ProcurementRequestNotFoundError();
 }
 
 async function writeSupplierLinkCreatedAuditEvents(
@@ -795,6 +913,7 @@ async function writeSupplierLinkCreatedAuditEvents(
   actor: RequestActor,
   supplierRequestIds: string[],
 ) {
+  if (supplierRequestIds.length === 0) return;
   await transaction.auditEvent.createMany({
     data: supplierRequestIds.map((entityId) => ({
       tenantId: actor.tenantId,
@@ -806,80 +925,122 @@ async function writeSupplierLinkCreatedAuditEvents(
   });
 }
 
+type RequestListRow = {
+  id: string;
+  tenantId: string;
+  title: string;
+  status: 'DRAFT' | 'OPEN' | 'AWARDED' | 'CANCELLED';
+  version: number;
+  menuId: string | null;
+  sourceRequestId: string | null;
+  quoteDeadline: Date;
+  openedAt: Date | null;
+  awardedAt: Date | null;
+  cancelledAt: Date | null;
+  createdByUserId: string;
+  createdAt: Date;
+  updatedAt: Date;
+  itemCount: number;
+  supplierCount: number;
+};
+
 export async function listProcurementRequests(
-  input: {
-    actor: RequestActor;
-    cursor?: string;
-    limit?: number;
-  },
+  input: { actor: RequestActor; cursor?: string; limit?: number },
   client: RequestClient = prisma,
 ) {
   const actor = validateActor(input.actor);
   const limit = input.limit ?? 25;
-  if (
-    !Number.isInteger(limit) ||
-    limit < 1 ||
-    limit > PROCUREMENT_REQUEST_LIMITS.listPage
-  ) {
+  if (!Number.isInteger(limit) || limit < 1 || limit > PROCUREMENT_REQUEST_LIMITS.listPage) {
     throw new ProcurementRequestValidationError({
-      limit: [
-        `Limit must be between 1 and ${PROCUREMENT_REQUEST_LIMITS.listPage}.`,
-      ],
+      limit: [`Limit must be between 1 and ${PROCUREMENT_REQUEST_LIMITS.listPage}.`],
     });
   }
   const cursor = input.cursor ? decodeRequestCursor(input.cursor) : undefined;
+  return withTenant(actor.tenantId, async (transaction) => {
+    await requireActiveActor(transaction, actor);
+    const cursorPredicate = cursor
+      ? Prisma.sql`AND (request."createdAt" < ${cursor.createdAt}
+          OR (request."createdAt" = ${cursor.createdAt} AND request."id" < ${cursor.id}))`
+      : Prisma.empty;
+    const requests = await transaction.$queryRaw<RequestListRow[]>(Prisma.sql`
+      SELECT request."id", request."tenantId", request."title", request."status",
+             request."version", request."menuId", request."sourceRequestId",
+             request."quoteDeadline", request."openedAt", request."awardedAt",
+             request."cancelledAt", request."createdByUserId", request."createdAt",
+             request."updatedAt",
+             CASE
+               WHEN pg_catalog.jsonb_typeof(request."items" -> 'items') = 'array'
+               THEN pg_catalog.jsonb_array_length(request."items" -> 'items')
+               ELSE 0
+             END::INTEGER AS "itemCount",
+             (
+               SELECT pg_catalog.count(*)::INTEGER
+               FROM "SupplierRequest" AS supplier_request
+               WHERE supplier_request."tenantId" = request."tenantId"
+                 AND supplier_request."requestId" = request."id"
+             ) AS "supplierCount"
+      FROM "ProcurementRequest" AS request
+      WHERE request."tenantId" = ${actor.tenantId}
+      ${cursorPredicate}
+      ORDER BY request."createdAt" DESC, request."id" DESC
+      LIMIT ${limit + 1}
+    `);
+    const hasMore = requests.length > limit;
+    if (hasMore) requests.pop();
+    const last = requests.at(-1);
+    return {
+      requests,
+      nextCursor: hasMore && last
+        ? encodeRequestCursor({ createdAt: last.createdAt, id: last.id })
+        : null,
+    };
+  }, client);
+}
 
-  return withTenant(
-    actor.tenantId,
-    async (transaction) => {
-      await requireActiveActor(transaction, actor);
-      const requests = await transaction.procurementRequest.findMany({
-        where: {
-          tenantId: actor.tenantId,
-          ...(cursor
-            ? {
-                OR: [
-                  { createdAt: { lt: cursor.createdAt } },
-                  { createdAt: cursor.createdAt, id: { lt: cursor.id } },
-                ],
-              }
-            : {}),
-        },
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-        take: limit + 1,
-        select: {
-          id: true,
-          tenantId: true,
-          title: true,
-          status: true,
-          version: true,
-          menuId: true,
-          deliveryDetails: true,
-          deliveryDate: true,
-          quoteDeadline: true,
-          commercialTerms: true,
-          openedAt: true,
-          awardedAt: true,
-          cancelledAt: true,
-          createdByUserId: true,
-          createdAt: true,
-          updatedAt: true,
-          _count: { select: { items: true, supplierRequests: true } },
-        },
-      });
-      const hasMore = requests.length > limit;
-      if (hasMore) requests.pop();
-      const last = requests.at(-1);
-      return {
-        requests,
-        nextCursor:
-          hasMore && last
-            ? encodeRequestCursor({ createdAt: last.createdAt, id: last.id })
-            : null,
-      };
-    },
-    client,
-  );
+function snapshotSelectedMenuItems(
+  documentInput: unknown,
+  selectedItemIds: string[],
+  overrides: Record<string, SourcingSelectionV1>,
+) {
+  let document;
+  try {
+    document = validateMenuDocument(documentInput);
+  } catch {
+    throw new ProcurementRequestConflictError(
+      'The approved menu is not safe to use for a procurement request.',
+    );
+  }
+  const selected = new Set(selectedItemIds);
+  const menuItems = document.dishes.flatMap(({ ingredients }) => ingredients)
+    .filter(({ id }) => selected.has(id));
+  if (menuItems.length !== selectedItemIds.length) throw new ProcurementRequestNotFoundError();
+  return {
+    v: 1,
+    items: menuItems.map((menuItem) => ({
+      id: menuItem.id,
+      itemKey: menuItem.itemKey,
+      name: menuItem.name,
+      quantity: menuItem.quantity,
+      unit: menuItem.unit,
+      specification: menuItem.specification,
+      sourcingOverride: Object.hasOwn(overrides, menuItem.id)
+        ? overrides[menuItem.id]!
+        : null,
+    })),
+  } satisfies RequestItemsV1;
+}
+
+function placeholderGrant(
+  supplierId: string,
+  now: Date,
+  quoteDeadline: Date,
+  tokenFactory: () => IssuedToken,
+) {
+  return {
+    supplierId,
+    token: issueToken('supplier-request', tokenFactory),
+    expiresAt: linkExpiry(now, quoteDeadline),
+  };
 }
 
 export async function createProcurementRequestDraft(
@@ -891,116 +1052,64 @@ export async function createProcurementRequestDraft(
   const serviceOptions = optionsWithDefaults(options);
   const now = serviceOptions.now();
   const draft = validateProcurementRequestDraftInput(input.draft, now);
-
-  return withTenant(
-    actor.tenantId,
-    async (transaction) => {
-      await requireActiveActor(transaction, actor);
-      const [menu] = await transaction.$queryRaw<
-        Array<{ id: string; status: 'DRAFT' | 'APPROVED'; version: number }>
-      >`
-        SELECT "id", "status", "version"
-        FROM "Menu"
-        WHERE "tenantId" = ${actor.tenantId}
-          AND "id" = ${draft.menuId}
-        FOR UPDATE
-      `;
-      if (!menu) throw new ProcurementRequestNotFoundError();
-      if (menu.status !== 'APPROVED') {
-        throw new ProcurementRequestConflictError(
-          'Approve the current menu before creating a procurement request.',
-        );
-      }
-
-      const selectedIds =
-        draft.ingredientSelection.mode === 'SELECTED'
-          ? draft.ingredientSelection.ingredientIds
-          : undefined;
-      const ingredients = await transaction.ingredient.findMany({
-        where: {
+  return withTenant(actor.tenantId, async (transaction) => {
+    await requireActiveActor(transaction, actor);
+    const menu = await transaction.menu.findFirst({
+      where: { tenantId: actor.tenantId, id: draft.menuId, status: 'APPROVED' },
+      select: { document: true },
+    });
+    if (!menu) throw new ProcurementRequestNotFoundError();
+    const items = snapshotSelectedMenuItems(
+      menu.document,
+      draft.selectedItemIds,
+      draft.sourcingOverrides,
+    );
+    const sourcing = { v: 1, default: draft.defaultSourcing } satisfies RequestSourcingV1;
+    const documents = requestDocuments(items, sourcing);
+    const suppliers = await eligibleSuppliers(
+      transaction,
+      actor.tenantId,
+      documents.items,
+      documents.sourcing,
+    );
+    const grants = suppliers.map(({ id }) => placeholderGrant(
+      id,
+      now,
+      draft.quoteDeadline,
+      serviceOptions.tokenFactory,
+    ));
+    const created = await transaction.procurementRequest.create({
+      data: {
+        tenantId: actor.tenantId,
+        title: draft.title,
+        status: 'DRAFT',
+        version: 1,
+        menuId: draft.menuId,
+        items: jsonDocument(documents.items),
+        sourcing: jsonDocument(documents.sourcing),
+        deliveryDetails: jsonDocument(draft.deliveryDetails),
+        deliveryDate: draft.deliveryDate,
+        quoteDeadline: draft.quoteDeadline,
+        commercialTerms: draft.commercialTerms,
+        createdByUserId: actor.userId,
+      },
+      select: { id: true },
+    });
+    if (grants.length > 0) {
+      await transaction.supplierRequest.createMany({
+        data: grants.map(({ supplierId, token, expiresAt }) => ({
           tenantId: actor.tenantId,
-          recipe: {
-            menuId: draft.menuId,
-          },
-          ...(selectedIds ? { id: { in: selectedIds } } : {}),
-        },
-        orderBy: [{ position: 'asc' }, { id: 'asc' }],
-        select: {
-          id: true,
-          name: true,
-          quantity: true,
-          unit: true,
-        },
+          requestId: created.id,
+          supplierId,
+          tokenDigest: token.digest,
+          expiresAt,
+          quoteRevision: 0,
+          quoteRevisions: jsonDocument(EMPTY_QUOTE_REVISIONS),
+        })),
       });
-      if (
-        ingredients.length === 0 ||
-        ingredients.length > PROCUREMENT_REQUEST_LIMITS.ingredients ||
-        (selectedIds && ingredients.length !== selectedIds.length)
-      ) {
-        if (ingredients.length > PROCUREMENT_REQUEST_LIMITS.ingredients) {
-          throw new ProcurementRequestValidationError({
-            ingredientSelection: [
-              `A request can include up to ${PROCUREMENT_REQUEST_LIMITS.ingredients} ingredient lines.`,
-            ],
-          });
-        }
-        throw new ProcurementRequestNotFoundError();
-      }
-      const suppliers = await activeSuppliers(
-        transaction,
-        actor.tenantId,
-        draft.supplierIds,
-      );
-      const placeholderGrants = suppliers.map(({ id }) => ({
-        supplierId: id,
-        token: issueToken(serviceOptions.tokenFactory),
-      }));
-
-      return transaction.procurementRequest.create({
-        data: {
-          title: draft.title,
-          status: 'DRAFT',
-          deliveryDetails: draft.deliveryDetails,
-          deliveryDate: draft.deliveryDate,
-          quoteDeadline: draft.quoteDeadline,
-          commercialTerms: draft.commercialTerms,
-          tenant: { connect: { id: actor.tenantId } },
-          menu: {
-            connect: {
-              tenantId_id: { tenantId: actor.tenantId, id: draft.menuId },
-            },
-          },
-          createdBy: {
-            connect: {
-              tenantId_id: { tenantId: actor.tenantId, id: actor.userId },
-            },
-          },
-          items: {
-            create: ingredients.map((ingredient) => ({
-              name: ingredient.name,
-              quantity: ingredient.quantity,
-              unit: ingredient.unit,
-              tenant: { connect: { id: actor.tenantId } },
-            })),
-          },
-          supplierRequests: {
-            create: placeholderGrants.map(({ supplierId, token }) => ({
-              tokenDigest: token.digest,
-              expiresAt: linkExpiry(now, draft.quoteDeadline),
-              tenant: { connect: { id: actor.tenantId } },
-              supplier: {
-                connect: {
-                  tenantId_id: { tenantId: actor.tenantId, id: supplierId },
-                },
-              },
-            })),
-          },
-        },
-        include: requestDetailInclude,
-      });
-    },
-    client,
-  );
+    }
+    return requestDetails(transaction, actor.tenantId, created.id);
+  }, client);
 }
 
 export async function getProcurementRequest(
@@ -1009,15 +1118,10 @@ export async function getProcurementRequest(
 ) {
   const actor = validateActor(input.actor);
   const requestId = validateRequestId(input.requestId);
-  return withTenant(
-    actor.tenantId,
-    async (transaction) => {
-      await requireActiveActor(transaction, actor);
-      await lockRequest(transaction, actor, requestId);
-      return requestDetails(transaction, actor.tenantId, requestId);
-    },
-    client,
-  );
+  return withTenant(actor.tenantId, async (transaction) => {
+    await requireActiveActor(transaction, actor);
+    return requestDetails(transaction, actor.tenantId, requestId);
+  }, client);
 }
 
 export async function updateProcurementRequestDraft(
@@ -1034,96 +1138,83 @@ export async function updateProcurementRequestDraft(
   const requestId = validateRequestId(input.requestId);
   const expectedVersion = validateExpectedVersion(input.expectedVersion);
   const serviceOptions = optionsWithDefaults(options);
-
-  return withTenant(
-    actor.tenantId,
-    async (transaction) => {
-      await requireActiveActor(transaction, actor);
-      const locked = await lockRequest(transaction, actor, requestId);
-      assertVersionAndStatus(locked, expectedVersion, 'DRAFT');
-      const now = await transactionTime(
-        transaction,
-        serviceOptions.transactionClock,
-      );
-      const patch = validateDraftPatchInput(input.patch, now);
-
-      const deliveryDate = patch.deliveryDate ?? locked.deliveryDate;
-      const quoteDeadline = patch.quoteDeadline ?? locked.quoteDeadline;
-      const timelineErrors: ValidationErrors = {};
-      if (quoteDeadline.getTime() <= now.getTime()) {
-        addError(
-          timelineErrors,
-          'quoteDeadline',
-          'Quote deadline must be in the future.',
-        );
-      }
-      validateDeadlineBeforeIndiaDelivery(
-        quoteDeadline,
-        deliveryDate,
-        timelineErrors,
-      );
-      throwIfInvalid(timelineErrors);
-
-      if (patch.supplierIds) {
-        const suppliers = await activeSuppliers(
-          transaction,
-          actor.tenantId,
-          patch.supplierIds,
-        );
-        const placeholders = suppliers.map(({ id }) => ({
-          supplierId: id,
-          token: issueToken(serviceOptions.tokenFactory),
-        }));
-        await transaction.supplierRequest.deleteMany({
-          where: { tenantId: actor.tenantId, requestId },
-        });
-        await transaction.supplierRequest.createMany({
-          data: placeholders.map(({ supplierId, token }) => ({
-            tenantId: actor.tenantId,
-            requestId,
-            supplierId,
-            tokenDigest: token.digest,
-            expiresAt: linkExpiry(now, quoteDeadline),
-          })),
-        });
-      } else {
-        await transaction.supplierRequest.updateMany({
-          where: { tenantId: actor.tenantId, requestId },
-          data: { expiresAt: linkExpiry(now, quoteDeadline) },
-        });
-      }
-
-      await transaction.procurementRequest.update({
-        where: { tenantId_id: { tenantId: actor.tenantId, id: requestId } },
-        data: {
-          ...(patch.title !== undefined ? { title: patch.title } : {}),
-          ...(patch.deliveryDetails !== undefined
-            ? { deliveryDetails: patch.deliveryDetails }
-            : {}),
-          ...(patch.deliveryDate !== undefined
-            ? { deliveryDate: patch.deliveryDate }
-            : {}),
-          ...(patch.quoteDeadline !== undefined
-            ? { quoteDeadline: patch.quoteDeadline }
-            : {}),
-          ...(patch.commercialTerms !== undefined
-            ? { commercialTerms: patch.commercialTerms }
-            : {}),
-          version: { increment: 1 },
-        },
+  return withTenant(actor.tenantId, async (transaction) => {
+    await requireActiveActor(transaction, actor);
+    const locked = await lockRequest(transaction, actor, requestId);
+    assertVersionAndStatus(locked, expectedVersion, 'DRAFT');
+    const grants = await lockedSupplierRequests(transaction, actor.tenantId, requestId);
+    const now = await transactionTime(transaction, serviceOptions.transactionClock);
+    const patch = validateDraftPatchInput(input.patch, now);
+    const deliveryDate = patch.deliveryDate ?? locked.deliveryDate;
+    const quoteDeadline = patch.quoteDeadline ?? locked.quoteDeadline;
+    const timelineErrors: ValidationErrors = {};
+    if (quoteDeadline.getTime() <= now.getTime()) {
+      addError(timelineErrors, 'quoteDeadline', 'Quote deadline must be in the future.');
+    }
+    validateDeadlineBeforeIndiaDelivery(quoteDeadline, deliveryDate, timelineErrors);
+    throwIfInvalid(timelineErrors);
+    const documents = requestDocuments(
+      patch.items ?? locked.items,
+      patch.sourcing ?? locked.sourcing,
+    );
+    const suppliers = await eligibleSuppliers(
+      transaction,
+      actor.tenantId,
+      documents.items,
+      documents.sourcing,
+    );
+    const requiredIds = new Set(suppliers.map(({ id }) => id));
+    const existingBySupplier = new Map(grants.map((grant) => [grant.supplierId, grant]));
+    const removedIds = grants.filter(({ supplierId }) => !requiredIds.has(supplierId))
+      .map(({ id }) => id);
+    if (removedIds.length > 0) {
+      await transaction.supplierRequest.deleteMany({
+        where: { tenantId: actor.tenantId, requestId, id: { in: removedIds } },
       });
-      return requestDetails(transaction, actor.tenantId, requestId);
-    },
-    client,
-  );
+    }
+    const additions = suppliers.filter(({ id }) => !existingBySupplier.has(id))
+      .map(({ id }) => placeholderGrant(id, now, quoteDeadline, serviceOptions.tokenFactory));
+    if (additions.length > 0) {
+      await transaction.supplierRequest.createMany({
+        data: additions.map(({ supplierId, token, expiresAt }) => ({
+          tenantId: actor.tenantId,
+          requestId,
+          supplierId,
+          tokenDigest: token.digest,
+          expiresAt,
+          quoteRevision: 0,
+          quoteRevisions: jsonDocument(EMPTY_QUOTE_REVISIONS),
+        })),
+      });
+    }
+    await transaction.supplierRequest.updateMany({
+      where: { tenantId: actor.tenantId, requestId },
+      data: { expiresAt: linkExpiry(now, quoteDeadline) },
+    });
+    await transaction.procurementRequest.update({
+      where: { tenantId_id: { tenantId: actor.tenantId, id: requestId } },
+      data: {
+        ...(patch.title !== undefined ? { title: patch.title } : {}),
+        items: jsonDocument(documents.items),
+        sourcing: jsonDocument(documents.sourcing),
+        ...(patch.deliveryDetails !== undefined
+          ? { deliveryDetails: jsonDocument(patch.deliveryDetails) }
+          : {}),
+        ...(patch.deliveryDate !== undefined ? { deliveryDate: patch.deliveryDate } : {}),
+        ...(patch.quoteDeadline !== undefined ? { quoteDeadline: patch.quoteDeadline } : {}),
+        ...(patch.commercialTerms !== undefined ? { commercialTerms: patch.commercialTerms } : {}),
+        applicationTokenDigest: null,
+        applicationExpiresAt: null,
+        applicationRevokedAt: null,
+        version: { increment: 1 },
+      },
+    });
+    return requestDetails(transaction, actor.tenantId, requestId);
+  }, client);
 }
 
 export async function openProcurementRequest(
-  input: {
-    actor: RequestActor;
-    requestId: string;
-    expectedVersion: unknown;
-  },
+  input: { actor: RequestActor; requestId: string; expectedVersion: unknown },
   client: RequestClient = prisma,
   options?: RequestServiceOptions,
 ) {
@@ -1132,89 +1223,108 @@ export async function openProcurementRequest(
   const expectedVersion = validateExpectedVersion(input.expectedVersion);
   const serviceOptions = optionsWithDefaults(options);
   const baseUrl = shareBaseUrl(serviceOptions.shareBaseUrl);
-
-  return withTenant(
-    actor.tenantId,
-    async (transaction) => {
-      await requireActiveActor(transaction, actor);
-      const locked = await lockRequest(transaction, actor, requestId);
-      assertVersionAndStatus(locked, expectedVersion, 'DRAFT');
-      const current = await requestDetails(
-        transaction,
-        actor.tenantId,
-        requestId,
+  return withTenant(actor.tenantId, async (transaction) => {
+    await requireActiveActor(transaction, actor);
+    const locked = await lockRequest(transaction, actor, requestId);
+    assertVersionAndStatus(locked, expectedVersion, 'DRAFT');
+    const documents = requestDocuments(locked.items, locked.sourcing);
+    const supplierRequests = await lockedSupplierRequests(
+      transaction,
+      actor.tenantId,
+      requestId,
+    );
+    await eligibleSuppliers(
+      transaction,
+      actor.tenantId,
+      documents.items,
+      documents.sourcing,
+    );
+    const explicitIds = collectExplicitSupplierIds(documents.items, documents.sourcing);
+    if (
+      supplierRequests.length !== explicitIds.length ||
+      supplierRequests.some(({ supplierId }) => !explicitIds.includes(supplierId))
+    ) {
+      throw new ProcurementRequestConflictError(
+        'Refresh the draft supplier selection before opening this request.',
       );
-      if (current.items.length === 0 || current.supplierRequests.length === 0) {
-        throw new ProcurementRequestConflictError(
-          'Add reviewed demand and at least one active supplier before opening.',
-        );
-      }
-      await activeSuppliers(
-        transaction,
-        actor.tenantId,
-        current.supplierRequests.map(({ supplierId }) => supplierId),
+    }
+    const now = await transactionTime(transaction, serviceOptions.transactionClock);
+    if (locked.quoteDeadline.getTime() <= now.getTime()) {
+      throw new ProcurementRequestConflictError(
+        'Set a future quote deadline before opening this request.',
       );
-      const now = await transactionTime(
-        transaction,
-        serviceOptions.transactionClock,
-      );
-      if (locked.quoteDeadline.getTime() <= now.getTime()) {
-        throw new ProcurementRequestConflictError(
-          'Set a future quote deadline before opening this request.',
-        );
-      }
-
-      const expiresAt = linkExpiry(now, locked.quoteDeadline);
-      const issued = current.supplierRequests.map((supplierRequest) => ({
-        supplierRequest,
-        token: issueToken(serviceOptions.tokenFactory),
-      }));
-      await replaceSupplierRequestTokens(transaction, {
-        tenantId: actor.tenantId,
-        requestId,
-        expiresAt,
-        grants: issued.map(({ supplierRequest, token }) => ({
-          id: supplierRequest.id,
-          tokenDigest: token.digest,
-        })),
-      });
-      await transaction.procurementRequest.update({
-        where: { tenantId_id: { tenantId: actor.tenantId, id: requestId } },
-        data: { status: 'OPEN', openedAt: now, version: { increment: 1 } },
-      });
-      await writeAuditEvent(transaction, {
-        tenantId: actor.tenantId,
-        actorUserId: actor.userId,
-        action: 'request.opened',
-        entityId: requestId,
-        metadata: {
-          itemCount: current.items.length,
-          supplierCount: current.supplierRequests.length,
-        },
-      });
-      await writeSupplierLinkCreatedAuditEvents(
-        transaction,
-        actor,
-        issued.map(({ supplierRequest }) => supplierRequest.id),
-      );
-      const request = await requestDetails(
-        transaction,
-        actor.tenantId,
-        requestId,
-      );
-      return {
-        request,
-        links: issued.map(({ supplierRequest, token }) => ({
+    }
+    const expiresAt = linkExpiry(now, locked.quoteDeadline);
+    const issued = supplierRequests.map((supplierRequest) => ({
+      supplierRequest,
+      token: issueToken('supplier-request', serviceOptions.tokenFactory),
+    }));
+    const applicationsEnabled = requestAcceptsVerifiedApplications(
+      documents.items,
+      documents.sourcing,
+    );
+    const applicationToken = applicationsEnabled
+      ? issueToken('supplier-application', serviceOptions.applicationTokenFactory)
+      : null;
+    await replaceSupplierRequestTokens(transaction, {
+      tenantId: actor.tenantId,
+      requestId,
+      expiresAt,
+      grants: issued.map(({ supplierRequest, token }) => ({
+        id: supplierRequest.id,
+        tokenDigest: token.digest,
+      })),
+    });
+    await transaction.procurementRequest.update({
+      where: { tenantId_id: { tenantId: actor.tenantId, id: requestId } },
+      data: {
+        status: 'OPEN',
+        openedAt: now,
+        applicationTokenDigest: applicationToken?.digest ?? null,
+        applicationExpiresAt: applicationToken ? expiresAt : null,
+        applicationRevokedAt: null,
+        version: { increment: 1 },
+      },
+    });
+    await writeAuditEvent(transaction, {
+      tenantId: actor.tenantId,
+      actorUserId: actor.userId,
+      action: 'request.opened',
+      entityId: requestId,
+      metadata: {
+        itemCount: documents.items.items.length,
+        supplierCount: supplierRequests.length,
+      },
+    });
+    await writeSupplierLinkCreatedAuditEvents(
+      transaction,
+      actor,
+      issued.map(({ supplierRequest }) => supplierRequest.id),
+    );
+    const request = await requestDetails(transaction, actor.tenantId, requestId);
+    return {
+      request,
+      links: issued.map(({ supplierRequest, token }) => {
+        const safe = request.supplierRequests.find(({ id }) => id === supplierRequest.id);
+        if (!safe) throw new ProcurementRequestNotFoundError();
+        return {
           supplierRequestId: supplierRequest.id,
           supplierId: supplierRequest.supplierId,
-          businessName: supplierRequest.supplier.businessName,
-          url: supplierShareUrl(baseUrl, token.raw),
+          businessName: safe.supplier.businessName,
+          url: fragmentShareUrl(baseUrl, '/quote', token.raw),
           expiresAt: expiresAt.toISOString(),
-        })),
-      };
-    },
-    client,
-  );
+        };
+      }),
+      ...(applicationToken
+        ? {
+            applicationLink: {
+              url: fragmentShareUrl(baseUrl, '/supplier-application', applicationToken.raw),
+              expiresAt: expiresAt.toISOString(),
+            },
+          }
+        : {}),
+    };
+  }, client);
 }
 
 export async function changeSupplierRequestLink(
@@ -1236,125 +1346,93 @@ export async function changeSupplierRequestLink(
     expectedVersion: input.expectedVersion,
   });
   const serviceOptions = optionsWithDefaults(options);
-  const baseUrl =
-    action.action === 'rotate'
-      ? shareBaseUrl(serviceOptions.shareBaseUrl)
-      : undefined;
-
-  return withTenant(
-    actor.tenantId,
-    async (transaction) => {
-      await requireActiveActor(transaction, actor);
-      const locked = await lockRequest(transaction, actor, requestId);
-      assertVersionAndStatus(locked, action.expectedVersion, 'OPEN');
-      const [lockedGrant] = await transaction.$queryRaw<Array<{ id: string }>>`
-        SELECT "id"
-        FROM "SupplierRequest"
-        WHERE "tenantId" = ${actor.tenantId}
-          AND "requestId" = ${requestId}
-          AND "id" = ${action.supplierRequestId}
-        FOR UPDATE
-      `;
-      if (!lockedGrant) throw new ProcurementRequestNotFoundError();
-
-      const currentGrant = await transaction.supplierRequest.findFirst({
-        where: {
-          tenantId: actor.tenantId,
-          requestId,
-          id: action.supplierRequestId,
-        },
-        select: safeSupplierRequestSelect,
+  const baseUrl = action.action === 'rotate'
+    ? shareBaseUrl(serviceOptions.shareBaseUrl)
+    : undefined;
+  return withTenant(actor.tenantId, async (transaction) => {
+    await requireActiveActor(transaction, actor);
+    const locked = await lockRequest(transaction, actor, requestId);
+    assertVersionAndStatus(locked, action.expectedVersion, 'OPEN');
+    const [lockedGrant] = await transaction.$queryRaw<Array<{ id: string; supplierId: string }>>`
+      SELECT "id", "supplierId"
+      FROM "SupplierRequest"
+      WHERE "tenantId" = ${actor.tenantId}
+        AND "requestId" = ${requestId}
+        AND "id" = ${action.supplierRequestId}
+      FOR UPDATE
+    `;
+    if (!lockedGrant) throw new ProcurementRequestNotFoundError();
+    let rawLink: { url: string; expiresAt: string } | undefined;
+    if (action.action === 'revoke') {
+      const current = await transaction.supplierRequest.findFirst({
+        where: { tenantId: actor.tenantId, requestId, id: lockedGrant.id },
+        select: { revokedAt: true },
       });
-      if (!currentGrant) throw new ProcurementRequestNotFoundError();
-
-      let rawLink:
-        | { url: string; expiresAt: string }
-        | undefined;
-      if (action.action === 'revoke') {
-        const now = await transactionTime(
-          transaction,
-          serviceOptions.transactionClock,
-        );
-        if (currentGrant.revokedAt) {
-          throw new ProcurementRequestConflictError(
-            'This supplier link is already revoked.',
-          );
-        }
-        await transaction.supplierRequest.update({
-          where: {
-            tenantId_id: {
-              tenantId: actor.tenantId,
-              id: currentGrant.id,
-            },
-          },
-          data: { revokedAt: now },
-        });
-        await writeAuditEvent(transaction, {
-          tenantId: actor.tenantId,
-          actorUserId: actor.userId,
-          action: 'supplier-link.revoked',
-          entityId: currentGrant.id,
-        });
-      } else {
-        await activeSuppliers(transaction, actor.tenantId, [currentGrant.supplierId]);
-        const now = await transactionTime(
-          transaction,
-          serviceOptions.transactionClock,
-        );
-        if (locked.quoteDeadline.getTime() <= now.getTime()) {
-          throw new ProcurementRequestConflictError(
-            'The quote deadline has passed; this link cannot be rotated.',
-          );
-        }
-        const token = issueToken(serviceOptions.tokenFactory);
-        const expiresAt = linkExpiry(now, locked.quoteDeadline);
-        await transaction.supplierRequest.update({
-          where: {
-            tenantId_id: {
-              tenantId: actor.tenantId,
-              id: currentGrant.id,
-            },
-          },
-          data: {
-            tokenDigest: token.digest,
-            expiresAt,
-            revokedAt: null,
-            viewedAt: null,
-          },
-        });
-        await writeAuditEvent(transaction, {
-          tenantId: actor.tenantId,
-          actorUserId: actor.userId,
-          action: 'supplier-link.created',
-          entityId: currentGrant.id,
-        });
-        rawLink = {
-          url: supplierShareUrl(baseUrl!, token.raw),
-          expiresAt: expiresAt.toISOString(),
-        };
+      if (!current) throw new ProcurementRequestNotFoundError();
+      if (current.revokedAt) {
+        throw new ProcurementRequestConflictError('This supplier link is already revoked.');
       }
-
-      await transaction.procurementRequest.update({
-        where: { tenantId_id: { tenantId: actor.tenantId, id: requestId } },
-        data: { version: { increment: 1 } },
+      const now = await transactionTime(transaction, serviceOptions.transactionClock);
+      await transaction.supplierRequest.update({
+        where: { tenantId_id: { tenantId: actor.tenantId, id: lockedGrant.id } },
+        data: { revokedAt: now },
       });
-      const request = await requestDetails(
+      await writeAuditEvent(transaction, {
+        tenantId: actor.tenantId,
+        actorUserId: actor.userId,
+        action: 'supplier-link.revoked',
+        entityId: lockedGrant.id,
+      });
+    } else {
+      const documents = requestDocuments(locked.items, locked.sourcing);
+      const eligible = await eligibleSuppliers(
         transaction,
         actor.tenantId,
-        requestId,
+        documents.items,
+        documents.sourcing,
       );
-      const supplierRequest = request.supplierRequests.find(
-        ({ id }) => id === currentGrant.id,
-      );
-      if (!supplierRequest) throw new ProcurementRequestNotFoundError();
-      return {
-        request,
-        supplierRequest,
-        ...(rawLink ? { link: rawLink } : {}),
+      if (!eligible.some(({ id }) => id === lockedGrant.supplierId)) {
+        throw new ProcurementRequestConflictError(
+          'This supplier is no longer eligible for a new link.',
+        );
+      }
+      const now = await transactionTime(transaction, serviceOptions.transactionClock);
+      if (locked.quoteDeadline.getTime() <= now.getTime()) {
+        throw new ProcurementRequestConflictError(
+          'The quote deadline has passed; this link cannot be rotated.',
+        );
+      }
+      const token = issueToken('supplier-request', serviceOptions.tokenFactory);
+      const expiresAt = linkExpiry(now, locked.quoteDeadline);
+      await transaction.supplierRequest.update({
+        where: { tenantId_id: { tenantId: actor.tenantId, id: lockedGrant.id } },
+        data: {
+          tokenDigest: token.digest,
+          expiresAt,
+          revokedAt: null,
+          viewedAt: null,
+        },
+      });
+      await writeAuditEvent(transaction, {
+        tenantId: actor.tenantId,
+        actorUserId: actor.userId,
+        action: 'supplier-link.created',
+        entityId: lockedGrant.id,
+      });
+      rawLink = {
+        url: fragmentShareUrl(baseUrl!, '/quote', token.raw),
+        expiresAt: expiresAt.toISOString(),
       };
-    },
-    client,
-  );
+    }
+    await transaction.procurementRequest.update({
+      where: { tenantId_id: { tenantId: actor.tenantId, id: requestId } },
+      data: { version: { increment: 1 } },
+    });
+    const request = await requestDetails(transaction, actor.tenantId, requestId);
+    const supplierRequest = request.supplierRequests.find(({ id }) => id === lockedGrant.id);
+    if (!supplierRequest) throw new ProcurementRequestNotFoundError();
+    return { request, supplierRequest, ...(rawLink ? { link: rawLink } : {}) };
+  }, client);
 }
 
 export async function repeatProcurementRequest(
@@ -1366,104 +1444,19 @@ export async function repeatProcurementRequest(
   const sourceRequestId = validateRequestId(input.sourceRequestId);
   const serviceOptions = optionsWithDefaults(options);
   const repeat = validateRepeatRequestInput(input.repeat, serviceOptions.now());
-
-  return withTenant(
-    actor.tenantId,
-    async (transaction) => {
-      await requireActiveActor(transaction, actor);
-      const locked = await lockRequest(transaction, actor, sourceRequestId);
-      if (locked.version !== repeat.expectedSourceVersion) {
-        throw new ProcurementRequestConflictError(
-          'This request changed. Refresh it before running it again.',
-        );
-      }
-      if (locked.status !== 'AWARDED') {
-        throw new ProcurementRequestConflictError(
-          'Only a completed award can be run again.',
-        );
-      }
-      const now = await transactionTime(transaction, serviceOptions.transactionClock);
-      if (repeat.quoteDeadline.getTime() <= now.getTime()) {
-        throw new ProcurementRequestValidationError({
-          quoteDeadline: ['Quote deadline must be in the future.'],
-        });
-      }
-      const source = await transaction.procurementRequest.findFirst({
-        where: { tenantId: actor.tenantId, id: sourceRequestId },
-        select: {
-          id: true,
-          menuId: true,
-          deliveryDetails: true,
-          commercialTerms: true,
-          items: {
-            orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-            select: {
-              name: true,
-              quantity: true,
-              unit: true,
-            },
-          },
-          supplierRequests: {
-            orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-            where: { supplier: { isActive: true } },
-            select: { supplierId: true },
-          },
-        },
-      });
-      if (!source || source.items.length === 0 || !isRecord(source.deliveryDetails)) {
-        throw new ProcurementRequestNotFoundError();
-      }
-      if (source.supplierRequests.length === 0) {
-        throw new ProcurementRequestConflictError(
-          'Reactivate or add a supplier before running this request again.',
-        );
-      }
-      const expiresAt = linkExpiry(now, repeat.quoteDeadline);
-      const grants = source.supplierRequests.map(({ supplierId }) => ({
-        supplierId,
-        token: issueToken(serviceOptions.tokenFactory),
-      }));
-      const created = await transaction.procurementRequest.create({
-        data: {
-          tenantId: actor.tenantId,
-          title: repeat.title,
-          status: 'DRAFT',
-          version: 1,
-          menuId: source.menuId,
-          sourceRequestId: source.id,
-          deliveryDetails: source.deliveryDetails as Prisma.InputJsonObject,
-          deliveryDate: repeat.deliveryDate,
-          quoteDeadline: repeat.quoteDeadline,
-          commercialTerms: source.commercialTerms,
-          createdByUserId: actor.userId,
-          items: {
-            create: source.items.map((item) => ({
-              tenantId: actor.tenantId,
-              name: item.name,
-              quantity: item.quantity,
-              unit: item.unit,
-            })),
-          },
-          supplierRequests: {
-            create: grants.map(({ supplierId, token }) => ({
-              tenantId: actor.tenantId,
-              supplierId,
-              tokenDigest: token.digest,
-              expiresAt,
-            })),
-          },
-        },
-        include: requestDetailInclude,
-      });
-      await writeAuditEvent(transaction, {
-        tenantId: actor.tenantId,
-        actorUserId: actor.userId,
-        action: 'request.repeated',
-        entityId: created.id,
-        metadata: { sourceRequestId: source.id },
-      });
-      return created;
-    },
-    client,
-  );
+  return withTenant(actor.tenantId, async (transaction) => {
+    await requireActiveActor(transaction, actor);
+    const locked = await lockRequest(transaction, actor, sourceRequestId);
+    if (locked.version !== repeat.expectedSourceVersion) {
+      throw new ProcurementRequestConflictError(
+        'This request changed. Refresh it before running it again.',
+      );
+    }
+    if (locked.status !== 'AWARDED') {
+      throw new ProcurementRequestConflictError('Only a completed award can be run again.');
+    }
+    throw new ProcurementRequestConflictError(
+      'Running completed document requests again is not available yet.',
+    );
+  }, client);
 }

@@ -11,6 +11,7 @@ describe('bounded PostgreSQL JSON documents', () => {
       menu: { jsonBytes: 512 * 1024, dishes: 250, ingredients: 1000 },
       supplierCapabilities: { jsonBytes: 64 * 1024, itemPreferences: 250 },
       requestItems: { jsonBytes: 512 * 1024, items: 250 },
+      requestSourcing: { jsonBytes: 64 * 1024 },
       selectedSuppliers: 20,
       quoteRevisions: { jsonBytes: 2 * 1024 * 1024, revisions: 10 },
       awardLines: { jsonBytes: 2 * 1024 * 1024, lines: 2000 },

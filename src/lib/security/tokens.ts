@@ -1,6 +1,9 @@
 import { createHash, randomBytes } from 'node:crypto';
 
-export type TokenPurpose = 'member-invitation' | 'supplier-request';
+export type TokenPurpose =
+  | 'member-invitation'
+  | 'supplier-request'
+  | 'supplier-application';
 
 const TOKEN_BYTES = 32;
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;

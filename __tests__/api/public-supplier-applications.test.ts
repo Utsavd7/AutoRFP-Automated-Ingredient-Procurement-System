@@ -1,7 +1,7 @@
 import {
   createPublicSupplierApplicationHandler,
   PUBLIC_SUPPLIER_APPLICATION_BODY_BYTES,
-} from '@/app/api/public/supplier-application/route';
+} from '@/lib/suppliers/public-application-http';
 import { PublicSupplierGrantError } from '@/lib/security/public-grant';
 import {
   PublicSupplierApplicationUnavailableError,

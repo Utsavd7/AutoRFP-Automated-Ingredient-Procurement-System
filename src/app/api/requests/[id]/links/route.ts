@@ -5,17 +5,16 @@ import {
   changeSupplierRequestLink,
   validateLinkActionInput,
 } from '@/lib/procurement/request-service';
+import {
+  readRequestBody,
+  requestActor,
+  requestServiceError,
+} from '@/lib/procurement/request-http';
 import { requireAccountContext } from '@/lib/server-account';
 import {
   browserJsonMutationRejection,
   privateMutationResponse,
 } from '@/lib/security/browser-mutation';
-import {
-  readRequestBody,
-  requestActor,
-  requestServiceError,
-} from '../../route';
-
 type RequestRouteContext = { params: Promise<{ id: string }> };
 
 export async function POST(request: Request, context: RequestRouteContext) {

@@ -1,4 +1,4 @@
-import { createTutorialRouteHandlers } from '@/app/api/tutorial/route';
+import { createTutorialRouteHandlers } from '@/lib/tutorial/tutorial-http';
 import {
   TUTORIAL_LAST_STEP,
   TutorialVersionConflictError,

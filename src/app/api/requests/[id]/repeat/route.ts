@@ -2,10 +2,10 @@ import { NextResponse } from 'next/server';
 
 import { privateNoStoreResponse as privateResponse } from '@/lib/api/private-response';
 import { problemResponse } from '@/lib/api/problem';
+import { readRequestBody, requestActor, requestServiceError } from '@/lib/procurement/request-http';
 import { repeatProcurementRequest } from '@/lib/procurement/request-service';
 import { browserJsonMutationRejection } from '@/lib/security/browser-mutation';
 import { requireAccountContext } from '@/lib/server-account';
-import { readRequestBody, requestActor, requestServiceError } from '../../route';
 
 type RepeatRouteContext = { params: Promise<{ id: string }> };
 

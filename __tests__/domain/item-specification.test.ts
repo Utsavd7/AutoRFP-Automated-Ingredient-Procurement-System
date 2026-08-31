@@ -48,16 +48,21 @@ function webpFile(...chunks: Buffer[]): Buffer {
   return bytes;
 }
 
-function animatedWebp(): Buffer {
+function animationChunks(animationFlag = true) {
   const vp8x = Buffer.alloc(10);
-  vp8x[0] = 0x02;
+  if (animationFlag) vp8x[0] = 0x02;
   const vp8Chunk = Buffer.from(TINY_WEBP_BASE64, 'base64').subarray(12);
   const frame = Buffer.concat([Buffer.alloc(16), vp8Chunk]);
-  return webpFile(
-    riffChunk('VP8X', vp8x),
-    riffChunk('ANIM', Buffer.alloc(6)),
-    riffChunk('ANMF', frame),
-  );
+  return {
+    vp8x: riffChunk('VP8X', vp8x),
+    anim: riffChunk('ANIM', Buffer.alloc(6)),
+    anmf: riffChunk('ANMF', frame),
+  };
+}
+
+function animatedWebp(): Buffer {
+  const { vp8x, anim, anmf } = animationChunks();
+  return webpFile(vp8x, anim, anmf);
 }
 
 function webpChunk(tag: string, data: Buffer, includePadding = true): Buffer {
@@ -183,6 +188,20 @@ describe('procurement categories and item specification v1', () => {
 
   test('accepts a valid animated WebP with image data inside an ANMF frame', () => {
     expect(validateThumbnail(animatedWebp().toString('base64'))).toBeDefined();
+  });
+
+  test('rejects incomplete or unflagged animated WebP containers', () => {
+    const animated = animationChunks();
+    const unflagged = animationChunks(false);
+    const malformed = [
+      webpFile(animated.anmf),
+      webpFile(animated.vp8x, animated.anmf),
+      webpFile(unflagged.vp8x, unflagged.anim, unflagged.anmf),
+    ];
+
+    for (const bytes of malformed) {
+      expect(() => validateThumbnail(bytes.toString('base64'))).toThrow(/WebP/i);
+    }
   });
 
   test('rejects huge encoded thumbnails before decoding', () => {

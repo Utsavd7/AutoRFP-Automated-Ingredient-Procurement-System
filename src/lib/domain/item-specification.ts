@@ -233,26 +233,48 @@ function isWebp(value: string): boolean {
 
   let offset = 12;
   let hasImageData = false;
+  let animationFlag = false;
+  let sawVp8x = false;
+  let sawAnim = false;
+  let sawAnmf = false;
   while (offset < value.length) {
     const chunk = readWebpChunk(value, offset, value.length);
     if (!chunk) return false;
-    if (chunk.tag === 'VP8X' && chunk.length !== 10) return false;
+    if (chunk.tag === 'VP8X') {
+      if (chunk.length !== 10 || sawVp8x) return false;
+      sawVp8x = true;
+      animationFlag = (value.charCodeAt(chunk.dataOffset) & 0x02) !== 0;
+      if (animationFlag && offset !== 12) return false;
+    }
+    if (chunk.tag === 'ANIM') {
+      if (!animationFlag || !sawVp8x || sawAnim || sawAnmf || chunk.length !== 6) {
+        return false;
+      }
+      sawAnim = true;
+    }
 
     const status = imageChunkStatus(value, chunk);
     if (status < 0) return false;
     if (status > 0) hasImageData = true;
     if (chunk.tag === 'ANMF') {
-      if (chunk.length < 16 || (value.charCodeAt(chunk.dataOffset + 15) & 0xfc) !== 0) {
+      if (
+        !animationFlag ||
+        !sawVp8x ||
+        !sawAnim ||
+        chunk.length < 16 ||
+        (value.charCodeAt(chunk.dataOffset + 15) & 0xfc) !== 0
+      ) {
         return false;
       }
       const nestedImage = nestedFrameHasImage(value, chunk.dataOffset + 16, chunk.dataEnd);
-      if (nestedImage === null) return false;
-      if (nestedImage) hasImageData = true;
+      if (!nestedImage) return false;
+      hasImageData = true;
+      sawAnmf = true;
     }
     offset = chunk.nextOffset;
   }
 
-  return hasImageData;
+  return hasImageData && (!animationFlag || (sawAnim && sawAnmf));
 }
 
 function validateThumbnail(input: Record<string, unknown>): void {

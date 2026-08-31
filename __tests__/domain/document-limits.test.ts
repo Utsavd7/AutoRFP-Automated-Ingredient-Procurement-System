@@ -7,10 +7,7 @@ import {
 describe('bounded PostgreSQL JSON documents', () => {
   test('exposes the approved centralized document limits', () => {
     expect(DOCUMENT_LIMITS).toEqual({
-      itemSpecification: {
-        thumbnailDecodedBytes: 48 * 1024,
-        referenceUrlCharacters: 2048,
-      },
+      itemSpecification: { thumbnailDecodedBytes: 48 * 1024, referenceUrlCharacters: 2048 },
       menu: { jsonBytes: 512 * 1024, dishes: 250, ingredients: 1000 },
       supplierCapabilities: { jsonBytes: 64 * 1024, itemPreferences: 250 },
       requestItems: { jsonBytes: 512 * 1024, items: 250 },
@@ -25,66 +22,66 @@ describe('bounded PostgreSQL JSON documents', () => {
     });
   });
 
-  test('counts PostgreSQL jsonb text spaces and UTF-8 bytes', () => {
-    const postgresText = '{"a": [1, "x"]}';
+  test('counts PostgreSQL spacing, UTF-8, and expanded numbers independent of key order', () => {
+    const bytes = (text: string) => new TextEncoder().encode(text).byteLength;
 
-    expect(postgresJsonByteLength({ a: [1, 'x'] })).toBe(
-      new TextEncoder().encode(postgresText).byteLength,
-    );
-    expect(postgresJsonByteLength({ emoji: '🥕' })).toBe(
-      new TextEncoder().encode('{"emoji": "🥕"}').byteLength,
-    );
-  });
-
-  test('uses PostgreSQL jsonb key order and expanded numeric notation', () => {
+    expect(postgresJsonByteLength({ a: [1, 'x'] })).toBe(bytes('{"a": [1, "x"]}'));
+    expect(postgresJsonByteLength({ emoji: '🥕' })).toBe(bytes('{"emoji": "🥕"}'));
     expect(postgresJsonByteLength({ longer: 1e21, b: 2 })).toBe(
-      new TextEncoder().encode('{"b": 2, "longer": 1000000000000000000000}').byteLength,
+      postgresJsonByteLength({ b: 2, longer: 1e21 }),
+    );
+    expect(postgresJsonByteLength({ longer: 1e21 })).toBe(
+      bytes('{"longer": 1000000000000000000000}'),
     );
   });
 
-  test.each([
-    ['cyclic objects', (() => {
-      const value: Record<string, unknown> = {};
-      value.self = value;
-      return value;
-    })()],
-    ['functions', { value: () => undefined }],
-    ['undefined', { value: undefined }],
-    ['bigints', { value: BigInt(1) }],
-    ['symbols', { value: Symbol('value') }],
-    ['symbol keys', { [Symbol('key')]: 'value' }],
-    ['NaN', Number.NaN],
-    ['Infinity', Number.POSITIVE_INFINITY],
-    ['dates', new Date('2026-01-01T00:00:00.000Z')],
-    ['maps', new Map([['a', 1]])],
-    ['sets', new Set([1])],
-    ['typed arrays', new Uint8Array([1, 2])],
-    ['array buffers', new ArrayBuffer(2)],
-    ['sparse arrays', Array(1)],
-    ['boxed primitives', new String('value')],
-    ['regular expressions', /value/],
-    ['non-plain prototype objects', Object.create({ inherited: true })],
-    ['PostgreSQL-incompatible null characters', { value: 'before\u0000after' }],
-    ['unpaired Unicode surrogates', { value: '\ud800' }],
-  ])('rejects %s rather than silently changing the document', (_label, value) => {
-    expect(() => postgresJsonByteLength(value)).toThrow(/valid JSON/i);
+  test('rejects non-JSON values without silently changing them', () => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    const accessor = Object.defineProperty({}, 'value', { enumerable: true, get: () => 1 });
+    const hidden = Object.defineProperty({}, 'value', { value: 1 });
+    const invalidValues = [
+      cyclic,
+      () => undefined,
+      undefined,
+      BigInt(1),
+      Symbol('value'),
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      new Date(),
+      new Map(),
+      new Set(),
+      new Uint8Array(),
+      new ArrayBuffer(1),
+      Array(1),
+      new String('value'),
+      /value/,
+      Object.create({ inherited: true }),
+      { value: () => undefined },
+      { value: undefined },
+      { [Symbol('key')]: true },
+      { value: 'before\u0000after' },
+      { value: '\ud800' },
+      accessor,
+      hidden,
+    ];
+
+    for (const value of invalidValues) {
+      expect(() => postgresJsonByteLength(value)).toThrow(/valid JSON/i);
+    }
   });
 
-  test('rejects accessor and non-enumerable properties', () => {
-    const accessor = Object.defineProperty({}, 'value', {
-      enumerable: true,
-      get: () => 'hidden work',
-    });
-    const nonEnumerable = Object.defineProperty({}, 'value', {
-      enumerable: false,
-      value: 'hidden',
-    });
+  test('rejects excessive nesting with a deterministic TypeError', () => {
+    let value: unknown = null;
+    for (let depth = 0; depth < 100; depth += 1) value = [value];
+    expect(() => postgresJsonByteLength(value)).not.toThrow();
 
-    expect(() => postgresJsonByteLength(accessor)).toThrow(/valid JSON/i);
-    expect(() => postgresJsonByteLength(nonEnumerable)).toThrow(/valid JSON/i);
+    value = [value];
+    expect(() => postgresJsonByteLength(value)).toThrow(TypeError);
+    expect(() => postgresJsonByteLength(value)).toThrow(/nesting.*100/i);
   });
 
-  test('allows an exact byte limit and clearly rejects one byte over it', () => {
+  test('allows an exact byte limit and rejects over-limit documents or invalid caps', () => {
     const value = { label: 'सब्ज़ी' };
     const bytes = postgresJsonByteLength(value);
 
@@ -92,12 +89,8 @@ describe('bounded PostgreSQL JSON documents', () => {
     expect(() => assertBoundedJson(value, bytes - 1, 'Item specification')).toThrow(
       `Item specification exceeds its ${bytes - 1}-byte JSON limit`,
     );
+    for (const limit of [0, -1, 1.5, Number.POSITIVE_INFINITY]) {
+      expect(() => assertBoundedJson({}, limit)).toThrow(/positive integer/i);
+    }
   });
-
-  test.each([0, -1, 1.5, Number.POSITIVE_INFINITY])(
-    'rejects an invalid JSON byte limit %p',
-    (maximumBytes) => {
-      expect(() => assertBoundedJson({}, maximumBytes)).toThrow(/positive integer/i);
-    },
-  );
 });

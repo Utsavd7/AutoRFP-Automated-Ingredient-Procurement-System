@@ -1,7 +1,8 @@
 const INVALID_JSON_MESSAGE = 'Value must be valid JSON for PostgreSQL jsonb serialization.';
+const MAX_JSON_NESTING_DEPTH = 100;
 
-function invalidJson(): never {
-  throw new TypeError(INVALID_JSON_MESSAGE);
+function invalidJson(detail?: string): never {
+  throw new TypeError(detail ? `${INVALID_JSON_MESSAGE} ${detail}` : INVALID_JSON_MESSAGE);
 }
 
 function hasUnpairedSurrogate(value: string): boolean {
@@ -41,28 +42,12 @@ function postgresNumberText(value: number): string {
   return `${sign}${digits.slice(0, decimalPosition)}.${digits.slice(decimalPosition)}`;
 }
 
-function comparePostgresKeys(left: string, right: string): number {
-  const encoder = new TextEncoder();
-  const leftBytes = encoder.encode(left);
-  const rightBytes = encoder.encode(right);
-
-  if (leftBytes.byteLength !== rightBytes.byteLength) {
-    return leftBytes.byteLength - rightBytes.byteLength;
-  }
-
-  for (let index = 0; index < leftBytes.byteLength; index += 1) {
-    if (leftBytes[index] !== rightBytes[index]) return leftBytes[index] - rightBytes[index];
-  }
-
-  return 0;
-}
-
 function serializeString(value: string): string {
   if (value.includes('\u0000') || hasUnpairedSurrogate(value)) invalidJson();
   return JSON.stringify(value);
 }
 
-function serializeArray(value: unknown[], active: WeakSet<object>): string {
+function serializeArray(value: unknown[], active: WeakSet<object>, depth: number): string {
   if (Object.getPrototypeOf(value) !== Array.prototype || active.has(value)) invalidJson();
 
   const ownKeys = Reflect.ownKeys(value);
@@ -83,7 +68,7 @@ function serializeArray(value: unknown[], active: WeakSet<object>): string {
       if (!Object.prototype.hasOwnProperty.call(value, index)) invalidJson();
       const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
       if (!descriptor?.enumerable || !('value' in descriptor)) invalidJson();
-      entries.push(postgresJsonText(descriptor.value, active));
+      entries.push(postgresJsonText(descriptor.value, active, depth + 1));
     }
   } finally {
     active.delete(value);
@@ -92,7 +77,7 @@ function serializeArray(value: unknown[], active: WeakSet<object>): string {
   return `[${entries.join(', ')}]`;
 }
 
-function serializeObject(value: object, active: WeakSet<object>): string {
+function serializeObject(value: object, active: WeakSet<object>, depth: number): string {
   if (Object.getPrototypeOf(value) !== Object.prototype || active.has(value)) invalidJson();
 
   const keys = Reflect.ownKeys(value);
@@ -101,11 +86,11 @@ function serializeObject(value: object, active: WeakSet<object>): string {
   active.add(value);
   const entries: string[] = [];
   try {
-    for (const key of (keys as string[]).sort(comparePostgresKeys)) {
+    for (const key of keys as string[]) {
       const descriptor = Object.getOwnPropertyDescriptor(value, key);
       if (!descriptor?.enumerable || !('value' in descriptor)) invalidJson();
       entries.push(
-        `${serializeString(key)}: ${postgresJsonText(descriptor.value, active)}`,
+        `${serializeString(key)}: ${postgresJsonText(descriptor.value, active, depth + 1)}`,
       );
     }
   } finally {
@@ -115,18 +100,24 @@ function serializeObject(value: object, active: WeakSet<object>): string {
   return `{${entries.join(', ')}}`;
 }
 
-function postgresJsonText(value: unknown, active: WeakSet<object>): string {
+function postgresJsonText(value: unknown, active: WeakSet<object>, depth: number): string {
   if (value === null) return 'null';
   if (typeof value === 'boolean') return value ? 'true' : 'false';
   if (typeof value === 'number') return postgresNumberText(value);
   if (typeof value === 'string') return serializeString(value);
-  if (Array.isArray(value)) return serializeArray(value, active);
-  if (typeof value === 'object') return serializeObject(value, active);
+  if (Array.isArray(value) || typeof value === 'object') {
+    if (depth >= MAX_JSON_NESTING_DEPTH) {
+      invalidJson(`JSON nesting cannot exceed ${MAX_JSON_NESTING_DEPTH} levels.`);
+    }
+    return Array.isArray(value)
+      ? serializeArray(value, active, depth)
+      : serializeObject(value, active, depth);
+  }
   return invalidJson();
 }
 
 export function postgresJsonByteLength(value: unknown): number {
-  return new TextEncoder().encode(postgresJsonText(value, new WeakSet())).byteLength;
+  return new TextEncoder().encode(postgresJsonText(value, new WeakSet(), 0)).byteLength;
 }
 
 export function assertBoundedJson(

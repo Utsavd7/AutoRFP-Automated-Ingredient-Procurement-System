@@ -12,6 +12,9 @@ const TEXT_LIMITS = {
   notes: 1000,
 } as const;
 
+const MAX_THUMBNAIL_BASE64_CHARACTERS =
+  Math.ceil(DOCUMENT_LIMITS.itemSpecification.thumbnailDecodedBytes / 3) * 4;
+
 const ALLOWED_KEYS = new Set([
   'v',
   'category',
@@ -149,12 +152,46 @@ function isCanonicalBase64(value: string): boolean {
   );
 }
 
+function readUint32LittleEndian(value: string, offset: number): number {
+  return (
+    value.charCodeAt(offset) +
+    value.charCodeAt(offset + 1) * 0x100 +
+    value.charCodeAt(offset + 2) * 0x10000 +
+    value.charCodeAt(offset + 3) * 0x1000000
+  );
+}
+
+function isWebp(value: string): boolean {
+  if (
+    value.length < 21 ||
+    value.slice(0, 4) !== 'RIFF' ||
+    value.slice(8, 12) !== 'WEBP' ||
+    readUint32LittleEndian(value, 4) !== value.length - 8
+  ) {
+    return false;
+  }
+
+  const chunkTag = value.slice(12, 16);
+  const chunkLength = readUint32LittleEndian(value, 16);
+  return (
+    ['VP8 ', 'VP8L', 'VP8X'].includes(chunkTag) &&
+    chunkLength > 0 &&
+    chunkLength <= value.length - 20
+  );
+}
+
 function validateThumbnail(input: Record<string, unknown>): void {
   if (!Object.prototype.hasOwnProperty.call(input, 'thumbnailWebpBase64')) return;
 
   const value = input.thumbnailWebpBase64;
   if (value === null) return;
-  if (typeof value !== 'string' || !isCanonicalBase64(value)) {
+  if (typeof value !== 'string') {
+    fail('thumbnailWebpBase64 must be null or canonical base64.');
+  }
+  if (value.length > MAX_THUMBNAIL_BASE64_CHARACTERS) {
+    fail('thumbnailWebpBase64 must represent a WebP no larger than 48 KiB.');
+  }
+  if (!isCanonicalBase64(value)) {
     fail('thumbnailWebpBase64 must be null or canonical base64.');
   }
 
@@ -165,18 +202,14 @@ function validateThumbnail(input: Record<string, unknown>): void {
     fail('thumbnailWebpBase64 must be canonical base64.');
   }
 
-  if (btoa(decoded) !== value) {
-    fail('thumbnailWebpBase64 must be canonical base64.');
-  }
   if (decoded.length > DOCUMENT_LIMITS.itemSpecification.thumbnailDecodedBytes) {
     fail('thumbnailWebpBase64 must decode to no more than 48 KiB.');
   }
-  if (
-    decoded.length < 12 ||
-    decoded.slice(0, 4) !== 'RIFF' ||
-    decoded.slice(8, 12) !== 'WEBP'
-  ) {
-    fail('thumbnailWebpBase64 must contain a WebP RIFF signature.');
+  if (btoa(decoded) !== value) {
+    fail('thumbnailWebpBase64 must be canonical base64.');
+  }
+  if (!isWebp(decoded)) {
+    fail('thumbnailWebpBase64 must contain a structurally valid WebP image chunk.');
   }
 }
 

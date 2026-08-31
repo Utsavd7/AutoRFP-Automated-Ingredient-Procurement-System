@@ -585,9 +585,11 @@ ALTER TABLE public."Tenant" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."Tenant" FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON public."Tenant"
     FOR ALL TO autorfp_app
-    USING ("id" = pg_catalog.current_setting('app.tenant_id', true))
+    USING (
+        "id" = NULLIF(pg_catalog.current_setting('app.tenant_id', true), '')
+    )
     WITH CHECK (
-        "id" = pg_catalog.current_setting('app.tenant_id', true)
+        "id" = NULLIF(pg_catalog.current_setting('app.tenant_id', true), '')
     );
 
 DROP POLICY tenant_isolation ON public."User";
@@ -596,10 +598,10 @@ ALTER TABLE public."User" FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON public."User"
     FOR ALL TO autorfp_app
     USING (
-        "tenantId" = pg_catalog.current_setting('app.tenant_id', true)
+        "tenantId" = NULLIF(pg_catalog.current_setting('app.tenant_id', true), '')
     )
     WITH CHECK (
-        "tenantId" = pg_catalog.current_setting('app.tenant_id', true)
+        "tenantId" = NULLIF(pg_catalog.current_setting('app.tenant_id', true), '')
     );
 
 DROP POLICY tenant_isolation ON public."Menu";
@@ -608,10 +610,10 @@ ALTER TABLE public."Menu" FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON public."Menu"
     FOR ALL TO autorfp_app
     USING (
-        "tenantId" = pg_catalog.current_setting('app.tenant_id', true)
+        "tenantId" = NULLIF(pg_catalog.current_setting('app.tenant_id', true), '')
     )
     WITH CHECK (
-        "tenantId" = pg_catalog.current_setting('app.tenant_id', true)
+        "tenantId" = NULLIF(pg_catalog.current_setting('app.tenant_id', true), '')
     );
 
 DROP POLICY tenant_isolation ON public."Supplier";
@@ -620,10 +622,10 @@ ALTER TABLE public."Supplier" FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON public."Supplier"
     FOR ALL TO autorfp_app
     USING (
-        "tenantId" = pg_catalog.current_setting('app.tenant_id', true)
+        "tenantId" = NULLIF(pg_catalog.current_setting('app.tenant_id', true), '')
     )
     WITH CHECK (
-        "tenantId" = pg_catalog.current_setting('app.tenant_id', true)
+        "tenantId" = NULLIF(pg_catalog.current_setting('app.tenant_id', true), '')
     );
 
 DROP POLICY tenant_isolation ON public."ProcurementRequest";
@@ -632,10 +634,10 @@ ALTER TABLE public."ProcurementRequest" FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON public."ProcurementRequest"
     FOR ALL TO autorfp_app
     USING (
-        "tenantId" = pg_catalog.current_setting('app.tenant_id', true)
+        "tenantId" = NULLIF(pg_catalog.current_setting('app.tenant_id', true), '')
     )
     WITH CHECK (
-        "tenantId" = pg_catalog.current_setting('app.tenant_id', true)
+        "tenantId" = NULLIF(pg_catalog.current_setting('app.tenant_id', true), '')
     );
 
 DROP POLICY tenant_isolation ON public."SupplierRequest";
@@ -644,10 +646,10 @@ ALTER TABLE public."SupplierRequest" FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON public."SupplierRequest"
     FOR ALL TO autorfp_app
     USING (
-        "tenantId" = pg_catalog.current_setting('app.tenant_id', true)
+        "tenantId" = NULLIF(pg_catalog.current_setting('app.tenant_id', true), '')
     )
     WITH CHECK (
-        "tenantId" = pg_catalog.current_setting('app.tenant_id', true)
+        "tenantId" = NULLIF(pg_catalog.current_setting('app.tenant_id', true), '')
     );
 
 DROP POLICY tenant_isolation ON public."Award";
@@ -656,10 +658,10 @@ ALTER TABLE public."Award" FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON public."Award"
     FOR ALL TO autorfp_app
     USING (
-        "tenantId" = pg_catalog.current_setting('app.tenant_id', true)
+        "tenantId" = NULLIF(pg_catalog.current_setting('app.tenant_id', true), '')
     )
     WITH CHECK (
-        "tenantId" = pg_catalog.current_setting('app.tenant_id', true)
+        "tenantId" = NULLIF(pg_catalog.current_setting('app.tenant_id', true), '')
     );
 
 DROP POLICY tenant_isolation ON public."AuditEvent";
@@ -668,10 +670,10 @@ ALTER TABLE public."AuditEvent" FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON public."AuditEvent"
     FOR ALL TO autorfp_app
     USING (
-        "tenantId" = pg_catalog.current_setting('app.tenant_id', true)
+        "tenantId" = NULLIF(pg_catalog.current_setting('app.tenant_id', true), '')
     )
     WITH CHECK (
-        "tenantId" = pg_catalog.current_setting('app.tenant_id', true)
+        "tenantId" = NULLIF(pg_catalog.current_setting('app.tenant_id', true), '')
     );
 
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public

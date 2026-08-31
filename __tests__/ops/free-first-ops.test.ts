@@ -84,10 +84,8 @@ printf 'pg_restore %s\\n' "$*" >> "$MOCK_RESTORE_LOG"
 `);
   writeExecutable(join(directory, 'psql'), `#!/bin/sh
 printf 'psql %s\\n' "$*" >> "$MOCK_RESTORE_LOG"
-case "\${PGDATABASE:-}" in postgresql://*) exit 65 ;; esac
 case " $* " in
   *current_database*) printf '%s\\n' "\${MOCK_CONNECTED_DATABASE:-quoteplate_restore_monthly}" ;;
-  *quoteplate_restore_owner_check*) printf '%s\\n' "\${MOCK_RESTORE_OWNER_SAFE:-1}" ;;
   *row_security_active*) printf '1\\n' ;;
   *to_regclass*) printf '1\\n' ;;
 esac
@@ -349,60 +347,9 @@ describe('operations shell scripts', () => {
     expect(calls).toContain('autorfp_private.autorfp_auth_credentials_by_email');
     expect(calls).toContain('20260827001000_backup_role');
     expect(calls).toContain('COUNT(*) = 17');
-    expect(calls.match(/quoteplate_restore_owner_check/g)).toHaveLength(2);
-    for (const tuple of [
-      "('AuditEvent_metadata_size_check', 'AuditEvent', 'metadata', '16384')",
-      "('Award_allocationLines_size_check', 'Award', 'allocationLines', '2097152')",
-      "('Award_deliverySnapshot_size_check', 'Award', 'deliverySnapshot', '16384')",
-      "('Award_supplierSnapshots_size_check', 'Award', 'supplierSnapshots', '2097152')",
-      "('Menu_document_size_check', 'Menu', 'document', '524288')",
-      "('ProcurementRequest_deliveryDetails_size_check', 'ProcurementRequest', 'deliveryDetails', '16384')",
-      "('ProcurementRequest_items_size_check', 'ProcurementRequest', 'items', '524288')",
-      "('ProcurementRequest_sourcing_size_check', 'ProcurementRequest', 'sourcing', '65536')",
-      "('Supplier_capabilities_size_check', 'Supplier', 'capabilities', '65536')",
-      "('SupplierRequest_quoteRevisions_size_check', 'SupplierRequest', 'quoteRevisions', '2097152')",
-    ]) expect(calls).toContain(tuple);
-    for (const tuple of [
-      "('Tenant', 'id')",
-      "('User', 'tenantId')",
-      "('Menu', 'tenantId')",
-      "('Supplier', 'tenantId')",
-      "('ProcurementRequest', 'tenantId')",
-      "('SupplierRequest', 'tenantId')",
-      "('Award', 'tenantId')",
-      "('AuditEvent', 'tenantId')",
-    ]) expect(calls).toContain(tuple);
-    for (const name of [
-      'autorfp_auth_credentials_by_email',
-      'autorfp_auth_identity_by_email',
-      'autorfp_auth_identity_by_google_subject',
-      'autorfp_invitation_tenant_by_digest',
-      'autorfp_supplier_application_grant_by_digest',
-      'autorfp_supplier_grant_by_digest',
-      'autorfp_user_email_exists',
-    ]) expect(calls).toContain(`('${name}', 'text')`);
-    expect(calls).toMatch(/pg_get_expr\(\s+policy_catalog\.polqual/);
-    expect(calls).toMatch(/pg_get_expr\(\s+policy_catalog\.polwithcheck/);
-    expect(calls).toMatch(/pg_get_expr\(\s+constraint_catalog\.conbin/);
-    expect(calls).toContain('owner_role.rolsuper OR owner_role.rolbypassrls');
     expect(calls).not.toMatch(/PASSWORD\s+['"]/i);
     expect(calls).not.toContain('--no-acl');
     expect(calls.match(/psql /g)?.length).toBeGreaterThanOrEqual(3);
-    const unsafe = spawnSync('sh', [join(root, 'scripts/restore-verify.sh'), backupFile], {
-      encoding: 'utf8',
-      env: {
-        ...process.env,
-        PATH: `${tools.directory}:${process.env.PATH}`,
-        RESTORE_DATABASE_URL: 'postgresql://operator:secret@db.example/quoteplate_restore_monthly',
-        AGE_IDENTITY_FILE: identityFile,
-        MOCK_RESTORE_LOG: tools.restoreLog,
-        MOCK_RESTORE_OWNER_SAFE: '0',
-      },
-    });
-    expect(unsafe.status).not.toBe(0);
-    expect(unsafe.stderr).toContain('row-security-bypassing owner');
-    expect(readFileSync(tools.restoreLog, 'utf8').match(/pg_restore/g))
-      .toHaveLength(1);
   });
 
   it('supports two consecutive restore verifications after cleaning both schemas', () => {

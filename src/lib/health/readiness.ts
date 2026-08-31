@@ -87,17 +87,17 @@ export async function checkRuntimeDatabase(client: ReadinessDatabaseClient) {
           SELECT 1
           FROM (
             VALUES
-              ('AuditEvent_metadata_size_check', '16384'),
-              ('Award_allocationLines_size_check', '2097152'),
-              ('Award_deliverySnapshot_size_check', '16384'),
-              ('Award_supplierSnapshots_size_check', '2097152'),
-              ('Menu_document_size_check', '524288'),
-              ('ProcurementRequest_deliveryDetails_size_check', '16384'),
-              ('ProcurementRequest_items_size_check', '524288'),
-              ('ProcurementRequest_sourcing_size_check', '65536'),
-              ('Supplier_capabilities_size_check', '65536'),
-              ('SupplierRequest_quoteRevisions_size_check', '2097152')
-          ) AS expected(constraint_name, byte_cap)
+              ('AuditEvent_metadata_size_check', 'AuditEvent', 'metadata', '16384'),
+              ('Award_allocationLines_size_check', 'Award', 'allocationLines', '2097152'),
+              ('Award_deliverySnapshot_size_check', 'Award', 'deliverySnapshot', '16384'),
+              ('Award_supplierSnapshots_size_check', 'Award', 'supplierSnapshots', '2097152'),
+              ('Menu_document_size_check', 'Menu', 'document', '524288'),
+              ('ProcurementRequest_deliveryDetails_size_check', 'ProcurementRequest', 'deliveryDetails', '16384'),
+              ('ProcurementRequest_items_size_check', 'ProcurementRequest', 'items', '524288'),
+              ('ProcurementRequest_sourcing_size_check', 'ProcurementRequest', 'sourcing', '65536'),
+              ('Supplier_capabilities_size_check', 'Supplier', 'capabilities', '65536'),
+              ('SupplierRequest_quoteRevisions_size_check', 'SupplierRequest', 'quoteRevisions', '2097152')
+          ) AS expected(constraint_name, table_name, column_name, byte_cap)
           WHERE NOT EXISTS (
             SELECT 1
             FROM pg_catalog.pg_constraint AS constraint_catalog
@@ -106,16 +106,28 @@ export async function checkRuntimeDatabase(client: ReadinessDatabaseClient) {
             JOIN pg_catalog.pg_namespace AS namespace
               ON namespace.oid = table_catalog.relnamespace
             WHERE namespace.nspname = 'public'
+              AND table_catalog.relname = expected.table_name
               AND constraint_catalog.contype = 'c'
+              AND constraint_catalog.convalidated
               AND constraint_catalog.conname = expected.constraint_name
-              AND pg_catalog.strpos(
-                pg_catalog.pg_get_constraintdef(constraint_catalog.oid),
-                'octet_length'
-              ) > 0
-              AND pg_catalog.strpos(
-                pg_catalog.pg_get_constraintdef(constraint_catalog.oid),
-                expected.byte_cap
-              ) > 0
+              AND pg_catalog.replace(
+                pg_catalog.replace(
+                  pg_catalog.regexp_replace(
+                    pg_catalog.pg_get_expr(
+                      constraint_catalog.conbin,
+                      constraint_catalog.conrelid
+                    ),
+                    '[[:space:]()"]',
+                    '',
+                    'g'
+                  ),
+                  'pg_catalog.',
+                  ''
+                ),
+                '::character varying',
+                '::text'
+              ) = 'octet_length' || expected.column_name
+                  || '::text<=' || expected.byte_cap
           )
         )
         AND (
@@ -222,7 +234,12 @@ export async function checkRuntimeDatabase(client: ReadinessDatabaseClient) {
                 '::text',
                 ''
               ) = expected.tenant_column
-                  || '=current_setting''app.tenant_id'',true'
+                  || pg_catalog.concat(
+                    '=NULLIFcurrent_setting',
+                    pg_catalog.quote_literal('app.tenant_id'),
+                    ',true,',
+                    pg_catalog.quote_literal('')
+                  )
               AND pg_catalog.replace(
                 pg_catalog.replace(
                   pg_catalog.regexp_replace(
@@ -240,7 +257,12 @@ export async function checkRuntimeDatabase(client: ReadinessDatabaseClient) {
                 '::text',
                 ''
               ) = expected.tenant_column
-                  || '=current_setting''app.tenant_id'',true'
+                  || pg_catalog.concat(
+                    '=NULLIFcurrent_setting',
+                    pg_catalog.quote_literal('app.tenant_id'),
+                    ',true,',
+                    pg_catalog.quote_literal('')
+                  )
           )
         )
         AND NOT (

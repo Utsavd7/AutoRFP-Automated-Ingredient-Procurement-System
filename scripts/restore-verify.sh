@@ -80,7 +80,9 @@ ensure_restore_owner() {
     --tuples-only \
     --no-align \
     --quiet \
-    --command="SELECT CASE WHEN EXISTS (
+    --command="SELECT CASE WHEN
+  pg_catalog.to_regclass('pg_catalog.pg_roles') IS NOT NULL
+  AND EXISTS (
   SELECT 1
   FROM pg_catalog.pg_roles AS connection_role
   WHERE connection_role.rolname = CURRENT_USER
@@ -382,7 +384,12 @@ verification_result=$(psql \
           '::text',
           ''
         ) = expected.tenant_column
-            || '=current_setting''app.tenant_id'',true'
+            || pg_catalog.concat(
+              '=NULLIFcurrent_setting',
+              pg_catalog.quote_literal('app.tenant_id'),
+              ',true,',
+              pg_catalog.quote_literal('')
+            )
         AND pg_catalog.replace(
           pg_catalog.replace(
             pg_catalog.regexp_replace(
@@ -400,7 +407,12 @@ verification_result=$(psql \
           '::text',
           ''
         ) = expected.tenant_column
-            || '=current_setting''app.tenant_id'',true'
+            || pg_catalog.concat(
+              '=NULLIFcurrent_setting',
+              pg_catalog.quote_literal('app.tenant_id'),
+              ',true,',
+              pg_catalog.quote_literal('')
+            )
     )
   )
 THEN 1 ELSE 0 END;")

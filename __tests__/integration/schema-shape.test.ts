@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
 import { PrismaClient } from '@prisma/client';
 
 import { checkRuntimeDatabase } from '@/lib/health/readiness';
@@ -23,6 +26,28 @@ const requiredFunctions =
   'autorfp_auth_credentials_by_email autorfp_auth_identity_by_email autorfp_auth_identity_by_google_subject autorfp_invitation_tenant_by_digest autorfp_supplier_application_grant_by_digest autorfp_supplier_grant_by_digest autorfp_user_email_exists'.split(
   ' ',
   );
+const jsonConstraints = [
+  ['AuditEvent_metadata_size_check', 'AuditEvent', 'metadata', '16384'],
+  ['Award_allocationLines_size_check', 'Award', 'allocationLines', '2097152'],
+  ['Award_deliverySnapshot_size_check', 'Award', 'deliverySnapshot', '16384'],
+  ['Award_supplierSnapshots_size_check', 'Award', 'supplierSnapshots', '2097152'],
+  ['Menu_document_size_check', 'Menu', 'document', '524288'],
+  ['ProcurementRequest_deliveryDetails_size_check', 'ProcurementRequest', 'deliveryDetails', '16384'],
+  ['ProcurementRequest_items_size_check', 'ProcurementRequest', 'items', '524288'],
+  ['ProcurementRequest_sourcing_size_check', 'ProcurementRequest', 'sourcing', '65536'],
+  ['Supplier_capabilities_size_check', 'Supplier', 'capabilities', '65536'],
+  ['SupplierRequest_quoteRevisions_size_check', 'SupplierRequest', 'quoteRevisions', '2097152'],
+] as const;
+const tenantPolicies = [
+  ['Tenant', 'id'],
+  ['User', 'tenantId'],
+  ['Menu', 'tenantId'],
+  ['Supplier', 'tenantId'],
+  ['ProcurementRequest', 'tenantId'],
+  ['SupplierRequest', 'tenantId'],
+  ['Award', 'tenantId'],
+  ['AuditEvent', 'tenantId'],
+] as const;
 
 async function checkReadinessAsApp(prisma: PrismaClient) {
   return prisma.$transaction(async (transaction) => {
@@ -118,19 +143,7 @@ test('compact catalog keeps nine bounded tables and fixed digest grants', async 
           ON namespace.oid = constraint_catalog.connamespace
         WHERE namespace.nspname = 'public' AND constraint_catalog.contype = 'c'
       `;
-      const caps: Record<string, number> = {
-        AuditEvent_metadata_size_check: 16384,
-        Award_allocationLines_size_check: 2097152,
-        Award_deliverySnapshot_size_check: 16384,
-        Award_supplierSnapshots_size_check: 2097152,
-        Menu_document_size_check: 524288,
-        ProcurementRequest_deliveryDetails_size_check: 16384,
-        ProcurementRequest_items_size_check: 524288,
-        ProcurementRequest_sourcing_size_check: 65536,
-        Supplier_capabilities_size_check: 65536,
-        SupplierRequest_quoteRevisions_size_check: 2097152,
-      };
-      for (const [name, cap] of Object.entries(caps)) {
+      for (const [name, , , cap] of jsonConstraints) {
         expect(checks.find((check) => check.name === name)?.definition)
           .toMatch(new RegExp(`octet_length.*${cap}`));
       }
@@ -261,13 +274,72 @@ test('compact catalog keeps nine bounded tables and fixed digest grants', async 
   });
 });
 
+test('tenant policies hide and protect an empty tenant id without GUC context', async () => {
+  await withMigratedPostgres(async (databaseUrl) => {
+    const prisma = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
+    const probe = (setEmptyContext: boolean) => prisma.$transaction(
+      async (transaction) => {
+        await transaction.$executeRawUnsafe('SET LOCAL ROLE autorfp_app');
+        if (setEmptyContext) {
+          await transaction.$executeRawUnsafe("SET LOCAL app.tenant_id = ''");
+        }
+        const rows = await transaction.$queryRawUnsafe<Array<{ id: string }>>(
+          'SELECT "id" FROM public."Tenant" WHERE "id" = \'\'',
+        );
+        const updates = await transaction.$executeRawUnsafe(
+          'UPDATE public."Tenant" SET "name" = \'Blocked\' WHERE "id" = \'\'',
+        );
+        return { rows, updates };
+      },
+    );
+
+    try {
+      await prisma.$executeRawUnsafe(`
+        INSERT INTO public."Tenant" (
+          "id", "name", "addressLine", "city", "state", "pin", "phone",
+          "updatedAt"
+        ) VALUES ('', 'Empty', 'A', 'A', 'A', '000000', '0', CURRENT_TIMESTAMP)
+      `);
+      await expect(probe(false)).resolves.toEqual({ rows: [], updates: 0 });
+      await expect(probe(true)).resolves.toEqual({ rows: [], updates: 0 });
+    } finally {
+      await prisma.$disconnect();
+    }
+  });
+});
+
+test('restore verification mirrors the exact compact catalog contract', () => {
+  const script = readFileSync(
+    path.resolve(__dirname, '../../scripts/restore-verify.sh'),
+    'utf8',
+  );
+  for (const values of jsonConstraints) {
+    expect(script).toContain(`('${values.join("', '")}')`);
+  }
+  for (const values of tenantPolicies) {
+    expect(script).toContain(`('${values.join("', '")}')`);
+  }
+  for (const name of requiredFunctions) {
+    expect(script).toContain(`('${name}', 'text')`);
+  }
+  expect(script.match(/^ensure_restore_owner$/gm)).toHaveLength(2);
+  expect(script).toContain('quoteplate_restore_owner_check');
+  expect(script).toMatch(/pg_get_expr\(\s+policy_catalog\.polqual/);
+  expect(script).toMatch(/pg_get_expr\(\s+policy_catalog\.polwithcheck/);
+  expect(script).toMatch(/pg_get_expr\(\s+constraint_catalog\.conbin/);
+  expect(script).toContain('owner_role.rolsuper OR owner_role.rolbypassrls');
+  expect(script).toContain('--dbname=service=quoteplate_restore');
+  expect(script).not.toContain('PGDATABASE="$RESTORE_DATABASE_URL"');
+  expect(script).toContain('=NULLIFcurrent_setting');
+});
+
 test('readiness rejects tenant-policy and security-definer owner drift', async () => {
   await withMigratedPostgres(async (databaseUrl) => {
     const prisma = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
     const awardPolicy = `CREATE POLICY tenant_isolation ON public."Award"
       FOR ALL TO autorfp_app
-      USING ("tenantId" = pg_catalog.current_setting('app.tenant_id', true))
-      WITH CHECK ("tenantId" = pg_catalog.current_setting('app.tenant_id', true))`;
+      USING ("tenantId" = NULLIF(pg_catalog.current_setting('app.tenant_id', true), ''))
+      WITH CHECK ("tenantId" = NULLIF(pg_catalog.current_setting('app.tenant_id', true), ''))`;
     const policyDrifts: Array<[table: string | null, expression: string]> = [
       [null, ''],
       ['Award', 'TRUE'],
@@ -297,6 +369,25 @@ test('readiness rejects tenant-policy and security-definer owner drift', async (
         await prisma.$executeRawUnsafe(awardPolicy);
         await expect(checkReadinessAsApp(prisma)).resolves.toBeUndefined();
       }
+
+      await prisma.$executeRawUnsafe(
+        'ALTER TABLE public."Menu" DROP CONSTRAINT "Menu_document_size_check"',
+      );
+      await prisma.$executeRawUnsafe(`
+        ALTER TABLE public."Menu" ADD CONSTRAINT "Menu_document_size_check"
+        CHECK (pg_catalog.octet_length("name"::TEXT) <= 524288)
+      `);
+      await expect(checkReadinessAsApp(prisma)).rejects.toThrow(
+        'required database migration',
+      );
+      await prisma.$executeRawUnsafe(
+        'ALTER TABLE public."Menu" DROP CONSTRAINT "Menu_document_size_check"',
+      );
+      await prisma.$executeRawUnsafe(`
+        ALTER TABLE public."Menu" ADD CONSTRAINT "Menu_document_size_check"
+        CHECK (pg_catalog.octet_length("document"::TEXT) <= 524288)
+      `);
+      await expect(checkReadinessAsApp(prisma)).resolves.toBeUndefined();
 
       await prisma.$executeRawUnsafe(`DO $unsafe_function_owners$
         DECLARE target RECORD;

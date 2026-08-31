@@ -4,11 +4,19 @@ import { PrismaClient } from '@prisma/client';
 
 import {
   getPublicQuoteRequest,
+  PublicQuoteStorageCorruptionError,
   submitPublicSupplierQuote,
 } from '@/lib/quotes/public-quote-service';
+import type { QuoteRevisionV1 } from '@/lib/quotes/quote-revisions';
 import { digestOpaqueToken } from '@/lib/security/tokens';
+import { deactivateSupplier } from '@/lib/suppliers/supplier-service';
 
 import { withMigratedPostgres } from './setup/postgres';
+
+const tokenA = 'Q'.repeat(43);
+const tokenB = 'R'.repeat(43);
+const emptyQuoteRevisions = { v: 1, revisions: [] };
+const farFuture = new Date('2099-09-01T00:00:00.000Z');
 
 function appDatabaseUrl(databaseUrl: string, password: string) {
   const url = new URL(databaseUrl);
@@ -17,41 +25,96 @@ function appDatabaseUrl(databaseUrl: string, password: string) {
   return url.toString();
 }
 
-const token = 'Q'.repeat(43);
+function item(
+  id: string,
+  unit: 'KILOGRAM' | 'PACK',
+  sourcingOverride: object | null,
+) {
+  return {
+    id,
+    itemKey: id,
+    name: id.replaceAll('-', ' '),
+    quantity: unit === 'KILOGRAM' ? '10' : '4',
+    unit,
+    specification: {
+      v: 1,
+      category: 'VEGETABLES',
+      description: `${id} specification`,
+      preferredBrand: null,
+      packSize: null,
+      qualityGrade: 'A',
+      notes: null,
+      referenceUrl: null,
+      thumbnailWebpBase64: null,
+    },
+    sourcingOverride,
+  };
+}
 
-function submission(expectedLatestRevision: number, freightInr = '450') {
+function currentSelection(supplierIds: string[]) {
+  return {
+    v: 1,
+    modes: ['CURRENT'],
+    currentSupplierIds: supplierIds,
+    selectedNewSupplierIds: [],
+    acceptVerifiedApplications: false,
+  };
+}
+
+const requestItems = {
+  v: 1,
+  items: [
+    item('item-a', 'KILOGRAM', null),
+    item('item-b', 'KILOGRAM', currentSelection(['supplier-b'])),
+    item(
+      'item-shared',
+      'PACK',
+      currentSelection(['supplier-a', 'supplier-b']),
+    ),
+  ],
+};
+const requestSourcing = {
+  v: 1,
+  default: currentSelection(['supplier-a']),
+};
+
+function quotedLine(requestItemId: string, unit: 'KILOGRAM' | 'PACK') {
+  return {
+    requestItemId,
+    noQuote: false,
+    availableQuantity: unit === 'KILOGRAM' ? '10' : '4',
+    unit,
+    unitRateInr: unit === 'KILOGRAM' ? '42' : '25',
+    gstPercent: '5',
+    taxInclusive: false,
+    suppliedBrand: `${requestItemId} brand`,
+    suppliedPackSize: unit === 'PACK' ? '500 g pack' : null,
+    suppliedQualityGrade: 'A',
+    substitution: null,
+  };
+}
+
+function submission(
+  expectedLatestRevision: number,
+  supplier: 'A' | 'B',
+  freightInr = '10',
+) {
+  const ids = supplier === 'A'
+    ? ([['item-a', 'KILOGRAM'], ['item-shared', 'PACK']] as const)
+    : ([['item-b', 'KILOGRAM'], ['item-shared', 'PACK']] as const);
   return {
     expectedLatestRevision,
     deliveryDate: '2099-09-02',
     validUntil: '2099-09-01',
+    minimumOrder: 'Minimum invoice ₹2,500',
     freightInr,
     commercialTerms: 'Payment within 15 days',
-    notes: 'Deliver before 8 AM',
-    items: [
-      {
-        requestItemId: 'quote-item-tomato',
-        noQuote: false,
-        availableQuantity: '100',
-        unitRateInr: '42',
-        gstPercent: '5',
-        taxInclusive: false,
-        substitution: null,
-      },
-      {
-        requestItemId: 'quote-item-paneer',
-        noQuote: false,
-        availableQuantity: '25.5',
-        unitRateInr: '320',
-        gstPercent: '5',
-        taxInclusive: true,
-        substitution: 'Fresh paneer, 1 kg packs',
-      },
-      { requestItemId: 'quote-item-mint', noQuote: true },
-    ],
+    notes: null,
+    items: ids.map(([id, unit]) => quotedLine(id, unit)),
   };
 }
 
-test('public supplier quote workflow is tenant-safe, calculated, immutable, and revision-locked', async () => {
+test('embedded public quotes preserve privacy, exact revisions, corruption boundaries, and row-local concurrency', async () => {
   await withMigratedPostgres(async (databaseUrl) => {
     const admin = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
     const password = randomBytes(24).toString('hex');
@@ -76,17 +139,35 @@ test('public supplier quote workflow is tenant-safe, calculated, immutable, and 
             },
           },
           suppliers: {
-            create: {
-              id: 'quote-supplier',
-              businessName: 'Shakti Fresh Foods',
-            },
+            create: [
+              {
+                id: 'supplier-a',
+                businessName: 'Alpha Fresh Foods',
+                relationshipType: 'CURRENT',
+                verificationStatus: 'VERIFIED',
+                verifiedAt: new Date('2026-08-28T09:00:00.000Z'),
+                verifiedByUserId: 'quote-owner',
+                capabilities: { v: 1, categories: [], items: [] },
+              },
+              {
+                id: 'supplier-b',
+                businessName: 'Beta Fresh Foods',
+                relationshipType: 'CURRENT',
+                verificationStatus: 'VERIFIED',
+                verifiedAt: new Date('2026-08-28T09:00:00.000Z'),
+                verifiedByUserId: 'quote-owner',
+                capabilities: { v: 1, categories: [], items: [] },
+              },
+            ],
           },
           procurementRequests: {
             create: {
               id: 'quote-request',
-              title: 'Weekly vegetables and dairy',
+              title: 'Private split-source request',
               status: 'OPEN',
               openedAt: new Date('2026-08-28T10:00:00.000Z'),
+              items: requestItems,
+              sourcing: requestSourcing,
               deliveryDetails: {
                 addressLine: '18 Koregaon Park Road',
                 city: 'Pune',
@@ -95,251 +176,279 @@ test('public supplier quote workflow is tenant-safe, calculated, immutable, and 
                 instructions: 'Use the service entrance',
               },
               deliveryDate: new Date('2099-09-02T00:00:00.000Z'),
-              quoteDeadline: new Date('2099-09-01T00:00:00.000Z'),
+              quoteDeadline: farFuture,
               commercialTerms: 'Rates must include packing.',
               createdByUserId: 'quote-owner',
-              items: {
-                create: [
-                  {
-                    id: 'quote-item-tomato',
-                    name: 'Tomato',
-                    quantity: '100',
-                    unit: 'KILOGRAM',
-                  },
-                  {
-                    id: 'quote-item-paneer',
-                    name: 'Paneer',
-                    quantity: '25.5',
-                    unit: 'KILOGRAM',
-                  },
-                  {
-                    id: 'quote-item-mint',
-                    name: 'Mint',
-                    quantity: '10',
-                    unit: 'KILOGRAM',
-                  },
-                ],
-              },
             },
           },
         },
       });
-      await admin.supplierRequest.create({
-        data: {
-          id: 'quote-supplier-request',
-          tenantId: 'quote-tenant',
-          requestId: 'quote-request',
-          supplierId: 'quote-supplier',
-          tokenDigest: digestOpaqueToken('supplier-request', token),
-          expiresAt: new Date('2099-09-01T00:00:00.000Z'),
-        },
+      await admin.supplierRequest.createMany({
+        data: [
+          {
+            id: 'supplier-request-a',
+            tenantId: 'quote-tenant',
+            requestId: 'quote-request',
+            supplierId: 'supplier-a',
+            tokenDigest: digestOpaqueToken('supplier-request', tokenA),
+            expiresAt: farFuture,
+            quoteRevision: 0,
+            quoteRevisions: emptyQuoteRevisions,
+          },
+          {
+            id: 'supplier-request-b',
+            tenantId: 'quote-tenant',
+            requestId: 'quote-request',
+            supplierId: 'supplier-b',
+            tokenDigest: digestOpaqueToken('supplier-request', tokenB),
+            expiresAt: farFuture,
+            quoteRevision: 0,
+            quoteRevisions: emptyQuoteRevisions,
+          },
+        ],
       });
-      await admin.$executeRawUnsafe(
-        `ALTER ROLE autorfp_app PASSWORD '${password}'`,
-      );
+      await admin.$executeRawUnsafe(`ALTER ROLE autorfp_app PASSWORD '${password}'`);
       app = new PrismaClient({
         datasources: { db: { url: appDatabaseUrl(databaseUrl, password) } },
       });
       await app.$connect();
 
-      await expect(getPublicQuoteRequest({ token }, app)).resolves.toEqual(
-        expect.objectContaining({
-          restaurantName: 'Monsoon Table Pune',
-          supplierName: 'Shakti Fresh Foods',
-          title: 'Weekly vegetables and dairy',
-          deliveryDate: '2099-09-02',
-          quoteDeadline: '2099-09-01T00:00:00.000Z',
-          latestQuote: null,
-          items: expect.arrayContaining([
-            expect.objectContaining({ id: 'quote-item-tomato', quantity: '100' }),
-            expect.objectContaining({ id: 'quote-item-paneer', quantity: '25.5' }),
-            expect.objectContaining({ id: 'quote-item-mint', quantity: '10' }),
-          ]),
-        }),
-      );
-      expect(await admin.rateLimitBucket.count()).toBe(1);
-      expect(await admin.rateLimitBucket.findFirst()).toEqual(
-        expect.objectContaining({ count: 1 }),
-      );
-
-      const [first, raced] = await Promise.allSettled([
-        submitPublicSupplierQuote({ token, quote: submission(0) }, app),
-        submitPublicSupplierQuote({ token, quote: submission(0, '500') }, app),
-      ]);
-      expect([first, raced].filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
-      expect([first, raced].filter(({ status }) => status === 'rejected')).toEqual([
-        expect.objectContaining({
-          reason: expect.objectContaining({ code: 'QUOTE_REVISION_CONFLICT', status: 409 }),
-        }),
-      ]);
-
-      const storedFirst = await admin.supplierQuote.findFirstOrThrow({
-        where: { supplierRequestId: 'quote-supplier-request' },
-        include: { items: { orderBy: { requestItemId: 'asc' } } },
+      const beforeView = await admin.supplierRequest.findUniqueOrThrow({
+        where: { id: 'supplier-request-a' },
       });
-      expect(storedFirst.revision).toBe(1);
-      expect([BigInt(1_302_000), BigInt(1_307_000)]).toContain(
-        storedFirst.totalPaise,
+      expect(beforeView.viewedAt).toBeNull();
+      expect(beforeView.tokenDigest).toBe(
+        digestOpaqueToken('supplier-request', tokenA),
       );
-      expect(storedFirst.items).toHaveLength(3);
-      expect(storedFirst.items.find(({ requestItemId }) => requestItemId === 'quote-item-mint')).toEqual(
+      expect(beforeView.tokenDigest).not.toContain(tokenA);
+
+      const supplierView = await getPublicQuoteRequest({ token: tokenA }, app);
+      expect(supplierView.items.map(({ id }) => id)).toEqual([
+        'item-a',
+        'item-shared',
+      ]);
+      expect(supplierView.items[0]).toEqual(expect.objectContaining({
+        itemKey: 'item-a',
+        specification: expect.objectContaining({ qualityGrade: 'A' }),
+      }));
+      expect(supplierView.latestQuote).toBeNull();
+      const serializedView = JSON.stringify(supplierView);
+      for (const privateValue of [
+        'item-b',
+        'supplier-b',
+        'currentSupplierIds',
+        'selectedNewSupplierIds',
+        'tokenDigest',
+        'quoteRevisions',
+      ]) {
+        expect(serializedView).not.toContain(privateValue);
+      }
+      expect((await admin.supplierRequest.findUniqueOrThrow({
+        where: { id: 'supplier-request-a' },
+      })).viewedAt).toEqual(expect.any(Date));
+
+      const submitStartedAt = Date.now();
+      const raced = await Promise.allSettled([
+        submitPublicSupplierQuote(
+          { token: tokenA, quote: submission(0, 'A', '10') },
+          app,
+        ),
+        submitPublicSupplierQuote(
+          { token: tokenA, quote: submission(0, 'A', '20') },
+          app,
+        ),
+      ]);
+      const fulfilled = raced.filter(
+        (result): result is PromiseFulfilledResult<QuoteRevisionV1> =>
+          result.status === 'fulfilled',
+      );
+      const rejected = raced.filter(
+        (result): result is PromiseRejectedResult => result.status === 'rejected',
+      );
+      expect(fulfilled).toHaveLength(1);
+      expect(rejected).toEqual([
         expect.objectContaining({
-          noQuote: true,
-          availableQuantity: null,
-          unitRatePaise: null,
-          gstBasisPoints: null,
-          subtotalPaise: BigInt(0),
-          gstPaise: BigInt(0),
-          totalPaise: BigInt(0),
+          reason: expect.objectContaining({
+            code: 'QUOTE_REVISION_CONFLICT',
+            status: 409,
+          }),
         }),
+      ]);
+      expect(Date.parse(fulfilled[0]!.value.submittedAt)).toBeGreaterThanOrEqual(
+        submitStartedAt,
       );
+      expect(Date.parse(fulfilled[0]!.value.submittedAt)).toBeLessThanOrEqual(
+        Date.now(),
+      );
+
+      const storedAfterFirst = await admin.supplierRequest.findUniqueOrThrow({
+        where: { id: 'supplier-request-a' },
+      });
+      expect(storedAfterFirst.quoteRevision).toBe(1);
+      const firstDocument = storedAfterFirst.quoteRevisions as {
+        v: number;
+        revisions: QuoteRevisionV1[];
+      };
+      expect(firstDocument).toEqual({ v: 1, revisions: [fulfilled[0]!.value] });
+      const immutableFirstBytes = JSON.stringify(firstDocument.revisions[0]);
 
       const second = await submitPublicSupplierQuote(
-        { token, quote: submission(1, '600') },
+        { token: tokenA, quote: submission(1, 'A', '30') },
         app,
       );
-      expect(second).toEqual(
-        expect.objectContaining({ revision: 2, totalPaise: '1317000' }),
-      );
-      const quotes = await admin.supplierQuote.findMany({
-        where: { supplierRequestId: 'quote-supplier-request' },
-        orderBy: { revision: 'asc' },
+      expect(second).toEqual(expect.objectContaining({ revision: 2 }));
+      const storedAfterSecond = await admin.supplierRequest.findUniqueOrThrow({
+        where: { id: 'supplier-request-a' },
       });
-      expect(quotes.map(({ revision }) => revision)).toEqual([1, 2]);
-      expect(quotes[0]!.totalPaise).toBe(storedFirst.totalPaise);
+      const secondDocument = storedAfterSecond.quoteRevisions as {
+        v: number;
+        revisions: QuoteRevisionV1[];
+      };
+      expect(storedAfterSecond.quoteRevision).toBe(2);
+      expect(secondDocument.revisions).toHaveLength(2);
+      expect(JSON.stringify(secondDocument.revisions[0])).toBe(immutableFirstBytes);
 
-      const latest = await getPublicQuoteRequest({ token }, app);
-      expect(latest.latestQuote).toEqual(
-        expect.objectContaining({ revision: 2, totalPaise: '1317000' }),
-      );
+      const latestOnly = await getPublicQuoteRequest({ token: tokenA }, app);
+      expect(latestOnly.latestQuote).toEqual(second);
+      expect(latestOnly).not.toHaveProperty('quoteRevisions');
+      expect(JSON.stringify(latestOnly)).not.toContain(immutableFirstBytes);
+
       expect(await admin.auditEvent.findMany({
         where: { action: 'quote.submitted' },
         orderBy: { createdAt: 'asc' },
-        select: { actorUserId: true, entityType: true, metadata: true },
+        select: {
+          actorUserId: true,
+          entityType: true,
+          entityId: true,
+          metadata: true,
+        },
       })).toEqual([
         {
           actorUserId: null,
-          entityType: 'SupplierQuote',
-          metadata: { revision: 1, itemCount: 3 },
+          entityType: 'SupplierRequest',
+          entityId: 'supplier-request-a',
+          metadata: { revision: 1, itemCount: 2 },
         },
         {
           actorUserId: null,
-          entityType: 'SupplierQuote',
-          metadata: { revision: 2, itemCount: 3 },
+          entityType: 'SupplierRequest',
+          entityId: 'supplier-request-a',
+          metadata: { revision: 2, itemCount: 2 },
         },
       ]);
 
-      await admin.$executeRaw`
-        UPDATE "ProcurementRequest"
-        SET "quoteDeadline" = pg_catalog.clock_timestamp() + INTERVAL '1500 milliseconds'
-        WHERE "tenantId" = 'quote-tenant' AND "id" = 'quote-request'
-      `;
-      await admin.$executeRaw`
-        UPDATE "SupplierRequest"
-        SET "expiresAt" = pg_catalog.clock_timestamp() + INTERVAL '1500 milliseconds'
-        WHERE "tenantId" = 'quote-tenant' AND "id" = 'quote-supplier-request'
-      `;
-      let releaseRequestLock!: () => void;
-      let reportRequestLocked!: () => void;
-      const releaseRequest = new Promise<void>((resolve) => {
-        releaseRequestLock = resolve;
+      await admin.supplierRequest.update({
+        where: { id: 'supplier-request-a' },
+        data: { quoteRevision: 3 },
       });
-      const requestLocked = new Promise<void>((resolve) => {
-        reportRequestLocked = resolve;
+      await expect(getPublicQuoteRequest({ token: tokenA }, app)).rejects
+        .toBeInstanceOf(PublicQuoteStorageCorruptionError);
+      await admin.supplierRequest.update({
+        where: { id: 'supplier-request-a' },
+        data: { quoteRevision: 2 },
       });
-      const lockHolder = admin.$transaction(async (transaction) => {
+      await admin.supplierRequest.update({
+        where: { id: 'supplier-request-a' },
+        data: {
+          quoteRevisions: {
+            ...secondDocument,
+            unexpected: true,
+          },
+        },
+      });
+      await expect(getPublicQuoteRequest({ token: tokenA }, app)).rejects
+        .toBeInstanceOf(PublicQuoteStorageCorruptionError);
+      await admin.supplierRequest.update({
+        where: { id: 'supplier-request-a' },
+        data: { quoteRevisions: secondDocument },
+      });
+
+      let releaseRowA!: () => void;
+      let reportRowALocked!: () => void;
+      const rowAReleased = new Promise<void>((resolve) => {
+        releaseRowA = resolve;
+      });
+      const rowALocked = new Promise<void>((resolve) => {
+        reportRowALocked = resolve;
+      });
+      const rowAHolder = admin.$transaction(async (transaction) => {
         await transaction.$queryRaw`
           SELECT "id"
-          FROM "ProcurementRequest"
-          WHERE "tenantId" = 'quote-tenant' AND "id" = 'quote-request'
+          FROM "SupplierRequest"
+          WHERE "id" = 'supplier-request-a'
           FOR UPDATE
         `;
-        reportRequestLocked();
-        await releaseRequest;
+        reportRowALocked();
+        await rowAReleased;
       });
-      await requestLocked;
-      const afterDeadline = getPublicQuoteRequest({ token }, app);
-      await new Promise((resolve) => setTimeout(resolve, 2_000));
-      releaseRequestLock();
-      await lockHolder;
-      await expect(afterDeadline).rejects.toMatchObject({
+      await rowALocked;
+      const independent = submitPublicSupplierQuote(
+        { token: tokenB, quote: submission(0, 'B') },
+        app,
+      );
+      let independentTimer: ReturnType<typeof setTimeout> | undefined;
+      const independentResult = await Promise.race([
+        independent,
+        new Promise<never>((_resolve, reject) => {
+          independentTimer = setTimeout(
+            () => reject(new Error('Distinct SupplierRequest submission blocked.')),
+            1_500,
+          );
+        }),
+      ]);
+      if (independentTimer) clearTimeout(independentTimer);
+      expect(independentResult.revision).toBe(1);
+      releaseRowA();
+      await rowAHolder;
+
+      let releaseRevoke!: () => void;
+      let reportRevokeLocked!: () => void;
+      const revokeReleased = new Promise<void>((resolve) => {
+        releaseRevoke = resolve;
+      });
+      const revokeLocked = new Promise<void>((resolve) => {
+        reportRevokeLocked = resolve;
+      });
+      const revoker = admin.$transaction(async (transaction) => {
+        await transaction.$queryRaw`
+          SELECT "id"
+          FROM "SupplierRequest"
+          WHERE "id" = 'supplier-request-b'
+          FOR UPDATE
+        `;
+        reportRevokeLocked();
+        await revokeReleased;
+        await transaction.supplierRequest.update({
+          where: { id: 'supplier-request-b' },
+          data: { revokedAt: new Date() },
+        });
+      });
+      await revokeLocked;
+      const afterRevoke = submitPublicSupplierQuote(
+        { token: tokenB, quote: submission(1, 'B') },
+        app,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      releaseRevoke();
+      await revoker;
+      await expect(afterRevoke).rejects.toMatchObject({
         code: 'PUBLIC_QUOTE_UNAVAILABLE',
         status: 410,
       });
 
-      await admin.procurementRequest.update({
-        where: { tenantId_id: { tenantId: 'quote-tenant', id: 'quote-request' } },
-        data: { quoteDeadline: new Date('2099-09-01T00:00:00.000Z') },
-      });
-      await admin.supplierRequest.update({
-        where: {
-          tenantId_id: {
-            tenantId: 'quote-tenant',
-            id: 'quote-supplier-request',
-          },
+      const deactivated = await deactivateSupplier(
+        {
+          actor: { tenantId: 'quote-tenant', userId: 'quote-owner' },
+          supplierId: 'supplier-a',
         },
-        data: { expiresAt: new Date('2099-09-01T00:00:00.000Z') },
-      });
-
-      await admin.procurementRequest.create({
-        data: {
-          id: 'quote-request-maximum',
-          tenantId: 'quote-tenant',
-          title: 'Maximum supported request',
-          status: 'OPEN',
-          openedAt: new Date('2026-08-28T10:00:00.000Z'),
-          deliveryDetails: { addressLine: '18 Koregaon Park Road' },
-          deliveryDate: new Date('2099-09-02T00:00:00.000Z'),
-          quoteDeadline: new Date('2099-09-01T00:00:00.000Z'),
-          createdByUserId: 'quote-owner',
-        },
-      });
-      await admin.requestItem.createMany({
-        data: Array.from({ length: 250 }, (_, index) => ({
-          id: `maximum-item-${String(index).padStart(4, '0')}`,
-          tenantId: 'quote-tenant',
-          requestId: 'quote-request-maximum',
-          name: `Ingredient ${index + 1}`,
-          quantity: '1',
-          unit: 'KILOGRAM' as const,
-        })),
-      });
-      const maximumToken = 'M'.repeat(43);
-      await admin.supplierRequest.create({
-        data: {
-          id: 'quote-supplier-request-maximum',
-          tenantId: 'quote-tenant',
-          requestId: 'quote-request-maximum',
-          supplierId: 'quote-supplier',
-          tokenDigest: digestOpaqueToken('supplier-request', maximumToken),
-          expiresAt: new Date('2099-09-01T00:00:00.000Z'),
-        },
-      });
-      await expect(
-        submitPublicSupplierQuote(
-          {
-            token: maximumToken,
-            quote: {
-              expectedLatestRevision: 0,
-              deliveryDate: '2099-09-02',
-              validUntil: '2099-09-01',
-              freightInr: '0',
-              commercialTerms: null,
-              notes: null,
-              items: Array.from({ length: 250 }, (_, index) => ({
-                requestItemId: `maximum-item-${String(index).padStart(4, '0')}`,
-                noQuote: true,
-              })),
-            },
-          },
-          app,
-        ),
-      ).resolves.toEqual(expect.objectContaining({ revision: 1, totalPaise: '0' }));
-      expect(
-        await admin.supplierQuoteItem.count({
-          where: { tenantId: 'quote-tenant', quote: { supplierRequestId: 'quote-supplier-request-maximum' } },
-        }),
-      ).toBe(250);
+        app,
+      );
+      expect(deactivated.isActive).toBe(false);
+      expect((await admin.supplierRequest.findUniqueOrThrow({
+        where: { id: 'supplier-request-a' },
+      })).revokedAt).toEqual(expect.any(Date));
+      await expect(getPublicQuoteRequest({ token: tokenA }, app)).rejects
+        .toMatchObject({ code: 'PUBLIC_QUOTE_UNAVAILABLE', status: 410 });
     } finally {
       await app?.$disconnect();
       await admin.$disconnect();

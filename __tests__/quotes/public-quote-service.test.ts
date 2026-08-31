@@ -1,195 +1,155 @@
-import {
-  assertPublicQuoteTenantItemCapacity,
-  nextPublicQuoteRevision,
-  PUBLIC_QUOTE_MAX_REVISIONS,
-  PUBLIC_QUOTE_TENANT_ITEM_LIMIT,
-  PublicQuoteCapacityError,
-  PublicQuoteRevisionLimitError,
-  PublicQuoteValidationError,
-  validatePublicQuoteSubmission,
-} from '@/lib/quotes/public-quote-service';
+import type {
+  RequestItemsV1,
+  RequestSourcingV1,
+} from '@/lib/procurement/request-document';
+import { eligibleQuoteRequestItems } from '@/lib/quotes/public-quote-service';
 
-const now = new Date('2026-08-28T10:00:00.000Z');
-const requestItems = [
-  { id: 'tomato', name: 'Tomato', quantity: '100', unit: 'KILOGRAM' as const },
-  { id: 'paneer', name: 'Paneer', quantity: '25.5', unit: 'KILOGRAM' as const },
-  { id: 'mint', name: 'Mint', quantity: '10', unit: 'KILOGRAM' as const },
-];
+const specification = {
+  v: 1 as const,
+  category: 'VEGETABLES' as const,
+  description: null,
+  preferredBrand: null,
+  packSize: null,
+  qualityGrade: null,
+  notes: null,
+  referenceUrl: null,
+  thumbnailWebpBase64: null,
+};
 
-function validSubmission() {
+function selection(
+  overrides: Partial<RequestSourcingV1['default']> = {},
+): RequestSourcingV1['default'] {
   return {
-    expectedLatestRevision: 0,
-    deliveryDate: '2026-09-02',
-    validUntil: '2026-09-01',
-    freightInr: '450.00',
-    commercialTerms: 'Payment within 15 days',
-    notes: null,
-    items: [
-      {
-        requestItemId: 'tomato',
-        noQuote: false,
-        availableQuantity: '100',
-        unitRateInr: '42.00',
-        gstPercent: '5',
-        taxInclusive: false,
-        substitution: null,
-      },
-      {
-        requestItemId: 'paneer',
-        noQuote: false,
-        availableQuantity: '25.5',
-        unitRateInr: '320',
-        gstPercent: '5',
-        taxInclusive: true,
-        substitution: 'Fresh paneer, 1 kg packs',
-      },
-      { requestItemId: 'mint', noQuote: true },
-    ],
+    v: 1 as const,
+    modes: ['CURRENT', 'SELECTED_NEW', 'VERIFIED_NEW'],
+    currentSupplierIds: ['current-a'],
+    selectedNewSupplierIds: ['selected-a'],
+    acceptVerifiedApplications: true,
+    ...overrides,
   };
 }
 
-describe('public supplier quote validation and totals', () => {
-  it('places a hard storage bound on immutable quote revisions', () => {
-    expect(PUBLIC_QUOTE_MAX_REVISIONS).toBe(10);
-    expect(nextPublicQuoteRevision(PUBLIC_QUOTE_MAX_REVISIONS - 1)).toBe(
-      PUBLIC_QUOTE_MAX_REVISIONS,
-    );
-    expect(() => nextPublicQuoteRevision(PUBLIC_QUOTE_MAX_REVISIONS)).toThrow(
-      PublicQuoteRevisionLimitError,
-    );
+const items: RequestItemsV1 = {
+  v: 1,
+  items: [
+    {
+      id: 'default-item',
+      itemKey: 'default-item',
+      name: 'Default item',
+      quantity: '1',
+      unit: 'KILOGRAM',
+      specification,
+      sourcingOverride: null,
+    },
+    {
+      id: 'current-only',
+      itemKey: 'current-only',
+      name: 'Current only',
+      quantity: '2',
+      unit: 'PACK',
+      specification,
+      sourcingOverride: selection({
+        modes: ['CURRENT'],
+        currentSupplierIds: ['current-a'],
+        selectedNewSupplierIds: [],
+        acceptVerifiedApplications: false,
+      }),
+    },
+    {
+      id: 'selected-only',
+      itemKey: 'selected-only',
+      name: 'Selected only',
+      quantity: '3',
+      unit: 'CASE',
+      specification,
+      sourcingOverride: selection({
+        modes: ['SELECTED_NEW'],
+        currentSupplierIds: [],
+        selectedNewSupplierIds: ['selected-a'],
+        acceptVerifiedApplications: false,
+      }),
+    },
+    {
+      id: 'application-only',
+      itemKey: 'application-only',
+      name: 'Application only',
+      quantity: '4',
+      unit: 'CRATE',
+      specification,
+      sourcingOverride: selection({
+        modes: ['VERIFIED_NEW'],
+        currentSupplierIds: [],
+        selectedNewSupplierIds: [],
+        acceptVerifiedApplications: true,
+      }),
+    },
+  ],
+};
+const sourcing: RequestSourcingV1 = { v: 1, default: selection() };
+
+describe('public quote eligible-item grant', () => {
+  it.each([
+    [
+      'current supplier',
+      { id: 'current-a', applicationRequestId: null },
+      ['default-item', 'current-only'],
+    ],
+    [
+      'selected-new supplier',
+      { id: 'selected-a', applicationRequestId: null },
+      ['default-item', 'selected-only'],
+    ],
+    [
+      'verified applicant for this request',
+      { id: 'application-a', applicationRequestId: 'request-a' },
+      ['default-item', 'application-only'],
+    ],
+    [
+      'applicant from another request',
+      { id: 'application-a', applicationRequestId: 'request-b' },
+      [],
+    ],
+  ])('derives the exact request-order subset for a %s', (_label, supplier, ids) => {
+    const eligible = eligibleQuoteRequestItems({
+      requestId: 'request-a',
+      items,
+      sourcing,
+      supplier,
+    });
+
+    expect(eligible.map(({ id }) => id)).toEqual(ids);
+    expect(eligible.every((item) => !('sourcingOverride' in item))).toBe(true);
+    expect(JSON.stringify(eligible)).not.toContain('currentSupplierIds');
+    expect(JSON.stringify(eligible)).not.toContain('selectedNewSupplierIds');
   });
 
-  it('fails closed before a restaurant exceeds its quote-line storage budget', () => {
-    expect(() =>
-      assertPublicQuoteTenantItemCapacity(
-        PUBLIC_QUOTE_TENANT_ITEM_LIMIT - requestItems.length,
-        requestItems.length,
-      ),
-    ).not.toThrow();
-    expect(() =>
-      assertPublicQuoteTenantItemCapacity(
-        PUBLIC_QUOTE_TENANT_ITEM_LIMIT - requestItems.length + 1,
-        requestItems.length,
-      ),
-    ).toThrow(PublicQuoteCapacityError);
-  });
-
-
-  it('calculates India GST and landed totals only on the server', () => {
-    const result = validatePublicQuoteSubmission(
-      validSubmission(),
-      requestItems,
-      now,
-    );
-
-    expect(result).toEqual(
-      expect.objectContaining({
-        expectedLatestRevision: 0,
-        freightPaise: BigInt(45_000),
-        subtotalPaise: BigInt(1_197_143),
-        gstPaise: BigInt(59_857),
-        totalPaise: BigInt(1_302_000),
-        commercialTerms: 'Payment within 15 days',
-        notes: null,
-      }),
-    );
-    expect(result.items).toEqual([
-      expect.objectContaining({
-        requestItemId: 'tomato',
-        availableQuantity: '100',
-        unitRatePaise: BigInt(4_200),
-        gstBasisPoints: 500,
-        subtotalPaise: BigInt(420_000),
-        gstPaise: BigInt(21_000),
-        totalPaise: BigInt(441_000),
-      }),
-      expect.objectContaining({
-        requestItemId: 'paneer',
-        availableQuantity: '25.5',
-        unitRatePaise: BigInt(32_000),
-        gstBasisPoints: 500,
-        taxInclusive: true,
-        subtotalPaise: BigInt(777_143),
-        gstPaise: BigInt(38_857),
-        totalPaise: BigInt(816_000),
-      }),
-      {
-        requestItemId: 'mint',
-        noQuote: true,
-        availableQuantity: null,
-        unit: null,
-        unitRatePaise: null,
-        gstBasisPoints: null,
-        taxInclusive: false,
-        substitution: null,
-        subtotalPaise: BigInt(0),
-        gstPaise: BigInt(0),
-        totalPaise: BigInt(0),
-      },
-    ]);
-  });
-
-  it('requires every request item exactly once and rejects client totals', () => {
-    for (const items of [
-      validSubmission().items.slice(0, 2),
-      [...validSubmission().items, validSubmission().items[0]],
-      [
-        ...validSubmission().items.slice(0, 2),
-        { requestItemId: 'not-in-request', noQuote: true },
+  it('requires the matching sourcing mode and verified-application opt-in', () => {
+    const mismatched: RequestItemsV1 = {
+      v: 1,
+      items: [
+        {
+          ...items.items[0]!,
+          sourcingOverride: selection({
+            modes: ['VERIFIED_NEW'],
+            currentSupplierIds: ['current-a'],
+            selectedNewSupplierIds: [],
+            acceptVerifiedApplications: false,
+          }),
+        },
       ],
-    ]) {
-      expect(() =>
-        validatePublicQuoteSubmission(
-          { ...validSubmission(), items },
-          requestItems,
-          now,
-        ),
-      ).toThrow(PublicQuoteValidationError);
-    }
+    };
 
-    const tampered = validSubmission();
-    Object.assign(tampered.items[0]!, { totalPaise: '1' });
-    expect(() =>
-      validatePublicQuoteSubmission(tampered, requestItems, now),
-    ).toThrow(PublicQuoteValidationError);
-  });
-
-  it('bounds quantities, dates, rates, GST, text, and no-quote fields', () => {
-    const cases: unknown[] = [];
-    const tooMuch = validSubmission();
-    tooMuch.items[0]!.availableQuantity = '100.001';
-    cases.push(tooMuch);
-
-    const oldDelivery = validSubmission();
-    oldDelivery.deliveryDate = '2026-08-27';
-    cases.push(oldDelivery);
-
-    const badGst = validSubmission();
-    badGst.items[0]!.gstPercent = '100.01';
-    cases.push(badGst);
-
-    const noQuotePrice = validSubmission();
-    Object.assign(noQuotePrice.items[2]!, { unitRateInr: '12' });
-    cases.push(noQuotePrice);
-
-    const oversizedNotes = validSubmission();
-    Object.assign(oversizedNotes, { notes: '₹'.repeat(2_000) });
-    cases.push(oversizedNotes);
-
-    for (const candidate of cases) {
-      expect(() =>
-        validatePublicQuoteSubmission(candidate, requestItems, now),
-      ).toThrow(PublicQuoteValidationError);
-    }
-
-    const prototypeKey = JSON.parse(
-      JSON.stringify({ ...validSubmission(), __proto_marker__: true }).replace(
-        '__proto_marker__',
-        '__proto__',
-      ),
-    );
-    expect(() =>
-      validatePublicQuoteSubmission(prototypeKey, requestItems, now),
-    ).toThrow(PublicQuoteValidationError);
+    expect(eligibleQuoteRequestItems({
+      requestId: 'request-a',
+      items: mismatched,
+      sourcing,
+      supplier: { id: 'current-a', applicationRequestId: null },
+    })).toEqual([]);
+    expect(eligibleQuoteRequestItems({
+      requestId: 'request-a',
+      items: mismatched,
+      sourcing,
+      supplier: { id: 'application-a', applicationRequestId: 'request-a' },
+    })).toEqual([]);
   });
 });

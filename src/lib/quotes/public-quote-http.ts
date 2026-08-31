@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { privateNoStoreResponse } from '@/lib/api/private-response';
 import { problemResponse } from '@/lib/api/problem';
 import {
   InvalidJsonBodyError,
@@ -9,7 +10,7 @@ import {
 import {
   getPublicQuoteRequest,
   PUBLIC_QUOTE_BODY_BYTES,
-  PublicQuoteCapacityError,
+  PublicQuoteDocumentSizeError,
   PublicQuoteReadLimitError,
   PublicQuoteRevisionConflictError,
   PublicQuoteRevisionLimitError,
@@ -38,9 +39,7 @@ const consumeReadRateLimit = publicClientRateLimit('quote-read');
 const consumeSubmissionClientRateLimit = publicClientRateLimit('quote-submit');
 
 function privacyHeaders(response: NextResponse) {
-  response.headers.set('Cache-Control', 'private, no-store');
-  response.headers.set('Referrer-Policy', 'no-referrer');
-  return response;
+  return privateNoStoreResponse(response);
 }
 
 function sessionToken(request: Request) {
@@ -110,9 +109,9 @@ function errorResponse(error: unknown, production: boolean) {
     return response;
   }
   if (
-    error instanceof PublicQuoteCapacityError ||
     error instanceof PublicQuoteRevisionConflictError ||
-    error instanceof PublicQuoteRevisionLimitError
+    error instanceof PublicQuoteRevisionLimitError ||
+    error instanceof PublicQuoteDocumentSizeError
   ) {
     return privacyHeaders(
       problemResponse(409, 'Quote changed', error.message),

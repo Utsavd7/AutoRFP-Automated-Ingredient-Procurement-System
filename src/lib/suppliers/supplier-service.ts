@@ -672,6 +672,18 @@ export async function updateSupplier(
       if (Object.keys(conflicts).length > 0) {
         throw new SupplierConflictError(conflicts);
       }
+      let revokedAt: Date | undefined;
+      if (changes.isActive === false) {
+        await transaction.$queryRaw`
+          SELECT "id"
+          FROM "SupplierRequest"
+          WHERE "tenantId" = ${actor.tenantId}
+            AND "supplierId" = ${supplierId}
+          ORDER BY "id"
+          FOR UPDATE
+        `;
+        revokedAt = await databaseClock(transaction);
+      }
       const { capabilities, ...scalarChanges } = changes;
       const updated = await transaction.supplier.update({
         where: {
@@ -685,6 +697,16 @@ export async function updateSupplier(
         },
         select: supplierDetailSelect,
       });
+      if (revokedAt) {
+        await transaction.supplierRequest.updateMany({
+          where: {
+            tenantId: actor.tenantId,
+            supplierId,
+            revokedAt: null,
+          },
+          data: { revokedAt },
+        });
+      }
       return validatedDetail(updated);
     },
     client,

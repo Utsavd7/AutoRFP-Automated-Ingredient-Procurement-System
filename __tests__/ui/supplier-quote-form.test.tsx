@@ -20,8 +20,16 @@ const request: PublicQuoteRequestDto = {
   quoteDeadline: '2026-09-01T10:00:00.000Z',
   commercialTerms: 'Rates must include packing.',
   items: [
-    { id: 'tomato', name: 'Tomato', quantity: '100', unit: 'KILOGRAM' },
-    { id: 'paneer', name: 'Paneer', quantity: '25.5', unit: 'KILOGRAM' },
+    {
+      id: 'tomato', itemKey: 'tomato', name: 'Tomato', quantity: '100',
+      unit: 'KILOGRAM',
+      specification: { v: 1, category: 'VEGETABLES' },
+    },
+    {
+      id: 'paneer', itemKey: 'paneer', name: 'Paneer', quantity: '25.5',
+      unit: 'KILOGRAM',
+      specification: { v: 1, category: 'DAIRY' },
+    },
   ],
   latestQuote: null,
 };

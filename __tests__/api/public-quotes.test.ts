@@ -1,6 +1,8 @@
 import { createPublicQuoteHandlers } from '@/lib/quotes/public-quote-http';
 import {
+  PublicQuoteDocumentSizeError,
   PublicQuoteRevisionConflictError,
+  PublicQuoteRevisionLimitError,
   PublicQuoteSubmissionLimitError,
   PublicQuoteUnavailableError,
   PublicQuoteValidationError,
@@ -50,6 +52,7 @@ describe('public supplier quote API', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('cache-control')).toBe('private, no-store');
     expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff');
     expect(load).toHaveBeenCalledWith({ token });
     await expect(response.json()).resolves.toEqual(
       expect.objectContaining({ restaurantName: 'Monsoon Table Pune' }),
@@ -180,6 +183,28 @@ describe('public supplier quote API', () => {
       },
     );
     expect((await handlers.POST(oversized)).status).toBe(413);
+  });
+
+  it.each([
+    new PublicQuoteRevisionConflictError(),
+    new PublicQuoteRevisionLimitError(),
+    new PublicQuoteDocumentSizeError(),
+  ])('maps safe revision conflicts to 409 without losing privacy headers', async (error) => {
+    const handlers = createPublicQuoteHandlers({
+      load: jest.fn(),
+      submit: jest.fn().mockRejectedValue(error),
+      submissionClientRateLimit: jest.fn().mockResolvedValue({
+        allowed: true,
+        retryAfterSeconds: 900,
+      }),
+    });
+
+    const response = await handlers.POST(request('POST', {}));
+
+    expect(response.status).toBe(409);
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff');
   });
 
   it('requires JSON and rejects cookie-authenticated mutations outside the exact origin', async () => {

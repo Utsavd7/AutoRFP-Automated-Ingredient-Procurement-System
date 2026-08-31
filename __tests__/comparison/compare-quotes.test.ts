@@ -4,289 +4,229 @@ import {
   type ComparisonRequest,
 } from '@/lib/comparison/compare-quotes';
 
+const emptySpecification = {
+  v: 1 as const,
+  category: 'VEGETABLES' as const,
+  description: null,
+  preferredBrand: null,
+  packSize: null,
+  qualityGrade: null,
+  notes: null,
+  referenceUrl: null,
+  thumbnailWebpBase64: null,
+};
+
 const request: ComparisonRequest = {
   id: 'request-a',
   title: 'Weekly produce',
-  deliveryDate: new Date('2027-01-10T00:00:00.000Z'),
-  quoteDeadline: new Date('2027-01-09T10:00:00.000Z'),
+  deliveryDate: '2027-01-10',
+  quoteDeadline: '2027-01-09T10:00:00.000Z',
   commercialTerms: 'Payment in 15 days.',
   items: [
     {
       id: 'tomato',
+      itemKey: 'tomato',
       name: 'Tomato',
       quantity: '100',
       unit: 'KILOGRAM',
+      specification: {
+        ...emptySpecification,
+        preferredBrand: 'Farm Select',
+        packSize: '10 kg crate',
+        qualityGrade: 'A',
+      },
     },
     {
       id: 'coriander',
+      itemKey: 'coriander',
       name: 'Coriander',
       quantity: '10',
-      unit: 'KILOGRAM',
+      unit: 'PACK',
+      specification: emptySpecification,
     },
   ],
 };
 
 function quote(overrides: Partial<ComparisonQuote> = {}): ComparisonQuote {
   return {
-    id: 'quote-a',
     supplierRequestId: 'supplier-request-a',
-    supplierId: 'supplier-a',
     supplierName: 'Shakti Foods',
     supplierActive: true,
+    eligibleRequestItemIds: ['tomato', 'coriander'],
     revision: 2,
-    subtotalPaise: BigInt(79_000_00),
-    gstPaise: BigInt(3_950_00),
-    freightPaise: BigInt(500_00),
-    totalPaise: BigInt(83_450_00),
-    deliveryDate: new Date('2027-01-10T00:00:00.000Z'),
-    validUntil: new Date('2027-01-11T00:00:00.000Z'),
+    submittedAt: '2027-01-08T09:00:00.000Z',
+    deliveryDate: '2027-01-10',
+    validUntil: '2027-01-11',
+    minimumOrder: 'Minimum invoice ₹2,500',
+    freightPaise: '50000',
     commercialTerms: 'Payment in 15 days.',
     notes: null,
-    submittedAt: new Date('2027-01-08T09:00:00.000Z'),
+    subtotalPaise: '7900000',
+    gstPaise: '395000',
+    totalPaise: '8345000',
     items: [
       {
-        id: 'quote-item-tomato',
         requestItemId: 'tomato',
         noQuote: false,
         availableQuantity: '100',
         unit: 'KILOGRAM',
-        unitRatePaise: BigInt(700_00),
+        unitRatePaise: '70000',
         gstBasisPoints: 500,
         taxInclusive: false,
-        substitution: null,
-        subtotalPaise: BigInt(70_000_00),
-        gstPaise: BigInt(3_500_00),
-        totalPaise: BigInt(73_500_00),
+        suppliedBrand: 'Market Fresh',
+        suppliedPackSize: '5 kg crate',
+        suppliedQualityGrade: 'B',
+        substitution: 'Roma tomato',
+        subtotalPaise: '7000000',
+        gstPaise: '350000',
+        totalPaise: '7350000',
       },
       {
-        id: 'quote-item-coriander',
         requestItemId: 'coriander',
         noQuote: false,
         availableQuantity: '10',
-        unit: 'KILOGRAM',
-        unitRatePaise: BigInt(900_00),
+        unit: 'PACK',
+        unitRatePaise: '90000',
         gstBasisPoints: 500,
         taxInclusive: false,
+        suppliedBrand: null,
+        suppliedPackSize: null,
+        suppliedQualityGrade: null,
         substitution: null,
-        subtotalPaise: BigInt(9_000_00),
-        gstPaise: BigInt(450_00),
-        totalPaise: BigInt(9_450_00),
+        subtotalPaise: '900000',
+        gstPaise: '45000',
+        totalPaise: '945000',
       },
     ],
     ...overrides,
   };
 }
 
-describe('deterministic supplier quote comparison', () => {
-  it('shows an exact full landed basket without inventing a winner or score', () => {
+describe('factual embedded quote comparison', () => {
+  it('shows landed/commercial facts and requested-versus-supplied specifications without ranking', () => {
     const result = compareLatestQuotes(request, [quote()], {
       now: new Date('2027-01-09T00:00:00.000Z'),
     });
 
-    expect(result.request).toMatchObject({
-      id: 'request-a',
-      itemCount: 2,
-      deliveryDate: '2027-01-10',
+    expect(result.request).toMatchObject({ id: 'request-a', itemCount: 2 });
+    expect(result.quotes[0]).toMatchObject({
+      supplierRequestId: 'supplier-request-a',
+      supplierName: 'Shakti Foods',
+      revision: 2,
+      minimumOrder: 'Minimum invoice ₹2,500',
+      totalPaise: '8345000',
+      coveredItemCount: 2,
+      fullCoverage: true,
+      deliveryFit: 'ON_OR_BEFORE',
+      expired: false,
+      missingTerms: false,
+      substitutions: [{ requestItemId: 'tomato', text: 'Roma tomato' }],
     });
-    expect(result.quotes).toEqual([
-      expect.objectContaining({
-        quoteId: 'quote-a',
-        revision: 2,
-        totalPaise: '8345000',
-        coveredItemCount: 2,
-        fullCoverage: true,
-        comparable: true,
-        deliveryFit: 'ON_OR_BEFORE',
-        expired: false,
-        missingTerms: false,
-        supplierActive: true,
-        awardable: true,
-        awardIssues: [],
-        missingRequestItemIds: [],
-        partialRequestItemIds: [],
-        substitutions: [],
-      }),
+    expect(result.quotes[0]?.items[0]).toMatchObject({
+      requestedSpecification: {
+        preferredBrand: 'Farm Select',
+        packSize: '10 kg crate',
+        qualityGrade: 'A',
+      },
+      suppliedSpecification: {
+        brand: 'Market Fresh',
+        packSize: '5 kg crate',
+        qualityGrade: 'B',
+      },
+    });
+    for (const forbidden of [
+      'score', 'winner', 'recommendation', 'recommended', 'cheapest',
+      'savings', 'rank', 'awardable', 'supplierId', 'quoteId',
+    ]) {
+      expect(JSON.stringify(result)).not.toContain(`"${forbidden}"`);
+    }
+  });
+
+  it('sorts equal-price quotes only by business name then SupplierRequest ID', () => {
+    const result = compareLatestQuotes(request, [
+      quote({ supplierRequestId: 'sr-z', supplierName: 'Beta Foods' }),
+      quote({ supplierRequestId: 'sr-b', supplierName: 'Alpha Foods' }),
+      quote({ supplierRequestId: 'sr-a', supplierName: 'Alpha Foods' }),
+    ], { now: new Date('2027-01-09T00:00:00.000Z') });
+
+    expect(result.quotes.map(({ supplierName, supplierRequestId, totalPaise }) => [
+      supplierName,
+      supplierRequestId,
+      totalPaise,
+    ])).toEqual([
+      ['Alpha Foods', 'sr-a', '8345000'],
+      ['Alpha Foods', 'sr-b', '8345000'],
+      ['Beta Foods', 'sr-z', '8345000'],
     ]);
-    expect(result.quotes[0]).not.toHaveProperty('score');
-    expect(result.quotes[0]).not.toHaveProperty('winner');
-    expect(result).not.toHaveProperty('recommendation');
   });
 
-  it('normalizes standard units exactly and flags an unrepresentable paise conversion', () => {
-    const normalized = quote({
-      id: 'quote-grams',
+  it('keeps PACK/CASE/CRATE incomparable without an explicit conversion', () => {
+    const result = compareLatestQuotes(request, [quote({
       items: [
-        {
-          ...quote().items[0]!,
-          id: 'quote-item-tomato-grams',
-          availableQuantity: '100000',
-          unit: 'GRAM',
-          unitRatePaise: BigInt(70),
-        },
-        quote().items[1]!,
+        quote().items[0]!,
+        { ...quote().items[1]!, unit: 'CASE' },
       ],
-    });
-    const gramRequest: ComparisonRequest = {
-      ...request,
-      items: [
-        { ...request.items[0]!, quantity: '100000', unit: 'GRAM' },
-        request.items[1]!,
-      ],
-    };
-    const inexact = quote({
-      id: 'quote-inexact',
-      supplierId: 'supplier-b',
-      supplierName: 'GreenLeaf Enterprises',
-      items: [
-        {
-          ...quote().items[0]!,
-          id: 'quote-item-tomato-inexact',
-          availableQuantity: '100',
-          unit: 'KILOGRAM',
-          unitRatePaise: BigInt(1),
-        },
-        quote().items[1]!,
-      ],
-    });
+    })], { now: new Date('2027-01-09T00:00:00.000Z') });
 
-    const normalizedResult = compareLatestQuotes(request, [normalized], {
-      now: new Date('2027-01-09T00:00:00.000Z'),
+    expect(result.quotes[0]?.items[1]).toMatchObject({
+      requestUnit: 'PACK',
+      quotedUnit: 'CASE',
+      normalizedAvailableQuantity: null,
+      normalizedUnitRatePaise: null,
+      unitComparable: false,
+      coverage: 'UNIT_MISMATCH',
     });
-    const inexactResult = compareLatestQuotes(gramRequest, [inexact], {
+    expect(result.quotes[0]).toMatchObject({
+      fullCoverage: false,
+      unitMismatchRequestItemIds: ['coriander'],
+    });
+  });
+
+  it('does not count items outside a supplier invitation as missing coverage', () => {
+    const scopedQuote = quote({
+      eligibleRequestItemIds: ['tomato'],
+      items: [quote().items[0]!],
+    });
+    const result = compareLatestQuotes(request, [scopedQuote], {
       now: new Date('2027-01-09T00:00:00.000Z'),
     });
 
-    expect(normalizedResult.quotes[0]?.items[0])
-      .toMatchObject({
-        normalizedAvailableQuantity: '100',
-        normalizedUnitRatePaise: '70000',
-        unitComparable: true,
-        coverage: 'FULL',
-      });
-    expect(inexactResult.quotes[0])
-      .toMatchObject({ comparable: false, fullCoverage: false });
-    expect(inexactResult.quotes[0]?.items[0])
-      .toMatchObject({
-        normalizedUnitRatePaise: null,
-        unitComparable: false,
-        coverage: 'UNIT_MISMATCH',
-      });
+    expect(result.quotes[0]).toMatchObject({
+      coveredItemCount: 1,
+      totalItemCount: 1,
+      fullCoverage: true,
+      missingRequestItemIds: [],
+    });
+    expect(result.quotes[0]?.items[1]).toMatchObject({
+      requestItemId: 'coriander',
+      coverage: 'NOT_REQUESTED',
+    });
   });
 
-  it('keeps missing, partial, substitution, delivery, validity, and terms facts visible', () => {
-    const result = compareLatestQuotes(
-      request,
-      [
-        quote({
-          commercialTerms: null,
-          deliveryDate: new Date('2027-01-12T00:00:00.000Z'),
-          validUntil: new Date('2027-01-08T00:00:00.000Z'),
-          items: [
-            {
-              ...quote().items[0]!,
-              availableQuantity: '75',
-              substitution: 'Roma tomato, same grade',
-            },
-            {
-              ...quote().items[1]!,
-              noQuote: true,
-              availableQuantity: null,
-              unit: null,
-              unitRatePaise: null,
-              gstBasisPoints: null,
-              subtotalPaise: BigInt(0),
-              gstPaise: BigInt(0),
-              totalPaise: BigInt(0),
-            },
-          ],
-        }),
+  it('keeps missing-subset, partial, no-quote, substitution, validity, delivery, and terms facts visible', () => {
+    const result = compareLatestQuotes(request, [quote({
+      commercialTerms: null,
+      deliveryDate: '2027-01-12',
+      validUntil: '2027-01-08',
+      items: [
+        {
+          ...quote().items[0]!,
+          availableQuantity: '75',
+          substitution: 'Roma tomato, same grade',
+        },
       ],
-      { now: new Date('2027-01-09T00:00:00.000Z') },
-    );
+    })], { now: new Date('2027-01-09T00:00:00.000Z') });
 
     expect(result.quotes[0]).toMatchObject({
       coveredItemCount: 0,
       fullCoverage: false,
-      comparable: false,
       deliveryFit: 'AFTER_REQUESTED_DATE',
       expired: true,
       missingTerms: true,
       missingRequestItemIds: ['coriander'],
       partialRequestItemIds: ['tomato'],
       substitutions: [
-        {
-          requestItemId: 'tomato',
-          text: 'Roma tomato, same grade',
-        },
-      ],
-    });
-  });
-
-  it('does not break or rank equal landed totals', () => {
-    const result = compareLatestQuotes(
-      request,
-      [
-        quote({ id: 'quote-b', supplierId: 'supplier-b', supplierName: 'Beta Foods' }),
-        quote({ id: 'quote-a', supplierId: 'supplier-a', supplierName: 'Alpha Foods' }),
-      ],
-      { now: new Date('2027-01-09T00:00:00.000Z') },
-    );
-
-    expect(result.quotes.map(({ supplierName, totalPaise }) => [supplierName, totalPaise]))
-      .toEqual([
-        ['Alpha Foods', '8345000'],
-        ['Beta Foods', '8345000'],
-      ]);
-    expect(result.quotes.every((entry) => !('rank' in entry))).toBe(true);
-  });
-
-  it('keeps inactive suppliers visible but makes their quotes explicitly unawardable', () => {
-    const result = compareLatestQuotes(
-      request,
-      [quote({ supplierActive: false })],
-      { now: new Date('2027-01-09T00:00:00.000Z') },
-    );
-
-    expect(result.quotes[0]).toMatchObject({
-      comparable: true,
-      supplierActive: false,
-      awardable: false,
-      awardIssues: ['SUPPLIER_INACTIVE'],
-    });
-  });
-
-  it('explains every fact that prevents a whole-quote award', () => {
-    const result = compareLatestQuotes(
-      request,
-      [
-        quote({
-          supplierActive: false,
-          validUntil: new Date('2027-01-08T00:00:00.000Z'),
-          items: [
-            quote().items[0]!,
-            {
-              ...quote().items[1]!,
-              noQuote: true,
-              availableQuantity: null,
-              unit: null,
-              unitRatePaise: null,
-              gstBasisPoints: null,
-              subtotalPaise: BigInt(0),
-              gstPaise: BigInt(0),
-              totalPaise: BigInt(0),
-            },
-          ],
-        }),
-      ],
-      { now: new Date('2027-01-09T00:00:00.000Z') },
-    );
-
-    expect(result.quotes[0]).toMatchObject({
-      awardable: false,
-      awardIssues: [
-        'SUPPLIER_INACTIVE',
-        'QUOTE_EXPIRED',
-        'INCOMPLETE_COVERAGE',
+        { requestItemId: 'tomato', text: 'Roma tomato, same grade' },
       ],
     });
   });

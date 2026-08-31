@@ -22,7 +22,7 @@ const auditRules = {
   'supplier-link.created': { entityType: 'SupplierRequest', metadata: [] },
   'supplier-link.revoked': { entityType: 'SupplierRequest', metadata: [] },
   'quote.submitted': {
-    entityType: 'SupplierQuote',
+    entityType: 'SupplierRequest',
     metadata: ['revision', 'itemCount'],
   },
   'request.awarded': {

@@ -28,6 +28,10 @@ import {
   digestOpaqueToken,
   type TokenPurpose,
 } from '@/lib/security/tokens';
+import {
+  SupplierValidationError,
+  validateSupplierLifecycleState,
+} from '@/lib/suppliers/supplier-schema';
 
 export const PROCUREMENT_REQUEST_BODY_BYTES =
   DOCUMENT_LIMITS.requestItems.jsonBytes +
@@ -764,10 +768,13 @@ type LockedRequest = {
   id: string;
   status: 'DRAFT' | 'OPEN' | 'AWARDED' | 'CANCELLED';
   version: number;
+  menuId: string | null;
   items: Prisma.JsonValue;
   sourcing: Prisma.JsonValue;
+  deliveryDetails: Prisma.JsonValue;
   deliveryDate: Date;
   quoteDeadline: Date;
+  commercialTerms: string | null;
 };
 
 async function lockRequest(
@@ -776,7 +783,8 @@ async function lockRequest(
   requestId: string,
 ) {
   const [locked] = await transaction.$queryRaw<LockedRequest[]>`
-    SELECT "id", "status", "version", "items", "sourcing", "deliveryDate", "quoteDeadline"
+    SELECT "id", "status", "version", "menuId", "items", "sourcing",
+           "deliveryDetails", "deliveryDate", "quoteDeadline", "commercialTerms"
     FROM "ProcurementRequest"
     WHERE "tenantId" = ${actor.tenantId}
       AND "id" = ${requestId}
@@ -784,6 +792,129 @@ async function lockRequest(
   `;
   if (!locked) throw new ProcurementRequestNotFoundError();
   return locked;
+}
+
+function repeatDeliveryDetails(input: unknown) {
+  const errors: ValidationErrors = {};
+  const details = parseDeliveryDetails(input, errors);
+  if (Object.keys(errors).length > 0) {
+    throw new ProcurementRequestConflictError(
+      'The completed request has invalid delivery details and cannot be run again.',
+    );
+  }
+  return details;
+}
+
+function repeatCommercialTerms(input: string | null) {
+  if (input === null) return null;
+  const errors: ValidationErrors = {};
+  const terms = boundedText(
+    input,
+    'commercialTerms',
+    PROCUREMENT_REQUEST_LIMITS.termsBytes,
+    errors,
+    { nullable: true },
+  );
+  if (Object.keys(errors).length > 0) {
+    throw new ProcurementRequestConflictError(
+      'The completed request has invalid commercial terms and cannot be run again.',
+    );
+  }
+  return terms;
+}
+
+function filterRepeatSelection(
+  selection: SourcingSelectionV1,
+  eligibleRelationships: ReadonlyMap<string, 'CURRENT' | 'SELECTED_NEW'>,
+): SourcingSelectionV1 {
+  return {
+    ...selection,
+    currentSupplierIds: selection.currentSupplierIds.filter(
+      (id) => eligibleRelationships.get(id) === 'CURRENT',
+    ),
+    selectedNewSupplierIds: selection.selectedNewSupplierIds.filter(
+      (id) => eligibleRelationships.get(id) === 'SELECTED_NEW',
+    ),
+  };
+}
+
+async function repeatRequestDocuments(
+  transaction: Prisma.TransactionClient,
+  tenantId: string,
+  itemsInput: unknown,
+  sourcingInput: unknown,
+) {
+  let source: ReturnType<typeof validateRequestDocuments>;
+  try {
+    source = validateRequestDocuments(itemsInput, sourcingInput);
+  } catch (error) {
+    if (!(error instanceof RequestDocumentValidationError)) throw error;
+    throw new ProcurementRequestConflictError(
+      'The completed request has invalid item or sourcing details and cannot be run again.',
+    );
+  }
+  const explicitIds = collectExplicitSupplierIds(source.items, source.sourcing);
+  const supplierRows = explicitIds.length === 0
+    ? []
+    : await transaction.$queryRaw<ExplicitRequestSupplier[]>`
+        SELECT "id", "relationshipType", "verificationStatus", "applicationRequestId",
+               "verifiedAt", "verifiedByUserId", "isActive"
+        FROM "Supplier"
+        WHERE "tenantId" = ${tenantId}
+          AND "id" IN (${Prisma.join(explicitIds)})
+        ORDER BY "id"
+        FOR UPDATE
+      `;
+  const eligible = supplierRows.filter((supplier) => {
+    try {
+      validateSupplierLifecycleState({
+        relationshipType: supplier.relationshipType,
+        verificationStatus: supplier.verificationStatus,
+        applicationRequestId: supplier.applicationRequestId,
+        verifiedAt: supplier.verifiedAt,
+        verifiedByUserId: supplier.verifiedByUserId,
+        isActive: supplier.isActive,
+      });
+      return supplier.isActive && supplier.verificationStatus === 'VERIFIED' &&
+        (supplier.relationshipType === 'CURRENT' ||
+          supplier.relationshipType === 'SELECTED_NEW');
+    } catch (error) {
+      if (error instanceof SupplierValidationError) return false;
+      throw error;
+    }
+  });
+  const eligibleRelationships = new Map(
+    eligible.map(({ id, relationshipType }) => [
+      id,
+      relationshipType as 'CURRENT' | 'SELECTED_NEW',
+    ]),
+  );
+  const items = {
+    v: 1,
+    items: source.items.items.map((item) => ({
+      ...item,
+      sourcingOverride: item.sourcingOverride === null
+        ? null
+        : filterRepeatSelection(item.sourcingOverride, eligibleRelationships),
+    })),
+  } satisfies RequestItemsV1;
+  const sourcing = {
+    v: 1,
+    default: filterRepeatSelection(source.sourcing.default, eligibleRelationships),
+  } satisfies RequestSourcingV1;
+  try {
+    const documents = validateRequestDocuments(items, sourcing);
+    const retained = eligible.filter(({ id }) =>
+      documents.explicitSupplierIds.includes(id),
+    );
+    validateExplicitRequestSuppliers(documents.items, documents.sourcing, retained);
+    return { ...documents, suppliers: retained };
+  } catch (error) {
+    if (!(error instanceof RequestDocumentValidationError)) throw error;
+    throw new ProcurementRequestConflictError(
+      'Choose another verified supplier before running this completed request again.',
+    );
+  }
 }
 
 function assertVersionAndStatus(
@@ -1459,8 +1590,64 @@ export async function repeatProcurementRequest(
     if (locked.status !== 'AWARDED') {
       throw new ProcurementRequestConflictError('Only a completed award can be run again.');
     }
-    throw new ProcurementRequestConflictError(
-      'Running completed document requests again is not available yet.',
+    const documents = await repeatRequestDocuments(
+      transaction,
+      actor.tenantId,
+      locked.items,
+      locked.sourcing,
     );
+    const deliveryDetails = repeatDeliveryDetails(locked.deliveryDetails);
+    const commercialTerms = repeatCommercialTerms(locked.commercialTerms);
+    const now = await transactionTime(transaction, serviceOptions.transactionClock);
+    if (repeat.quoteDeadline.getTime() <= now.getTime()) {
+      throw new ProcurementRequestConflictError(
+        'Set a future quote deadline before running this request again.',
+      );
+    }
+    const grants = documents.suppliers.map(({ id }) => placeholderGrant(
+      id,
+      now,
+      repeat.quoteDeadline,
+      serviceOptions.tokenFactory,
+    ));
+    const created = await transaction.procurementRequest.create({
+      data: {
+        tenantId: actor.tenantId,
+        title: repeat.title,
+        status: 'DRAFT',
+        version: 1,
+        menuId: locked.menuId,
+        sourceRequestId,
+        items: jsonDocument(documents.items),
+        sourcing: jsonDocument(documents.sourcing),
+        deliveryDetails: jsonDocument(deliveryDetails),
+        deliveryDate: repeat.deliveryDate,
+        quoteDeadline: repeat.quoteDeadline,
+        commercialTerms,
+        createdByUserId: actor.userId,
+      },
+      select: { id: true },
+    });
+    if (grants.length > 0) {
+      await transaction.supplierRequest.createMany({
+        data: grants.map(({ supplierId, token, expiresAt }) => ({
+          tenantId: actor.tenantId,
+          requestId: created.id,
+          supplierId,
+          tokenDigest: token.digest,
+          expiresAt,
+          quoteRevision: 0,
+          quoteRevisions: jsonDocument(EMPTY_QUOTE_REVISIONS),
+        })),
+      });
+    }
+    await writeAuditEvent(transaction, {
+      tenantId: actor.tenantId,
+      actorUserId: actor.userId,
+      action: 'request.repeated',
+      entityId: created.id,
+      metadata: { sourceRequestId },
+    });
+    return requestDetails(transaction, actor.tenantId, created.id);
   }, client);
 }

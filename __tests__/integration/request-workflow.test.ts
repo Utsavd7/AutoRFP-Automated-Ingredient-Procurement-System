@@ -9,6 +9,7 @@ import {
   openProcurementRequest,
   ProcurementRequestConflictError,
   ProcurementRequestNotFoundError,
+  repeatProcurementRequest,
   updateProcurementRequestDraft,
 } from '@/lib/procurement/request-service';
 import { digestOpaqueToken } from '@/lib/security/tokens';
@@ -515,6 +516,159 @@ describe('restricted compact procurement request workflow', () => {
         expect(await admin.auditEvent.count({
           where: { entityId: collisionDraft.id, action: 'request.opened' },
         })).toBe(0);
+      } finally {
+        await app?.$disconnect();
+        await admin.$disconnect();
+      }
+    });
+  });
+
+  it('repeats an awarded request as an independent draft with only currently eligible suppliers', async () => {
+    await withMigratedPostgres(async (databaseUrl) => {
+      const admin = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
+      let app: PrismaClient | undefined;
+      try {
+        await seedTenant(admin, {
+          tenantId: 'tenant-repeat', userId: 'member-repeat', email: 'repeat@example.test',
+        });
+        await createApprovedMenu(admin, {
+          tenantId: 'tenant-repeat', userId: 'member-repeat', menuId: 'menu-repeat',
+        });
+        const verifiedAt = new Date('2098-12-30T11:00:00.000Z');
+        await admin.supplier.createMany({
+          data: [
+            {
+              id: 'supplier-repeat-active', tenantId: 'tenant-repeat',
+              businessName: 'Active Foods', relationshipType: 'CURRENT',
+              verificationStatus: 'VERIFIED', verifiedAt,
+              verifiedByUserId: 'member-repeat', isActive: true,
+              capabilities: emptyCapabilities,
+            },
+            {
+              id: 'supplier-repeat-inactive', tenantId: 'tenant-repeat',
+              businessName: 'Inactive Foods', relationshipType: 'CURRENT',
+              verificationStatus: 'VERIFIED', verifiedAt,
+              verifiedByUserId: 'member-repeat', isActive: false,
+              capabilities: emptyCapabilities,
+            },
+          ],
+        });
+        const sourceItems = {
+          v: 1,
+          items: [{
+            id: 'item1', itemKey: 'butter', name: 'Butter', quantity: '4.25',
+            unit: 'KILOGRAM', specification, sourcingOverride: null,
+          }],
+        };
+        const sourceSourcing = {
+          v: 1,
+          default: {
+            v: 1,
+            modes: ['CURRENT', 'VERIFIED_NEW'],
+            currentSupplierIds: ['supplier-repeat-active', 'supplier-repeat-inactive'],
+            selectedNewSupplierIds: [],
+            acceptVerifiedApplications: true,
+          },
+        };
+        const source = await admin.procurementRequest.create({
+          data: {
+            id: 'request-repeat-source', tenantId: 'tenant-repeat',
+            title: 'Last butter order', status: 'AWARDED', version: 7,
+            menuId: 'menu-repeat', items: sourceItems, sourcing: sourceSourcing,
+            deliveryDetails, deliveryDate: new Date('2098-12-29T00:00:00.000Z'),
+            quoteDeadline: new Date('2098-12-28T10:00:00.000Z'),
+            commercialTerms: 'Payment in 15 days.',
+            applicationTokenDigest: 'a'.repeat(64),
+            applicationExpiresAt: new Date('2098-12-28T10:00:00.000Z'),
+            applicationRevokedAt: new Date('2098-12-28T11:00:00.000Z'),
+            openedAt: new Date('2098-12-27T09:00:00.000Z'),
+            awardedAt: new Date('2098-12-28T12:00:00.000Z'),
+            createdByUserId: 'member-repeat',
+          },
+        });
+        await admin.supplierRequest.createMany({
+          data: [
+            {
+              tenantId: 'tenant-repeat', requestId: source.id,
+              supplierId: 'supplier-repeat-active', tokenDigest: 'b'.repeat(64),
+              expiresAt: new Date('2098-12-28T10:00:00.000Z'), quoteRevision: 1,
+              quoteRevisions: { v: 1, revisions: [{ revision: 1 }] },
+            },
+            {
+              tenantId: 'tenant-repeat', requestId: source.id,
+              supplierId: 'supplier-repeat-inactive', tokenDigest: 'c'.repeat(64),
+              expiresAt: new Date('2098-12-28T10:00:00.000Z'), quoteRevision: 0,
+              quoteRevisions: emptyQuoteRevisions,
+            },
+          ],
+        });
+        app = await provisionAppClient(admin, databaseUrl);
+        const now = new Date('2098-12-31T09:00:00.000Z');
+        const repeated = await repeatProcurementRequest({
+          actor: { tenantId: 'tenant-repeat', userId: 'member-repeat' },
+          sourceRequestId: source.id,
+          repeat: {
+            expectedSourceVersion: 7,
+            title: 'Butter order · next week',
+            deliveryDate: '2099-01-03',
+            quoteDeadline: '2099-01-02T10:00:00.000Z',
+          },
+        }, app, { now: () => now, transactionClock: async () => now });
+
+        expect(repeated).toEqual(expect.objectContaining({
+          status: 'DRAFT', version: 1, sourceRequestId: source.id,
+          menuId: 'menu-repeat', title: 'Butter order · next week',
+          items: sourceItems,
+          sourcing: {
+            v: 1,
+            default: expect.objectContaining({
+              currentSupplierIds: ['supplier-repeat-active'],
+              acceptVerifiedApplications: true,
+            }),
+          },
+          deliveryDetails,
+          commercialTerms: 'Payment in 15 days.',
+        }));
+        expect(repeated).toEqual(expect.objectContaining({
+          openedAt: null, awardedAt: null, cancelledAt: null,
+        }));
+        expect(repeated).not.toHaveProperty('applicationTokenDigest');
+        expect(repeated.supplierRequests).toHaveLength(1);
+        expect(repeated.supplierRequests[0]).toEqual(expect.objectContaining({
+          supplierId: 'supplier-repeat-active', quoteRevision: 0, viewedAt: null,
+          revokedAt: null,
+        }));
+        const storedGrant = await admin.supplierRequest.findFirstOrThrow({
+          where: { requestId: repeated.id },
+        });
+        expect(storedGrant).toEqual(expect.objectContaining({
+          supplierId: 'supplier-repeat-active', quoteRevision: 0,
+          quoteRevisions: emptyQuoteRevisions,
+        }));
+        expect(storedGrant.tokenDigest).not.toBe('b'.repeat(64));
+        const storedRepeat = await admin.procurementRequest.findUniqueOrThrow({
+          where: { id: repeated.id },
+        });
+        expect(storedRepeat).toEqual(expect.objectContaining({
+          status: 'DRAFT', version: 1, sourceRequestId: source.id,
+          applicationTokenDigest: null, applicationExpiresAt: null,
+          applicationRevokedAt: null, openedAt: null, awardedAt: null,
+          cancelledAt: null,
+        }));
+        expect(await admin.award.count({ where: { requestId: repeated.id } })).toBe(0);
+        expect(await admin.auditEvent.findMany({
+          where: { entityId: repeated.id }, select: { action: true, metadata: true },
+        })).toEqual([{
+          action: 'request.repeated', metadata: { sourceRequestId: source.id },
+        }]);
+
+        await admin.procurementRequest.update({
+          where: { id: source.id }, data: { items: { v: 1, items: [] } },
+        });
+        const storedSnapshot = await admin.procurementRequest.findUniqueOrThrow({
+          where: { id: repeated.id }, select: { items: true, deliveryDetails: true },
+        });
+        expect(storedSnapshot).toEqual({ items: sourceItems, deliveryDetails });
       } finally {
         await app?.$disconnect();
         await admin.$disconnect();

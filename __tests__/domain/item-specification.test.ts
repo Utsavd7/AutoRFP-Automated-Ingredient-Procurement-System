@@ -29,16 +29,39 @@ function webpBytes(size: number): Buffer {
   return bytes;
 }
 
-function webpChunk(tag: string, data: Buffer, includePadding = true): Buffer {
+function riffChunk(tag: string, data: Buffer, includePadding = true): Buffer {
   const padding = includePadding && data.length % 2 === 1 ? 1 : 0;
-  const bytes = Buffer.alloc(20 + data.length + padding);
+  const bytes = Buffer.alloc(8 + data.length + padding);
+  bytes.write(tag, 0, 'ascii');
+  bytes.writeUInt32LE(data.length, 4);
+  data.copy(bytes, 8);
+  return bytes;
+}
+
+function webpFile(...chunks: Buffer[]): Buffer {
+  const body = Buffer.concat(chunks);
+  const bytes = Buffer.alloc(12 + body.length);
   bytes.write('RIFF', 0, 'ascii');
   bytes.writeUInt32LE(bytes.length - 8, 4);
   bytes.write('WEBP', 8, 'ascii');
-  bytes.write(tag, 12, 'ascii');
-  bytes.writeUInt32LE(data.length, 16);
-  data.copy(bytes, 20);
+  body.copy(bytes, 12);
   return bytes;
+}
+
+function animatedWebp(): Buffer {
+  const vp8x = Buffer.alloc(10);
+  vp8x[0] = 0x02;
+  const vp8Chunk = Buffer.from(TINY_WEBP_BASE64, 'base64').subarray(12);
+  const frame = Buffer.concat([Buffer.alloc(16), vp8Chunk]);
+  return webpFile(
+    riffChunk('VP8X', vp8x),
+    riffChunk('ANIM', Buffer.alloc(6)),
+    riffChunk('ANMF', frame),
+  );
+}
+
+function webpChunk(tag: string, data: Buffer, includePadding = true): Buffer {
+  return webpFile(riffChunk(tag, data, includePadding));
 }
 
 function validateThumbnail(thumbnailWebpBase64: string) {
@@ -156,6 +179,10 @@ describe('procurement categories and item specification v1', () => {
       DOCUMENT_LIMITS.itemSpecification.thumbnailDecodedBytes + 1,
     );
     expect(() => validateThumbnail(oversized.toString('base64'))).toThrow(/48 KiB/i);
+  });
+
+  test('accepts a valid animated WebP with image data inside an ANMF frame', () => {
+    expect(validateThumbnail(animatedWebp().toString('base64'))).toBeDefined();
   });
 
   test('rejects huge encoded thumbnails before decoding', () => {

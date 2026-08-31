@@ -179,6 +179,48 @@ function isVp8lHeader(value: string, offset: number, length: number): boolean {
   );
 }
 
+interface WebpChunk {
+  tag: string;
+  length: number;
+  dataOffset: number;
+  dataEnd: number;
+  nextOffset: number;
+}
+
+function readWebpChunk(value: string, offset: number, limit: number): WebpChunk | null {
+  if (offset + 8 > limit) return null;
+  const length = readUint32LittleEndian(value, offset + 4);
+  const dataOffset = offset + 8;
+  const dataEnd = dataOffset + length;
+  const nextOffset = dataEnd + (length % 2);
+  if (dataEnd > limit || nextOffset > limit) return null;
+  return { tag: value.slice(offset, offset + 4), length, dataOffset, dataEnd, nextOffset };
+}
+
+function imageChunkStatus(value: string, chunk: WebpChunk): -1 | 0 | 1 {
+  if (chunk.tag === 'VP8 ') {
+    return isVp8KeyFrame(value, chunk.dataOffset, chunk.length) ? 1 : -1;
+  }
+  if (chunk.tag === 'VP8L') {
+    return isVp8lHeader(value, chunk.dataOffset, chunk.length) ? 1 : -1;
+  }
+  return 0;
+}
+
+function nestedFrameHasImage(value: string, start: number, end: number): boolean | null {
+  let offset = start;
+  let hasImage = false;
+  while (offset < end) {
+    const chunk = readWebpChunk(value, offset, end);
+    if (!chunk) return null;
+    const status = imageChunkStatus(value, chunk);
+    if (status < 0) return null;
+    if (status > 0) hasImage = true;
+    offset = chunk.nextOffset;
+  }
+  return hasImage;
+}
+
 function isWebp(value: string): boolean {
   if (
     value.length < 12 ||
@@ -192,23 +234,22 @@ function isWebp(value: string): boolean {
   let offset = 12;
   let hasImageData = false;
   while (offset < value.length) {
-    if (offset + 8 > value.length) return false;
-    const tag = value.slice(offset, offset + 4);
-    const chunkLength = readUint32LittleEndian(value, offset + 4);
-    const dataOffset = offset + 8;
-    const dataEnd = dataOffset + chunkLength;
-    const paddedEnd = dataEnd + (chunkLength % 2);
-    if (dataEnd > value.length || paddedEnd > value.length) return false;
+    const chunk = readWebpChunk(value, offset, value.length);
+    if (!chunk) return false;
+    if (chunk.tag === 'VP8X' && chunk.length !== 10) return false;
 
-    if (tag === 'VP8X' && chunkLength !== 10) return false;
-    if (tag === 'VP8 ') {
-      if (!isVp8KeyFrame(value, dataOffset, chunkLength)) return false;
-      hasImageData = true;
-    } else if (tag === 'VP8L') {
-      if (!isVp8lHeader(value, dataOffset, chunkLength)) return false;
-      hasImageData = true;
+    const status = imageChunkStatus(value, chunk);
+    if (status < 0) return false;
+    if (status > 0) hasImageData = true;
+    if (chunk.tag === 'ANMF') {
+      if (chunk.length < 16 || (value.charCodeAt(chunk.dataOffset + 15) & 0xfc) !== 0) {
+        return false;
+      }
+      const nestedImage = nestedFrameHasImage(value, chunk.dataOffset + 16, chunk.dataEnd);
+      if (nestedImage === null) return false;
+      if (nestedImage) hasImageData = true;
     }
-    offset = paddedEnd;
+    offset = chunk.nextOffset;
   }
 
   return hasImageData;

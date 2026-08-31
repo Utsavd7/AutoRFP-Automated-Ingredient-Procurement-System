@@ -157,7 +157,7 @@ CREATE TYPE public."UserAccountState" AS ENUM (
     'INVITED', 'ACTIVE', 'DEACTIVATED'
 );
 CREATE TYPE public."SupplierRelationshipType" AS ENUM (
-    'CURRENT', 'SELECTED_NEW', 'DISCOVERED'
+    'CURRENT', 'SELECTED_NEW', 'APPLICANT'
 );
 CREATE TYPE public."SupplierVerificationStatus" AS ENUM (
     'UNVERIFIED', 'PENDING', 'VERIFIED', 'REJECTED'

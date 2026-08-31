@@ -5,12 +5,15 @@ import { PrismaClient } from '@prisma/client';
 import { parseSupplierCsv } from '@/lib/suppliers/csv';
 import {
   createSupplier,
+  decideSupplierVerification,
   deactivateSupplier,
   getSupplier,
   importSupplierRows,
   listSuppliers,
+  listSuppliersForExport,
   SupplierConflictError,
   SupplierNotFoundError,
+  SupplierVerificationConflictError,
   updateSupplier,
 } from '@/lib/suppliers/supplier-service';
 
@@ -38,6 +41,7 @@ async function seedTenant(
   tenantId: string,
   userId: string,
   email: string,
+  role: 'OWNER' | 'MEMBER' = 'MEMBER',
 ) {
   await admin.tenant.create({
     data: {
@@ -53,7 +57,7 @@ async function seedTenant(
           id: userId,
           name: `${userId} Name`,
           email,
-          role: 'MEMBER',
+          role,
         },
       },
     },
@@ -102,14 +106,18 @@ test('supplier CRUD, search, active filtering, and cursor pagination stay tenant
           businessName: 'Alpha Produce',
           phone: '+919876500001',
           email: 'sales1@supplier.in',
+          relationshipType: 'CURRENT',
+          verificationStatus: 'VERIFIED',
+          verifiedByUserId: 'member-a',
+          verifiedAt: expect.any(Date),
+          capabilities: { v: 1, categories: [], items: [] },
         }),
       );
-      expect(alpha).not.toHaveProperty('verifiedAt');
-      expect(alpha).not.toHaveProperty('verifiedByUserId');
       expect(await admin.auditEvent.count({ where: { action: 'supplier.created' } }))
         .toBe(3);
 
       const pageOne = await listSuppliers({ actor, active: 'all', limit: 2 }, app);
+      expect(pageOne.suppliers[0]).not.toHaveProperty('capabilities');
       expect(pageOne.suppliers.map(({ id }) => id)).toEqual([alpha.id, beta.id]);
       expect(pageOne.nextCursor).toEqual(expect.any(String));
       const pageTwo = await listSuppliers(
@@ -124,6 +132,8 @@ test('supplier CRUD, search, active filtering, and cursor pagination stay tenant
         app,
       );
       expect(search.suppliers.map(({ id }) => id)).toEqual([beta.id]);
+      await expect(getSupplier({ actor, supplierId: alpha.id }, app)).resolves
+        .toEqual(expect.objectContaining({ capabilities: { v: 1, categories: [], items: [] } }));
 
       const edited = await updateSupplier(
         {
@@ -159,6 +169,7 @@ test('supplier CRUD, search, active filtering, and cursor pagination stay tenant
           businessName: 'Private B Supplier',
           email: alpha.email,
           phone: alpha.phone,
+          capabilities: { v: 1, categories: [], items: [] },
         },
       });
       await expect(getSupplier({ actor, supplierId: tenantB.id }, app)).rejects
@@ -259,6 +270,14 @@ test('tenant locking serializes normalized duplicate contacts and CSV import is 
       expect(
         await admin.supplier.count({ where: { tenantId: 'tenant-a' } }),
       ).toBe(3);
+      expect(await admin.supplier.count({
+        where: {
+          tenantId: 'tenant-a',
+          verificationStatus: 'VERIFIED',
+          verifiedByUserId: 'member-a',
+          capabilities: { equals: { v: 1, categories: [], items: [] } },
+        },
+      })).toBe(3);
 
       await expect(
         updateSupplier(
@@ -384,51 +403,103 @@ test('supplier cursors include unseen renames once, do not repeat seen renames, 
   });
 });
 
-test('deactivation preserves a supplier referenced by an issued request', async () => {
+test('only an owner can approve or reject a pending tenant applicant once', async () => {
   await withMigratedPostgres(async (databaseUrl) => {
     const admin = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
     let app: PrismaClient | undefined;
     try {
-      await seedTenant(admin, 'tenant-a', 'member-a', 'a@example.test');
+      await seedTenant(admin, 'tenant-a', 'owner-a', 'owner-a@example.test', 'OWNER');
+      await seedTenant(admin, 'tenant-b', 'owner-b', 'owner-b@example.test', 'OWNER');
+      await admin.user.create({
+        data: {
+          id: 'member-a', tenantId: 'tenant-a', name: 'Member A',
+          email: 'member-a@example.test', role: 'MEMBER',
+        },
+      });
       app = await provisionAppClient(admin, databaseUrl);
-      const actor = { tenantId: 'tenant-a', userId: 'member-a' };
-      const supplier = await createSupplier(
-        { actor, supplier: supplierInput('Historical Produce', 20) },
-        app,
-      );
-      const request = await admin.procurementRequest.create({
+      const requestA = await admin.procurementRequest.create({
         data: {
           tenantId: 'tenant-a',
-          title: 'Weekly produce',
+          title: 'Tenant A request',
           status: 'OPEN',
+          items: { v: 1, items: [] },
+          sourcing: { v: 1, default: { modes: ['VERIFIED_NEW'] } },
           deliveryDetails: { address: '1 Market Road' },
           deliveryDate: new Date('2027-01-03T00:00:00.000Z'),
           quoteDeadline: new Date('2027-01-02T10:00:00.000Z'),
-          createdByUserId: 'member-a',
-          supplierRequests: {
-            create: {
-              tenant: { connect: { id: 'tenant-a' } },
-              supplier: {
-                connect: {
-                  tenantId_id: { tenantId: 'tenant-a', id: supplier.id },
-                },
-              },
-              tokenDigest: 'a'.repeat(64),
-              expiresAt: new Date('2027-01-04T00:00:00.000Z'),
-            },
-          },
+          createdByUserId: 'owner-a',
         },
       });
+      const requestB = await admin.procurementRequest.create({
+        data: {
+          tenantId: 'tenant-b', title: 'Tenant B request', status: 'OPEN',
+          items: { v: 1, items: [] }, sourcing: { v: 1, default: { modes: ['VERIFIED_NEW'] } },
+          deliveryDetails: {}, deliveryDate: new Date('2027-01-03T00:00:00.000Z'),
+          quoteDeadline: new Date('2027-01-02T10:00:00.000Z'), createdByUserId: 'owner-b',
+        },
+      });
+      const applicant = (tenantId: string, requestId: string, name: string) =>
+        admin.supplier.create({ data: {
+          tenantId, businessName: name, relationshipType: 'APPLICANT',
+          verificationStatus: 'PENDING', applicationRequestId: requestId,
+          capabilities: { v: 1, categories: [], items: [] }, isActive: false,
+        } });
+      const approve = await applicant('tenant-a', requestA.id, 'Approve Me');
+      const reject = await applicant('tenant-a', requestA.id, 'Reject Me');
+      const memberBlocked = await applicant('tenant-a', requestA.id, 'Member Blocked');
+      const tenantB = await applicant('tenant-b', requestB.id, 'Tenant B');
 
-      await expect(deactivateSupplier({ actor, supplierId: supplier.id }, app))
-        .resolves.toEqual(expect.objectContaining({ id: supplier.id, isActive: false }));
-      expect(await admin.supplier.findUnique({ where: { id: supplier.id } }))
-        .toEqual(expect.objectContaining({ isActive: false }));
-      expect(
-        await admin.supplierRequest.count({
-          where: { requestId: request.id, supplierId: supplier.id },
-        }),
-      ).toBe(1);
+      await expect(decideSupplierVerification({
+        actor: { tenantId: 'tenant-a', userId: 'member-a' },
+        supplierId: memberBlocked.id, decision: 'APPROVE',
+      }, app)).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
+      await expect(decideSupplierVerification({
+        actor: { tenantId: 'tenant-a', userId: 'owner-a' },
+        supplierId: tenantB.id, decision: 'APPROVE',
+      }, app)).rejects.toBeInstanceOf(SupplierNotFoundError);
+
+      await expect(decideSupplierVerification({
+        actor: { tenantId: 'tenant-a', userId: 'owner-a' },
+        supplierId: approve.id, decision: 'APPROVE',
+      }, app)).resolves.toEqual(expect.objectContaining({
+        relationshipType: 'SELECTED_NEW', verificationStatus: 'VERIFIED',
+        isActive: true, verifiedByUserId: 'owner-a', verifiedAt: expect.any(Date),
+      }));
+      await expect(decideSupplierVerification({
+        actor: { tenantId: 'tenant-a', userId: 'owner-a' },
+        supplierId: reject.id, decision: 'REJECT',
+      }, app)).resolves.toEqual(expect.objectContaining({
+        relationshipType: 'APPLICANT', verificationStatus: 'REJECTED',
+        isActive: false, verifiedAt: null,
+      }));
+      await expect(decideSupplierVerification({
+        actor: { tenantId: 'tenant-a', userId: 'owner-a' },
+        supplierId: approve.id, decision: 'APPROVE',
+      }, app)).rejects.toBeInstanceOf(SupplierVerificationConflictError);
+      await expect(updateSupplier({
+        actor: { tenantId: 'tenant-a', userId: 'owner-a' },
+        supplierId: memberBlocked.id, changes: { isActive: true },
+      }, app)).rejects.toBeInstanceOf(SupplierVerificationConflictError);
+      for (const [supplierId, changes] of [
+        [memberBlocked.id, { businessName: 'Private pending edit' }],
+        [reject.id, { capabilities: {
+          v: 1 as const,
+          categories: [{ category: 'FRUITS' as const, tier: 'CAPABLE' as const, rank: 1 }],
+          items: [],
+        } }],
+      ] as const) {
+        await expect(updateSupplier({
+          actor: { tenantId: 'tenant-a', userId: 'owner-a' },
+          supplierId,
+          changes,
+        }, app)).rejects.toBeInstanceOf(SupplierVerificationConflictError);
+      }
+      expect((await listSuppliersForExport({
+        actor: { tenantId: 'tenant-a', userId: 'owner-a' }, active: 'all',
+      }, app)).suppliers.map(({ id }) => id)).toEqual([approve.id]);
+      expect(await admin.auditEvent.count({ where: {
+        tenantId: 'tenant-a', action: { in: ['supplier.verified', 'supplier.rejected'] },
+      } })).toBe(2);
     } finally {
       await app?.$disconnect();
       await admin.$disconnect();

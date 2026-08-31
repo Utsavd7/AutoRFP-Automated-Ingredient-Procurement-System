@@ -14,6 +14,7 @@ import {
 } from '@/lib/suppliers/supplier-service';
 import {
   isProblemResponse,
+  privateSupplierResponse,
   readSupplierJson,
   supplierActor,
   supplierError,
@@ -24,7 +25,7 @@ type SupplierRouteContext = { params: Promise<{ id: string }> };
 export async function GET(_request: Request, context: SupplierRouteContext) {
   const account = await requireAccountContext();
   if (!account) {
-    return problemResponse(401, 'Unauthorized', 'Authentication is required.');
+    return privateSupplierResponse(problemResponse(401, 'Unauthorized', 'Authentication is required.'));
   }
   const { id } = await context.params;
   try {
@@ -32,10 +33,10 @@ export async function GET(_request: Request, context: SupplierRouteContext) {
       actor: supplierActor(account),
       supplierId: id,
     });
-    return NextResponse.json(
+    return privateSupplierResponse(NextResponse.json(
       { supplier },
       { headers: { 'Cache-Control': 'private, no-store' } },
-    );
+    ));
   } catch (error) {
     return supplierError(error);
   }

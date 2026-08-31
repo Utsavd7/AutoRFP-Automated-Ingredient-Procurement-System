@@ -9,6 +9,8 @@ const auditRules = {
   'tutorial.updated': { entityType: 'User', metadata: ['action', 'step'] },
   'menu.approved': { entityType: 'Menu', metadata: ['version'] },
   'supplier.created': { entityType: 'Supplier', metadata: [] },
+  'supplier.verified': { entityType: 'Supplier', metadata: [] },
+  'supplier.rejected': { entityType: 'Supplier', metadata: [] },
   'request.opened': {
     entityType: 'ProcurementRequest',
     metadata: ['itemCount', 'supplierCount'],

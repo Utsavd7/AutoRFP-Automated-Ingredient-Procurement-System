@@ -197,7 +197,7 @@ test('compact catalog keeps nine bounded tables and fixed digest grants', async 
       expect(enums).toEqual([
         { name: 'MenuStatus', values: ['DRAFT', 'APPROVED'] },
         { name: 'ProcurementRequestStatus', values: ['DRAFT', 'OPEN', 'AWARDED', 'CANCELLED'] },
-        { name: 'SupplierRelationshipType', values: ['CURRENT', 'SELECTED_NEW', 'DISCOVERED'] },
+        { name: 'SupplierRelationshipType', values: ['CURRENT', 'SELECTED_NEW', 'APPLICANT'] },
         { name: 'SupplierVerificationStatus', values: ['UNVERIFIED', 'PENDING', 'VERIFIED', 'REJECTED'] },
         { name: 'UserAccountState', values: ['INVITED', 'ACTIVE', 'DEACTIVATED'] },
         { name: 'UserRole', values: ['OWNER', 'MEMBER'] },
@@ -315,7 +315,7 @@ test('compact catalog keeps nine bounded tables and fixed digest grants', async 
       ]) await prisma.$executeRawUnsafe(statement);
       await expect(prisma.$executeRawUnsafe(`
         INSERT INTO "Supplier" ("id", "tenantId", "businessName", "relationshipType", "verificationStatus", "applicationRequestId", "capabilities", "updatedAt")
-        VALUES ('cross-tenant', 'compact-tenant-b', 'Bad', 'DISCOVERED', 'UNVERIFIED', 'compact-request-a', '{}', CURRENT_TIMESTAMP)
+        VALUES ('cross-tenant', 'compact-tenant-b', 'Bad', 'APPLICANT', 'PENDING', 'compact-request-a', '{"v":1,"categories":[],"items":[]}', CURRENT_TIMESTAMP)
       `)).rejects.toThrow();
       await expect(prisma.$executeRawUnsafe(`
         UPDATE "Menu" SET "document" = jsonb_build_object('payload', repeat('x', 524289))

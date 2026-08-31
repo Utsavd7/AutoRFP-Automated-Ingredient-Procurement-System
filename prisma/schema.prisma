@@ -34,7 +34,7 @@ enum ProcurementRequestStatus {
 enum SupplierRelationshipType {
   CURRENT
   SELECTED_NEW
-  DISCOVERED
+  APPLICANT
 }
 
 enum SupplierVerificationStatus {

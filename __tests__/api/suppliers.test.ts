@@ -7,10 +7,12 @@ import {
   GET as getSupplierRoute,
   PUT as updateSupplierRoute,
 } from '@/app/api/suppliers/[id]/route';
+import { POST as verifySupplierRoute } from '@/app/api/suppliers/[id]/verify/route';
 import { GET as exportSupplierRoute } from '@/app/api/suppliers/export/route';
 import { POST as importSupplierRoute } from '@/app/api/suppliers/import/route';
 import {
   createSupplier,
+  decideSupplierVerification,
   deactivateSupplier,
   getSupplier,
   importSupplierRows,
@@ -18,10 +20,13 @@ import {
   listSuppliersForExport,
   SupplierConflictError,
   SupplierNotFoundError,
+  SupplierVerificationConflictError,
   updateSupplier,
 } from '@/lib/suppliers/supplier-service';
 import { SupplierValidationError } from '@/lib/suppliers/supplier-schema';
 import { requireAccountContext } from '@/lib/server-account';
+import { validateSupplierCapabilities } from '@/lib/suppliers/supplier-capabilities';
+import { SUPPLIER_REQUEST_BODY_BYTES } from '@/lib/suppliers/supplier-http';
 
 jest.mock('@/lib/server-account', () => ({
   requireAccountContext: jest.fn(),
@@ -29,6 +34,7 @@ jest.mock('@/lib/server-account', () => ({
 
 jest.mock('@/lib/suppliers/supplier-service', () => ({
   createSupplier: jest.fn(),
+  decideSupplierVerification: jest.fn(),
   deactivateSupplier: jest.fn(),
   getSupplier: jest.fn(),
   importSupplierRows: jest.fn(),
@@ -39,6 +45,8 @@ jest.mock('@/lib/suppliers/supplier-service', () => ({
     .SupplierConflictError,
   SupplierNotFoundError: jest.requireActual('@/lib/suppliers/supplier-service')
     .SupplierNotFoundError,
+  SupplierVerificationConflictError: jest.requireActual('@/lib/suppliers/supplier-service')
+    .SupplierVerificationConflictError,
 }));
 
 const account = {
@@ -81,6 +89,7 @@ describe('tenant supplier API', () => {
     jest.mocked(requireAccountContext).mockResolvedValue(account as never);
     for (const fn of [
       createSupplier,
+      decideSupplierVerification,
       deactivateSupplier,
       getSupplier,
       importSupplierRows,
@@ -180,6 +189,37 @@ describe('tenant supplier API', () => {
     });
   });
 
+  it('submits an owner verification decision and maps repeat decisions safely', async () => {
+    jest.mocked(decideSupplierVerification).mockResolvedValue({
+      id: 'supplier-a', verificationStatus: 'VERIFIED',
+    } as never);
+    const approved = await verifySupplierRoute(
+      jsonRequest('http://localhost/api/suppliers/supplier-a/verify', 'POST', {
+        decision: 'APPROVE',
+      }),
+      routeContext('supplier-a') as never,
+    );
+    expect(approved.status).toBe(200);
+    expect(approved.headers.get('cache-control')).toBe('private, no-store');
+    expect(decideSupplierVerification).toHaveBeenCalledWith({
+      actor: { tenantId: 'tenant-a', userId: 'member-a' },
+      supplierId: 'supplier-a',
+      decision: 'APPROVE',
+    });
+
+    jest.mocked(decideSupplierVerification).mockRejectedValue(
+      new SupplierVerificationConflictError(),
+    );
+    const repeated = await verifySupplierRoute(
+      jsonRequest('http://localhost/api/suppliers/supplier-a/verify', 'POST', {
+        decision: 'REJECT',
+      }),
+      routeContext('supplier-a') as never,
+    );
+    expect(repeated.status).toBe(409);
+    await expect(repeated.json()).resolves.not.toHaveProperty('capabilities');
+  });
+
   it('maps validation, duplicate, and cross-tenant absence to safe problem responses', async () => {
     jest.mocked(createSupplier).mockRejectedValue(
       new SupplierValidationError({ businessName: ['Business name is required.'] }),
@@ -242,7 +282,7 @@ describe('tenant supplier API', () => {
     );
     const oversized = await updateSupplierRoute(
       jsonRequest('http://localhost/api/suppliers/supplier-a', 'PUT', {
-        notes: 'x'.repeat(70_000),
+        notes: 'x'.repeat(140_000),
       }),
       routeContext('supplier-a') as never,
     );
@@ -251,6 +291,39 @@ describe('tenant supplier API', () => {
     expect(oversized.status).toBe(413);
     expect(createSupplier).not.toHaveBeenCalled();
     expect(updateSupplier).not.toHaveBeenCalled();
+  });
+
+  it('admits a boundary-valid 64 KiB capability document inside its JSON envelope', async () => {
+    const capabilities = validateSupplierCapabilities({
+      v: 1,
+      categories: [],
+      items: Array.from({ length: 250 }, (_, index) => ({
+        itemKey: `item-${String(index + 1).padStart(3, '0')}-${'x'.repeat(68)}`,
+        itemName: 'N'.repeat(114),
+        tier: 'PREFERRED',
+        rank: index + 1,
+      })),
+    });
+    const value = {
+      businessName: 'B'.repeat(160),
+      contactName: 'C'.repeat(120),
+      email: `${'e'.repeat(300)}@x.co`,
+      addressLine: 'A'.repeat(320),
+      city: 'C'.repeat(100),
+      state: 'S'.repeat(100),
+      notes: 'N'.repeat(2_000),
+      capabilities,
+    };
+    const bytes = Buffer.byteLength(JSON.stringify(value), 'utf8');
+    expect(bytes).toBeGreaterThan(64 * 1_024);
+    expect(bytes).toBeLessThanOrEqual(SUPPLIER_REQUEST_BODY_BYTES);
+    jest.mocked(createSupplier).mockResolvedValue({ id: 'supplier-boundary' } as never);
+
+    const response = await createSupplierRoute(
+      jsonRequest('http://localhost/api/suppliers', 'POST', value),
+    );
+    expect(response.status).toBe(201);
+    expect(createSupplier).toHaveBeenCalledWith(expect.objectContaining({ supplier: value }));
   });
 
   it('imports parsed rows transactionally and never passes raw CSV to persistence', async () => {
@@ -362,6 +435,15 @@ describe('tenant supplier API', () => {
       },
       body: 'business_name\nVendor',
     }))],
+    ['verification', () => verifySupplierRoute(new Request('http://localhost/api/suppliers/supplier-a/verify', {
+      method: 'POST',
+      headers: {
+        Origin: 'https://attacker.example',
+        'Sec-Fetch-Site': 'cross-site',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ decision: 'APPROVE' }),
+    }), routeContext('supplier-a') as never)],
   ])('rejects cross-origin %s before authentication or supplier work', async (_label, call) => {
     jest.mocked(requireAccountContext).mockClear();
     const response = await call();
@@ -375,6 +457,7 @@ describe('tenant supplier API', () => {
     expect(updateSupplier).not.toHaveBeenCalled();
     expect(deactivateSupplier).not.toHaveBeenCalled();
     expect(importSupplierRows).not.toHaveBeenCalled();
+    expect(decideSupplierVerification).not.toHaveBeenCalled();
   });
 
   it('rejects non-JSON supplier writes before authentication', async () => {
@@ -409,6 +492,8 @@ describe('tenant supplier API', () => {
           gstin: null,
           notes: null,
           isActive: true,
+          relationshipType: 'CURRENT',
+          capabilities: { v: 1, categories: [], items: [] },
         },
       ],
       nextCursor: 'next-export-page',
@@ -463,9 +548,17 @@ describe('tenant supplier API', () => {
         }),
       ),
       exportSupplierRoute(new Request('http://localhost/api/suppliers/export')),
+      verifySupplierRoute(
+        jsonRequest('http://localhost/api/suppliers/supplier-a/verify', 'POST', {
+          decision: 'APPROVE',
+        }),
+        routeContext('supplier-a') as never,
+      ),
     ]);
 
     expect(responses.every(({ status }) => status === 401)).toBe(true);
+    expect(responses.every((response) =>
+      response.headers.get('cache-control') === 'private, no-store')).toBe(true);
     expect(listSuppliers).not.toHaveBeenCalled();
     expect(importSupplierRows).not.toHaveBeenCalled();
   });

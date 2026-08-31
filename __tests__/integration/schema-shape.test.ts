@@ -436,6 +436,8 @@ test('malformed restore URLs never expose embedded credentials', () => {
 test.each([
   ['space', 'restore-trailing-space-secret ', 'restore-trailing-space-secret%20'],
   ['tab', 'restore-trailing-tab-secret\t', 'restore-trailing-tab-secret%09'],
+  ['vertical tab', 'restore-trailing-vtab-secret\v', 'restore-trailing-vtab-secret%0B'],
+  ['form feed', 'restore-trailing-formfeed-secret\f', 'restore-trailing-formfeed-secret%0C'],
 ])('percent-encoded trailing %s in credentials is rejected generically', (
   _kind,
   secret,

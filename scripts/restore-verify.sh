@@ -55,7 +55,7 @@ for (const [key, value] of url.searchParams) {
 }
 const lines = ["[quoteplate_restore]"];
 for (const [key, value] of parameters) {
-  if (/[\r\n\0]/.test(value) || /^[ \t]|[ \t]$/.test(value)) process.exit(2);
+  if (/[\r\n\0]/.test(value) || /^[ \t]|[ \t\v\f]$/.test(value)) process.exit(2);
   lines.push(key + "=" + value);
 }
 writeFileSync(process.env.RESTORE_SERVICE_FILE, lines.join("\n") + "\n", { mode: 0o600 });

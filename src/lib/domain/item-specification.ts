@@ -93,6 +93,21 @@ function validateTextField(
   }
 }
 
+function hasNonCanonicalPercentEncoding(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    if (value[index] !== '%') continue;
+
+    const encodedByte = value.slice(index + 1, index + 3);
+    if (!/^[0-9A-F]{2}$/.test(encodedByte)) return true;
+
+    const decodedByte = String.fromCharCode(Number.parseInt(encodedByte, 16));
+    if (/^[A-Za-z0-9._~-]$/.test(decodedByte)) return true;
+    index += 2;
+  }
+
+  return false;
+}
+
 function validateReferenceUrl(input: Record<string, unknown>): void {
   if (!Object.prototype.hasOwnProperty.call(input, 'referenceUrl')) return;
 
@@ -118,6 +133,9 @@ function validateReferenceUrl(input: Record<string, unknown>): void {
     parsed.username !== '' ||
     parsed.password !== '' ||
     parsed.hash !== '' ||
+    value.includes('#') ||
+    value.endsWith('?') ||
+    hasNonCanonicalPercentEncoding(value) ||
     parsed.toString() !== value
   ) {
     fail('referenceUrl must be a canonical HTTPS URL without credentials or a fragment.');

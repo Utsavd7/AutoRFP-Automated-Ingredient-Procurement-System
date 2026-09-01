@@ -46,6 +46,11 @@ export type RequestSourcingV1 = {
 
 export type ExplicitRequestSupplier = SupplierLifecycleState & { id: string };
 
+export type SourcingSupplierChoice = {
+  id: string;
+  relationshipType: 'CURRENT' | 'SELECTED_NEW';
+};
+
 const ITEM_DOCUMENT_KEYS = new Set(['v', 'items']);
 const ITEM_KEYS = new Set([
   'id',
@@ -370,6 +375,31 @@ export function resolveItemSourcing(
   override: SourcingSelectionV1 | null,
 ): SourcingSelectionV1 {
   return override ?? sourcing.default;
+}
+
+export function buildDefaultSourcingSelection(
+  suppliers: readonly SourcingSupplierChoice[],
+  selectedSupplierIds: readonly string[],
+  acceptVerifiedApplications: boolean,
+): SourcingSelectionV1 {
+  const selected = new Set(selectedSupplierIds);
+  const currentSupplierIds = suppliers
+    .filter(({ id, relationshipType }) => selected.has(id) && relationshipType === 'CURRENT')
+    .map(({ id }) => id);
+  const selectedNewSupplierIds = suppliers
+    .filter(({ id, relationshipType }) => selected.has(id) && relationshipType === 'SELECTED_NEW')
+    .map(({ id }) => id);
+  const modes: SourcingMode[] = [];
+  if (currentSupplierIds.length > 0) modes.push('CURRENT');
+  if (selectedNewSupplierIds.length > 0) modes.push('SELECTED_NEW');
+  if (acceptVerifiedApplications) modes.push('VERIFIED_NEW');
+  return {
+    v: 1,
+    modes,
+    currentSupplierIds,
+    selectedNewSupplierIds,
+    acceptVerifiedApplications,
+  };
 }
 
 function selectionAcceptsVerifiedApplications(selection: SourcingSelectionV1) {

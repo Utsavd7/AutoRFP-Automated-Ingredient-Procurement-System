@@ -61,7 +61,7 @@ describe('tutorial state', () => {
     expect(transitionTutorialState(current, action, now)).toMatchObject(expected);
   });
 
-  it('RESUME preserves progress and timestamps while advancing the revision', () => {
+  it('RESUME preserves progress and clears the skipped state', () => {
     const current = {
       ...state,
       skippedAt: new Date('2026-08-30T08:00:00.000Z'),
@@ -71,6 +71,7 @@ describe('tutorial state', () => {
     expect(transitionTutorialState(current, 'RESUME', now)).toEqual({
       ...current,
       version: 8,
+      skippedAt: null,
     });
   });
 

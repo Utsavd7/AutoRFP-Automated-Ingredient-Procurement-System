@@ -20,8 +20,10 @@ import { Wordmark } from '@/components/brand/Wordmark';
 import { SignOutButton } from '@/components/auth/SignOutButton';
 import { PageSkeleton } from '@/components/Skeleton';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { TutorialGuide } from '@/components/tutorial/TutorialGuide';
 import { createSignInRedirect } from '@/lib/auth/callback-url';
 import type { RestaurantAccount } from '@/lib/tenant';
+import type { TutorialStateDto } from '@/lib/tutorial/tutorial-state';
 
 import styles from './app-shell.module.css';
 
@@ -88,6 +90,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [account, setAccount] = useState<RestaurantAccount | null>(null);
+  const [tutorial, setTutorial] = useState<TutorialStateDto | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [ready, setReady] = useState(false);
   const [accountUnavailable, setAccountUnavailable] = useState(false);
@@ -108,13 +111,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           return null;
         }
         if (!response.ok) throw new Error('Account request failed');
-        const data = (await response.json()) as { account?: RestaurantAccount };
+        const data = (await response.json()) as {
+          account?: RestaurantAccount;
+          tutorial?: TutorialStateDto;
+        };
         if (!data.account) throw new Error('Account response was incomplete');
-        return data.account;
+        return data;
       })
-      .then((loadedAccount) => {
-        if (!active || !loadedAccount) return;
-        setAccount(loadedAccount);
+      .then((loaded) => {
+        if (!active || !loaded) return;
+        setAccount(loaded.account!);
+        setTutorial(loaded.tutorial ?? null);
         setAccountUnavailable(false);
         setReady(true);
       })
@@ -200,6 +207,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <ErrorBoundary>
           <div className={styles.content}>{children}</div>
         </ErrorBoundary>
+
+        <TutorialGuide initialTutorial={tutorial ?? undefined} />
 
         <footer className={styles.footer}>
           <span>QuotePlate</span>

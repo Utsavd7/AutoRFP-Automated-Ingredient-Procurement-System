@@ -5,6 +5,10 @@ import {
   requireAccountContext,
   tenantToAccount,
 } from '@/lib/server-account';
+import {
+  tutorialStateDto,
+  tutorialStateFromUser,
+} from '@/lib/tutorial/tutorial-state';
 
 export async function GET() {
   let context;
@@ -24,5 +28,6 @@ export async function GET() {
   }
   return privateResponse(NextResponse.json({
     account: tenantToAccount(context.tenant),
+    tutorial: tutorialStateDto(tutorialStateFromUser(context.user)),
   }));
 }

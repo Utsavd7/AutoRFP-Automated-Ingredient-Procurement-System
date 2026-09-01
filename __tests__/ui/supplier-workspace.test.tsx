@@ -1,6 +1,12 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { SupplierWorkspace } from '@/components/suppliers/SupplierWorkspace';
+import {
+  cleanSupplierDraft,
+  setSupplierCategoryTier,
+  SupplierCapabilityFields,
+  SupplierWorkspace,
+} from '@/components/suppliers/SupplierWorkspace';
+import { validateSupplierUpdateInput } from '@/lib/suppliers/supplier-schema';
 
 const supplier = {
   id: 'supplier-1',
@@ -15,12 +21,113 @@ const supplier = {
   pin: '400703',
   gstin: '27ABCDE1234F1Z5',
   notes: 'Morning delivery before 8:00 AM',
+  relationshipType: 'CURRENT' as const,
+  verificationStatus: 'VERIFIED' as const,
   isActive: true,
   createdAt: '2026-08-28T08:00:00.000Z',
   updatedAt: '2026-08-28T08:00:00.000Z',
 };
 
 describe('supplier workspace', () => {
+  it('explains supplier categories in plain language and offers every category tier', () => {
+    const html = renderToStaticMarkup(
+      <SupplierCapabilityFields
+        capabilities={{
+          v: 1,
+          categories: [
+            { category: 'VEGETABLES', tier: 'PREFERRED', rank: 1 },
+            { category: 'READY_MADE_OUTSOURCED', tier: 'BACKUP', rank: 1 },
+          ],
+          items: [],
+        }}
+        disabled={false}
+        error=""
+        onChange={() => undefined}
+      />,
+    );
+
+    expect(html).toContain('What they supply');
+    expect(html).toContain('Select every category they supply');
+    expect(html).toContain('Vegetables');
+    expect(html).toContain('Coffee and Tea');
+    expect(html).toContain('Ready made and Outsourced');
+    expect(html).toContain('Preferred');
+    expect(html).toContain('Can supply');
+    expect(html).toContain('Backup');
+    expect(html).toContain('aria-label="Vegetables supplier level"');
+    expect(html.match(/type="checkbox"/g)).toHaveLength(22);
+    expect(html).not.toContain('Ready-made');
+  });
+
+  it('changes one category tier while keeping existing item preferences', () => {
+    const items = [{
+      itemKey: 'tomato',
+      itemName: 'Tomato',
+      tier: 'PREFERRED' as const,
+      rank: 1,
+    }];
+    const initial = {
+      v: 1 as const,
+      categories: [
+        { category: 'DAIRY' as const, tier: 'CAPABLE' as const, rank: 1 },
+      ],
+      items,
+    };
+
+    const added = setSupplierCategoryTier(initial, 'VEGETABLES', 'PREFERRED');
+    const moved = setSupplierCategoryTier(added, 'DAIRY', 'BACKUP');
+    const removed = setSupplierCategoryTier(moved, 'VEGETABLES', null);
+
+    expect(added.items).toBe(items);
+    expect(added.categories).toEqual([
+      { category: 'VEGETABLES', tier: 'PREFERRED', rank: 1 },
+      { category: 'DAIRY', tier: 'CAPABLE', rank: 1 },
+    ]);
+    expect(moved.categories).toEqual([
+      { category: 'VEGETABLES', tier: 'PREFERRED', rank: 1 },
+      { category: 'DAIRY', tier: 'BACKUP', rank: 1 },
+    ]);
+    expect(removed.categories).toEqual([
+      { category: 'DAIRY', tier: 'BACKUP', rank: 1 },
+    ]);
+  });
+
+  it('sends the capability document in the existing supplier request shape', () => {
+    const payload = cleanSupplierDraft({
+      businessName: '  GreenLeaf Fresh Foods  ',
+      contactName: '',
+      phone: '',
+      whatsappNumber: '',
+      email: '',
+      addressLine: '',
+      city: '  Navi Mumbai ',
+      state: 'Maharashtra',
+      pin: '',
+      gstin: '',
+      notes: '',
+      isActive: true,
+      capabilities: {
+        v: 1,
+        categories: [
+          { category: 'VEGETABLES', tier: 'PREFERRED', rank: 1 },
+        ],
+        items: [],
+      },
+    });
+
+    expect(validateSupplierUpdateInput(payload)).toMatchObject({
+      businessName: 'GreenLeaf Fresh Foods',
+      city: 'Navi Mumbai',
+      capabilities: {
+        v: 1,
+        categories: [
+          { category: 'VEGETABLES', tier: 'PREFERRED', rank: 1 },
+        ],
+        items: [],
+      },
+    });
+  });
+
   it('uses plain language, real supplier details, and accessible actions', () => {
     const html = renderToStaticMarkup(
       <SupplierWorkspace
@@ -50,6 +157,29 @@ describe('supplier workspace', () => {
 
     expect(html).toContain('Add your first supplier');
     expect(html).toContain('No supplier account is needed');
+  });
+
+  it('shows pending supplier applications with clear review actions', () => {
+    const html = renderToStaticMarkup(
+      <SupplierWorkspace
+        initialSuppliers={[{
+          ...supplier,
+          id: 'supplier-applicant',
+          businessName: 'Mumbai Fresh Basket',
+          relationshipType: 'APPLICANT',
+          verificationStatus: 'PENDING',
+          isActive: false,
+        }]}
+        initialError=""
+      />,
+    );
+
+    expect(html).toContain('Mumbai Fresh Basket');
+    expect(html).toContain('Needs review');
+    expect(html).toContain('Approve');
+    expect(html).toContain('Reject');
+    expect(html).toContain('All suppliers and applications');
+    expect(html).not.toContain('aria-label="Edit Mumbai Fresh Basket"');
   });
 
   it('keeps load failures recoverable', () => {

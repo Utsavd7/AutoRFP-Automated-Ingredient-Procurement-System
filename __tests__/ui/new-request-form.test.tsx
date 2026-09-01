@@ -12,7 +12,7 @@ describe('new procurement request', () => {
       <NewRequestForm
         initialData={{
           menus: [{ id: 'menu-1', name: 'Dinner menu', status: 'APPROVED', version: 3 }],
-          suppliers: [{ id: 'supplier-1', businessName: 'GreenLeaf Fresh Foods', contactName: 'Meera Shah', phone: '+919876543210', email: null, city: 'Navi Mumbai', isActive: true }],
+          suppliers: [{ id: 'supplier-1', businessName: 'GreenLeaf Fresh Foods', contactName: 'Meera Shah', phone: '+919876543210', email: null, city: 'Navi Mumbai', isActive: true, relationshipType: 'CURRENT' }],
           account: { addressLine: '18 Market Road', city: 'Mumbai', state: 'Maharashtra', pin: '400001' },
           menuNextCursor: 'menu-page-2',
           supplierNextCursor: 'supplier-page-2',
@@ -20,7 +20,7 @@ describe('new procurement request', () => {
       />,
     );
 
-    expect(html).toContain('New procurement request');
+    expect(html).toContain('New supplier price request');
     expect(html).toContain('Dinner menu');
     expect(html).toContain('GreenLeaf Fresh Foods');
     expect(html).toContain('18 Market Road');
@@ -30,5 +30,6 @@ describe('new procurement request', () => {
     expect(html).toContain('Nothing is shared yet');
     expect(html).toContain('Load more approved menus');
     expect(html).toContain('Load more suppliers');
+    expect(html).toContain('Also invite new verified suppliers');
   });
 });

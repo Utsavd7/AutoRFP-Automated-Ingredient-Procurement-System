@@ -28,6 +28,10 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { formatInr } from '@/lib/domain/money';
+import type {
+  RequestItemsV1,
+  RequestSourcingV1,
+} from '@/lib/procurement/request-document';
 import {
   cappedAllocationQuantity,
   calculateSplitAwardPreview,
@@ -37,7 +41,7 @@ import { DraftRequestEditor } from './DraftRequestEditor';
 import styles from './request-detail.module.css';
 
 type Status = 'DRAFT' | 'OPEN' | 'AWARDED' | 'CANCELLED';
-type RequestItem = { id: string; name: string; quantity: string; unit: string };
+type RequestItem = RequestItemsV1['items'][number];
 type SupplierGrant = {
   id: string;
   supplierId: string;
@@ -64,7 +68,8 @@ export type ProcurementRequestDetail = {
   deliveryDate: string;
   quoteDeadline: string;
   commercialTerms: string | null;
-  items: RequestItem[];
+  items: RequestItemsV1;
+  sourcing: RequestSourcingV1;
   supplierRequests: SupplierGrant[];
 };
 
@@ -189,6 +194,11 @@ export type ShareLink = {
   expiresAt: string;
 };
 
+type SupplierApplicationLink = {
+  url: string;
+  expiresAt: string;
+};
+
 const statusLabel: Record<Status, string> = { DRAFT: 'Draft', OPEN: 'Open', AWARDED: 'Awarded', CANCELLED: 'Cancelled' };
 
 function displayDate(value: string, withTime = false) {
@@ -262,6 +272,7 @@ export function RequestDetail({
   const [request, setRequest] = useState<ProcurementRequestDetail | null>(initialRequest ?? null);
   const [comparison, setComparison] = useState<QuoteComparison | null>(initialComparison ?? null);
   const [shareLinks, setShareLinks] = useState<ShareLink[]>([]);
+  const [applicationLink, setApplicationLink] = useState<SupplierApplicationLink | null>(null);
   const [loading, setLoading] = useState(!initialRequest);
   const [working, setWorking] = useState('');
   const [error, setError] = useState('');
@@ -348,11 +359,18 @@ export function RequestDetail({
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expectedVersion: request.version }),
       });
       if (!response.ok) throw new Error(await problemMessage(response, 'We could not open this request.'));
-      const result = (await response.json()) as { request: ProcurementRequestDetail; links: ShareLink[] };
+      const result = (await response.json()) as {
+        request: ProcurementRequestDetail;
+        links: ShareLink[];
+        applicationLink?: SupplierApplicationLink;
+      };
       setRequest(result.request);
       setShareLinks(result.links);
-      setComparison({ request: { id: result.request.id, title: result.request.title, deliveryDate: result.request.deliveryDate.slice(0, 10), quoteDeadline: result.request.quoteDeadline, commercialTerms: result.request.commercialTerms, itemCount: result.request.items.length, items: result.request.items }, quotes: [] });
-      setNotice('Request opened. Copy and share each supplier link below.');
+      setApplicationLink(result.applicationLink ?? null);
+      setComparison({ request: { id: result.request.id, title: result.request.title, deliveryDate: result.request.deliveryDate.slice(0, 10), quoteDeadline: result.request.quoteDeadline, commercialTerms: result.request.commercialTerms, itemCount: result.request.items.items.length, items: result.request.items.items }, quotes: [] });
+      setNotice(result.applicationLink
+        ? 'Request opened. Share the private quote links and the new supplier application link below.'
+        : 'Request opened. Copy and share each supplier link below.');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'We could not open this request.');
     } finally {
@@ -398,6 +416,22 @@ export function RequestDetail({
     } catch {
       setError('Copy was blocked by the browser. Select and copy the link manually.');
     }
+  }
+
+  async function copyApplicationLink() {
+    if (!applicationLink) return;
+    try {
+      await navigator.clipboard.writeText(applicationLink.url);
+      setNotice('New supplier application link copied.');
+    } catch {
+      setError('Copy was blocked by the browser. Select and copy the link manually.');
+    }
+  }
+
+  function shareApplicationOnWhatsApp() {
+    if (!applicationLink) return;
+    const text = `Apply to quote for our restaurant: ${applicationLink.url}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
   }
 
   async function saveDownload(response: Response, fallbackFilename: string) {
@@ -612,7 +646,7 @@ export function RequestDetail({
           <div className={styles.headerMeta}>
             <span className={styles[`status${request.status}`]}>{statusLabel[request.status]}</span>
             <span>Version {request.version}</span>
-            <span>{request.items.length} {request.items.length === 1 ? 'item' : 'items'}</span>
+            <span>{request.items.items.length} {request.items.items.length === 1 ? 'item' : 'items'}</span>
             <span>{request.supplierRequests.length} {request.supplierRequests.length === 1 ? 'supplier' : 'suppliers'}</span>
           </div>
         </div>
@@ -652,10 +686,10 @@ export function RequestDetail({
       {delivery.instructions && <aside className={styles.instructions}><strong>Delivery instructions</strong>{delivery.instructions}</aside>}
 
       <section className={styles.panel}>
-        <header><div><p className={styles.eyebrow}>Demand</p><h2>Requested items</h2></div><span>{request.items.length} total</span></header>
+        <header><div><p className={styles.eyebrow}>Demand</p><h2>Requested items</h2></div><span>{request.items.items.length} total</span></header>
         <div className={styles.itemTable}>
           <div className={styles.tableHeader}><span>Item</span><span>Quantity</span></div>
-          {request.items.map((item) => <div className={styles.itemRow} key={item.id}><strong>{item.name}</strong><span>{item.quantity} {unitLabel(item.unit)}</span></div>)}
+          {request.items.items.map((item) => <div className={styles.itemRow} key={item.id}><strong>{item.name}</strong><span>{item.quantity} {unitLabel(item.unit)}</span></div>)}
         </div>
         {request.commercialTerms && <div className={styles.terms}><strong>Terms shared with suppliers</strong><p>{request.commercialTerms}</p></div>}
       </section>
@@ -751,6 +785,20 @@ export function RequestDetail({
 
       <section className={styles.panel}>
         <header><div><p className={styles.eyebrow}>Supplier progress</p><h2>Private quote links</h2></div><Users aria-hidden="true" /></header>
+        {applicationLink && (
+          <div className={styles.applicationInvite}>
+            <div>
+              <strong>New supplier application link</strong>
+              <p>Share this with suppliers you do not already work with. You must approve each applicant before they can send a quote.</p>
+              <code>{applicationLink.url}</code>
+              <small>Available until {displayDate(applicationLink.expiresAt, true)}</small>
+            </div>
+            <span>
+              <button type="button" onClick={() => void copyApplicationLink()}><Clipboard aria-hidden="true" />Copy</button>
+              <button type="button" onClick={shareApplicationOnWhatsApp}><MessageCircle aria-hidden="true" />WhatsApp</button>
+            </span>
+          </div>
+        )}
         <div className={styles.grantList}>
           {request.supplierRequests.map((grant) => {
             const quote = quoteByGrant.get(grant.id);

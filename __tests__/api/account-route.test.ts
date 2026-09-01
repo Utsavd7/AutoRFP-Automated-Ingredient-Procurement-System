@@ -51,6 +51,13 @@ describe('account read route', () => {
         state: 'Maharashtra',
         pin: '400001',
       },
+      tutorial: {
+        version: 1,
+        step: 0,
+        lastStep: 5,
+        skippedAt: null,
+        completedAt: null,
+      },
     });
   });
 

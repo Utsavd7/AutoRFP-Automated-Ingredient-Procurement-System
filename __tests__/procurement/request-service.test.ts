@@ -1,5 +1,6 @@
 import { DOCUMENT_LIMITS } from '@/lib/domain/document-limits';
 import {
+  buildDefaultSourcingSelection,
   collectExplicitSupplierIds,
   RequestDocumentValidationError,
   requestAcceptsVerifiedApplications,
@@ -184,6 +185,20 @@ describe('compact request documents and request commands', () => {
       expect(() => validateRequestSourcing({ v: 1, default: defaultSelection }))
         .toThrow(RequestDocumentValidationError);
     }
+  });
+
+  it('builds one canonical multiselect sourcing choice for saved and new suppliers', () => {
+    expect(buildDefaultSourcingSelection([
+      { id: 'current-a', relationshipType: 'CURRENT' },
+      { id: 'new-a', relationshipType: 'SELECTED_NEW' },
+      { id: 'current-b', relationshipType: 'CURRENT' },
+    ], ['new-a', 'current-b'], true)).toEqual({
+      v: 1,
+      modes: ['CURRENT', 'SELECTED_NEW', 'VERIFIED_NEW'],
+      currentSupplierIds: ['current-b'],
+      selectedNewSupplierIds: ['new-a'],
+      acceptVerifiedApplications: true,
+    });
   });
 
   it('allows verified-new-only demand, bounds the explicit union at 20, and rejects an unsourced effective item', () => {

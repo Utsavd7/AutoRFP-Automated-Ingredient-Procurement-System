@@ -107,7 +107,7 @@ export function transitionTutorialState(
     case 'SKIP':
       return { ...next, skippedAt: now };
     case 'RESUME':
-      return next;
+      return { ...next, skippedAt: null };
     case 'RESTART':
       return { ...next, step: 0, skippedAt: null, completedAt: null };
     case 'COMPLETE':

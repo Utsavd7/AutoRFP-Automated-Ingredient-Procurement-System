@@ -3,6 +3,12 @@
 import { Check, X } from 'lucide-react';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 
+import {
+  buildDefaultSourcingSelection,
+  type RequestItemsV1,
+  type RequestSourcingV1,
+} from '@/lib/procurement/request-document';
+
 import styles from './draft-request-editor.module.css';
 
 type DraftSupplierGrant = {
@@ -25,6 +31,8 @@ export type EditableProcurementRequest = {
   deliveryDate: string;
   quoteDeadline: string;
   commercialTerms: string | null;
+  items: RequestItemsV1;
+  sourcing: RequestSourcingV1;
   supplierRequests: DraftSupplierGrant[];
 };
 
@@ -35,6 +43,7 @@ type SupplierChoice = {
   phone: string | null;
   city: string | null;
   isActive: boolean;
+  relationshipType: 'CURRENT' | 'SELECTED_NEW';
 };
 
 function indiaDateTimeInput(value: string) {
@@ -93,6 +102,9 @@ export function DraftRequestEditor({
   const [supplierIds, setSupplierIds] = useState(
     request.supplierRequests.map(({ supplierId }) => supplierId),
   );
+  const [openToNewSuppliers, setOpenToNewSuppliers] = useState(
+    request.sourcing.default.acceptVerifiedApplications,
+  );
   const [addressLine, setAddressLine] = useState(request.deliveryDetails.addressLine ?? '');
   const [city, setCity] = useState(request.deliveryDetails.city ?? '');
   const [state, setState] = useState(request.deliveryDetails.state ?? '');
@@ -133,18 +145,25 @@ export function DraftRequestEditor({
           phone: null,
           city: null,
           isActive: true,
+          relationshipType: request.sourcing.default.selectedNewSupplierIds.includes(grant.supplierId)
+            ? 'SELECTED_NEW'
+            : 'CURRENT',
         });
       }
     }
     return [...byId.values()].sort((a, b) =>
       a.businessName.localeCompare(b.businessName, 'en-IN'),
     );
-  }, [request.supplierRequests, suppliers]);
+  }, [
+    request.sourcing.default.selectedNewSupplierIds,
+    request.supplierRequests,
+    suppliers,
+  ]);
 
   const deadlineIso = indiaDeadlineIso(quoteDeadline);
   const valid = Boolean(
     title.trim() &&
-    supplierIds.length > 0 &&
+    (supplierIds.length > 0 || openToNewSuppliers) &&
     addressLine.trim() &&
     city.trim() &&
     state.trim() &&
@@ -167,13 +186,28 @@ export function DraftRequestEditor({
     setError('');
     setFieldErrors({});
     try {
+      const defaultSourcing = buildDefaultSourcingSelection(
+        currentSuppliers,
+        supplierIds,
+        openToNewSuppliers,
+      );
       const response = await fetch(`/api/requests/${encodeURIComponent(request.id)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           expectedVersion: request.version,
           title: title.trim(),
-          supplierIds,
+          items: {
+            v: 1,
+            items: request.items.items.map((item) => ({
+              ...item,
+              sourcingOverride: null,
+            })),
+          },
+          sourcing: {
+            v: 1,
+            default: defaultSourcing,
+          },
           deliveryDetails: {
             addressLine: addressLine.trim(),
             city: city.trim(),
@@ -232,6 +266,18 @@ export function DraftRequestEditor({
       </div>
       <fieldset>
         <legend>Suppliers *</legend>
+        <label className={openToNewSuppliers ? styles.selectedSupplier : styles.supplier}>
+          <input
+            type="checkbox"
+            checked={openToNewSuppliers}
+            onChange={(event) => setOpenToNewSuppliers(event.target.checked)}
+          />
+          <span>
+            <strong>Also invite new verified suppliers</strong>
+            <small>You approve every applicant before they can quote.</small>
+          </span>
+          {openToNewSuppliers && <Check aria-hidden="true" />}
+        </label>
         {loadingSuppliers ? <p className={styles.help}>Loading suppliers…</p> : currentSuppliers.length === 0 ? <p className={styles.help}>Add an active supplier before opening this request.</p> : (
           <div className={styles.suppliers}>
             {currentSuppliers.map((supplier) => (
@@ -243,9 +289,9 @@ export function DraftRequestEditor({
             ))}
           </div>
         )}
-        {fieldErrors.supplierIds?.[0] && <small className={styles.fieldError}>{fieldErrors.supplierIds[0]}</small>}
+        {(fieldErrors.sourcing?.[0] || fieldErrors.items?.[0]) && <small className={styles.fieldError}>{fieldErrors.sourcing?.[0] || fieldErrors.items?.[0]}</small>}
       </fieldset>
-      {!valid && <p className={styles.help}>Complete the required fields, choose a supplier, and keep the deadline before the delivery date.</p>}
+      {!valid && <p className={styles.help}>Complete the required fields, choose a saved supplier or invite new suppliers, and keep the deadline before the delivery date.</p>}
       <footer>
         <button type="button" className={styles.secondary} onClick={onCancel}>Cancel</button>
         <button type="submit" className={styles.primary} disabled={!valid || saving || loadingSuppliers}>{saving ? 'Saving…' : 'Save changes'}</button>

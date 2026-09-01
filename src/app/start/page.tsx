@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
   title: 'Start a pilot',
-  description: 'Create an India-first QuotePlate workspace for your restaurant.',
+  description: 'Create a QuotePlate workspace built for restaurants in India.',
   robots: { index: false, follow: false },
 };
 

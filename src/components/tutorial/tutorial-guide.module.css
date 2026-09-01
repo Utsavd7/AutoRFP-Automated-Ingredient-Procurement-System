@@ -7,7 +7,7 @@
   --guideCopper: #c96f3d;
   position: fixed;
   right: 1.25rem;
-  bottom: 1.25rem;
+  bottom: 6rem;
   z-index: 55;
   border: 1px solid var(--guideInk);
   border-radius: .45rem;
@@ -167,10 +167,10 @@
   .guide,
   .resume {
     right: .6rem;
-    bottom: .6rem;
+    bottom: 5.75rem;
     width: calc(100vw - 1.2rem);
   }
-  .guide { max-height: calc(100svh - 1.2rem); overflow-y: auto; }
+  .guide { max-height: calc(100svh - 6.35rem); overflow-y: auto; }
   .heading { padding-inline: .85rem; }
   .body { padding-inline: 1rem; }
   .resume { grid-template-columns: 2.5rem minmax(0, 1fr); }

@@ -8,7 +8,7 @@ import styles from './procurement-workspace.module.css';
 
 type RequestStatus = 'DRAFT' | 'OPEN' | 'AWARDED' | 'CANCELLED';
 
-export type ProcurementRequestSummary = {
+type ProcurementRequestSummary = {
   id: string;
   title: string;
   status: RequestStatus;

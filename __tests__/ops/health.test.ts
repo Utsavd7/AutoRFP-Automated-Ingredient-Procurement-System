@@ -47,13 +47,22 @@ describe('production environment', () => {
     }
   });
 
-  it('requires one to four unique pilot owner emails in production', () => {
+  it('requires one to twenty unique pilot owner emails in production', () => {
+    const twentyEmails = Array.from(
+      { length: 20 },
+      (_, index) => `owner-${index + 1}@example.com`,
+    ).join(',');
+    expect(() => validateRuntimeEnvironment({
+      ...validRuntimeEnvironment,
+      QUOTEPLATE_PILOT_EMAILS: twentyEmails,
+    })).not.toThrow();
+
     for (const pilotEmails of [
       undefined,
       '',
       'not-an-email',
       'same@example.com,same@example.com',
-      'one@example.com,two@example.com,three@example.com,four@example.com,five@example.com',
+      `${twentyEmails},owner-21@example.com`,
     ]) {
       expect(() => validateRuntimeEnvironment({
         ...validRuntimeEnvironment,

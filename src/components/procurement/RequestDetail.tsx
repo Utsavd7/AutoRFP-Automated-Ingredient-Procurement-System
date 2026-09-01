@@ -59,7 +59,7 @@ type SupplierGrant = {
   };
 };
 
-export type ProcurementRequestDetail = {
+type ProcurementRequestDetail = {
   id: string;
   title: string;
   status: Status;
@@ -170,7 +170,7 @@ type AwardDetail = {
   }>;
 };
 
-export type QuoteComparison = {
+type QuoteComparison = {
   request: {
     id: string;
     title: string;
@@ -186,7 +186,7 @@ export type QuoteComparison = {
   quotes: ComparisonQuote[];
 };
 
-export type ShareLink = {
+type ShareLink = {
   supplierRequestId: string;
   supplierId: string;
   businessName?: string;
@@ -786,7 +786,7 @@ export function RequestDetail({
                     'quoteplate-purchase-order.pdf',
                   )}
                 >
-                  <span><strong>Purchase order · {supplier.supplierName}</strong><small>PDF · award-time prices and terms</small></span>
+                  <span><strong>Purchase order · {supplier.supplierName}</strong><small>PDF · prices and terms saved when awarded</small></span>
                   <Download aria-hidden="true" />
                 </button>
               ))}
@@ -901,9 +901,9 @@ export function RequestDetail({
               {request.status === 'OPEN' && (
                 <div className={styles.awardBox}>
                   <div><p className={styles.eyebrow}>Human decision</p><h3>Record the award</h3><p>QuotePlate shows the facts. Your restaurant chooses the supplier.</p></div>
-                  <div className={styles.awardModes}>
-                    <button type="button" className={awardMode === 'WHOLE' ? styles.selectedMode : ''} onClick={() => setAwardMode('WHOLE')}>Whole request</button>
-                    <button type="button" className={awardMode === 'SPLIT' ? styles.selectedMode : ''} onClick={() => setAwardMode('SPLIT')}>Split by item</button>
+                  <div aria-label="Award method" className={styles.awardModes} role="group">
+                    <button aria-pressed={awardMode === 'WHOLE'} type="button" className={awardMode === 'WHOLE' ? styles.selectedMode : ''} onClick={() => setAwardMode('WHOLE')}>Whole request</button>
+                    <button aria-pressed={awardMode === 'SPLIT'} type="button" className={awardMode === 'SPLIT' ? styles.selectedMode : ''} onClick={() => setAwardMode('SPLIT')}>Split by item</button>
                   </div>
                   {awardMode === 'WHOLE' ? (
                     <div className={styles.awardChoices}>{comparison.quotes.map((quote) => {

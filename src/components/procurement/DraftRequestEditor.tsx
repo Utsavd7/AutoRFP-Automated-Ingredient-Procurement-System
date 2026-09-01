@@ -17,7 +17,7 @@ type DraftSupplierGrant = {
   supplier: { id: string; businessName: string; isActive: boolean };
 };
 
-export type EditableProcurementRequest = {
+type EditableProcurementRequest = {
   id: string;
   title: string;
   status: 'DRAFT' | 'OPEN' | 'AWARDED' | 'CANCELLED';
@@ -45,6 +45,12 @@ type SupplierChoice = {
   city: string | null;
   isActive: boolean;
   relationshipType: 'CURRENT' | 'SELECTED_NEW';
+};
+
+type ItemSourcingDraft = {
+  useRequestSuppliers: boolean;
+  supplierIds: string[];
+  openToNewSuppliers: boolean;
 };
 
 function indiaDateTimeInput(value: string) {
@@ -114,6 +120,19 @@ export function DraftRequestEditor({
   const [deliveryDate, setDeliveryDate] = useState(request.deliveryDate.slice(0, 10));
   const [quoteDeadline, setQuoteDeadline] = useState(indiaDateTimeInput(request.quoteDeadline));
   const [commercialTerms, setCommercialTerms] = useState(request.commercialTerms ?? '');
+  const [itemSourcing, setItemSourcing] = useState<Record<string, ItemSourcingDraft>>(
+    () => Object.fromEntries(request.items.items.map((item) => [item.id, {
+      useRequestSuppliers: item.sourcingOverride === null,
+      supplierIds: item.sourcingOverride
+        ? [
+            ...item.sourcingOverride.currentSupplierIds,
+            ...item.sourcingOverride.selectedNewSupplierIds,
+          ]
+        : [],
+      openToNewSuppliers:
+        item.sourcingOverride?.acceptVerifiedApplications ?? false,
+    }])),
+  );
   const [suppliers, setSuppliers] = useState<SupplierChoice[]>([]);
   const [loadingSuppliers, setLoadingSuppliers] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -162,6 +181,12 @@ export function DraftRequestEditor({
   ]);
 
   const deadlineIso = indiaDeadlineIso(quoteDeadline);
+  const validItemSourcing = request.items.items.every((item) => {
+    const choice = itemSourcing[item.id];
+    return choice?.useRequestSuppliers !== false ||
+      choice.supplierIds.length > 0 ||
+      choice.openToNewSuppliers;
+  });
   const valid = Boolean(
     title.trim() &&
     (supplierIds.length > 0 || openToNewSuppliers) &&
@@ -171,13 +196,40 @@ export function DraftRequestEditor({
     /^[1-9]\d{5}$/.test(pin) &&
     /^\d{4}-\d{2}-\d{2}$/.test(deliveryDate) &&
     deadlineIso &&
-    new Date(deadlineIso).getTime() < new Date(`${deliveryDate}T00:00:00+05:30`).getTime(),
+    new Date(deadlineIso).getTime() < new Date(`${deliveryDate}T00:00:00+05:30`).getTime() &&
+    validItemSourcing,
   );
 
   function toggleSupplier(id: string) {
     setSupplierIds((current) =>
       current.includes(id) ? current.filter((value) => value !== id) : [...current, id],
     );
+  }
+
+  function updateItemSourcing(itemId: string, update: Partial<ItemSourcingDraft>) {
+    setItemSourcing((current) => {
+      const existing = current[itemId] ?? {
+        useRequestSuppliers: true,
+        supplierIds: [],
+        openToNewSuppliers: false,
+      };
+      return {
+        ...current,
+        [itemId]: {
+          ...existing,
+          ...update,
+        },
+      };
+    });
+  }
+
+  function toggleItemSupplier(itemId: string, supplierId: string) {
+    const current = itemSourcing[itemId]?.supplierIds ?? [];
+    updateItemSourcing(itemId, {
+      supplierIds: current.includes(supplierId)
+        ? current.filter((id) => id !== supplierId)
+        : [...current, supplierId],
+    });
   }
 
   async function save(event: FormEvent<HTMLFormElement>) {
@@ -192,13 +244,27 @@ export function DraftRequestEditor({
         supplierIds,
         openToNewSuppliers,
       );
+      const items = preserveRequestSourcingOverrides(request.items);
+      items.items = items.items.map((item) => {
+        const choice = itemSourcing[item.id];
+        return {
+          ...item,
+          sourcingOverride: !choice || choice.useRequestSuppliers
+            ? null
+            : buildDefaultSourcingSelection(
+                currentSuppliers,
+                choice.supplierIds,
+                choice.openToNewSuppliers,
+              ),
+        };
+      });
       const response = await fetch(`/api/requests/${encodeURIComponent(request.id)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           expectedVersion: request.version,
           title: title.trim(),
-          items: preserveRequestSourcingOverrides(request.items),
+          items,
           sourcing: {
             v: 1,
             default: defaultSourcing,
@@ -285,6 +351,64 @@ export function DraftRequestEditor({
           </div>
         )}
         {(fieldErrors.sourcing?.[0] || fieldErrors.items?.[0]) && <small className={styles.fieldError}>{fieldErrors.sourcing?.[0] || fieldErrors.items?.[0]}</small>}
+      </fieldset>
+      <fieldset className={styles.itemPreferences}>
+        <legend>Specific item suppliers (optional)</legend>
+        <p className={styles.sectionHelp}>Choose this only when an item should go to different suppliers than the rest of the request.</p>
+        <div className={styles.itemPreferenceList}>
+          {request.items.items.map((item) => {
+            const choice = itemSourcing[item.id] ?? {
+              useRequestSuppliers: true,
+              supplierIds: [],
+              openToNewSuppliers: false,
+            };
+            return (
+              <section aria-label={`${item.name} supplier preference`} className={styles.itemPreference} key={item.id}>
+                <header>
+                  <span><strong>{item.name}</strong><small>{item.quantity} {item.unit.toLowerCase()}</small></span>
+                  <button
+                    aria-pressed={!choice.useRequestSuppliers}
+                    onClick={() => updateItemSourcing(item.id, {
+                      useRequestSuppliers: !choice.useRequestSuppliers,
+                    })}
+                    type="button"
+                  >
+                    {choice.useRequestSuppliers ? 'Choose differently' : 'Use request suppliers'}
+                  </button>
+                </header>
+                {!choice.useRequestSuppliers && (
+                  <div className={styles.itemPreferenceChoices}>
+                    <label className={choice.openToNewSuppliers ? styles.selectedSupplier : styles.supplier}>
+                      <input
+                        checked={choice.openToNewSuppliers}
+                        onChange={(event) => updateItemSourcing(item.id, {
+                          openToNewSuppliers: event.target.checked,
+                        })}
+                        type="checkbox"
+                      />
+                      <span><strong>Open to verified new suppliers</strong><small>You approve applicants before they quote</small></span>
+                      {choice.openToNewSuppliers && <Check aria-hidden="true" />}
+                    </label>
+                    {currentSuppliers.map((supplier) => (
+                      <label className={choice.supplierIds.includes(supplier.id) ? styles.selectedSupplier : styles.supplier} key={supplier.id}>
+                        <input
+                          checked={choice.supplierIds.includes(supplier.id)}
+                          onChange={() => toggleItemSupplier(item.id, supplier.id)}
+                          type="checkbox"
+                        />
+                        <span><strong>{supplier.businessName}</strong><small>{supplier.relationshipType === 'CURRENT' ? 'Current supplier' : 'Selected new supplier'}</small></span>
+                        {choice.supplierIds.includes(supplier.id) && <Check aria-hidden="true" />}
+                      </label>
+                    ))}
+                    {choice.supplierIds.length === 0 && !choice.openToNewSuppliers && (
+                      <p className={styles.itemError}>Choose a supplier or allow verified new suppliers for this item.</p>
+                    )}
+                  </div>
+                )}
+              </section>
+            );
+          })}
+        </div>
       </fieldset>
       {!valid && <p className={styles.help}>Complete the required fields, choose a saved supplier or invite new suppliers, and keep the deadline before the delivery date.</p>}
       <footer>

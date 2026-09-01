@@ -19,7 +19,7 @@ export default function TermsPage() {
       </section>
       <section>
         <h2>Accounts and access</h2>
-        <p>You must provide accurate account information, protect sign-in credentials and invitation links, and promptly tell the pilot operator about suspected unauthorized access. Workspace owners are responsible for member access and for the suppliers to whom they distribute request links.</p>
+        <p>You must provide accurate account information, protect your account credentials and invitation links, and promptly tell the pilot operator about suspected unauthorized access. Workspace owners are responsible for member access and for the suppliers to whom they distribute request links.</p>
       </section>
       <section>
         <h2>Procurement decisions</h2>

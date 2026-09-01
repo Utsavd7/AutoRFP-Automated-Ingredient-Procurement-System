@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import { formatInr } from '@/lib/domain/money';
 import styles from './reporting.module.css';
 
-export type FactualInsights = {
+type FactualInsights = {
   generatedAt: string;
   capped: boolean;
   summary: {

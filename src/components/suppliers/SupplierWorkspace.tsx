@@ -29,7 +29,7 @@ import {
 
 import styles from './supplier-workspace.module.css';
 
-export type SupplierSummary = {
+type SupplierSummary = {
   id: string;
   businessName: string;
   contactName: string | null;

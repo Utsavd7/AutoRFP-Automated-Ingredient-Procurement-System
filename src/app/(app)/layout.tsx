@@ -96,6 +96,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [accountUnavailable, setAccountUnavailable] = useState(false);
   const [accountRetry, setAccountRetry] = useState(0);
   const closeNavigation = useRef<HTMLButtonElement>(null);
+  const openNavigation = useRef<HTMLButtonElement>(null);
+  const mobileNavigation = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let active = true;
@@ -138,12 +140,36 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!mobileOpen) return;
+    const opener = openNavigation.current;
     closeNavigation.current?.focus();
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setMobileOpen(false);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const handleNavigationKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setMobileOpen(false);
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const focusable = mobileNavigation.current?.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+      if (!focusable?.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
-    window.addEventListener('keydown', closeOnEscape);
-    return () => window.removeEventListener('keydown', closeOnEscape);
+    window.addEventListener('keydown', handleNavigationKey);
+    return () => {
+      window.removeEventListener('keydown', handleNavigationKey);
+      document.body.style.overflow = previousOverflow;
+      opener?.focus();
+    };
   }, [mobileOpen]);
 
   if (accountUnavailable) {
@@ -173,31 +199,33 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className={styles.shell}>
-      <aside className={styles.desktopSidebar}>
+      <aside className={styles.desktopSidebar} inert={mobileOpen ? true : undefined}>
         <SidebarContent account={account} pathname={pathname} onNav={() => {}} />
       </aside>
 
       {mobileOpen && (
-        <div className={styles.mobileOverlay} role="dialog" aria-modal="true" aria-label="Workspace navigation">
-          <button className={styles.mobileScrim} aria-label="Close navigation" onClick={() => setMobileOpen(false)} type="button" />
-          <aside className={styles.mobileSidebar}>
-            <SidebarContent account={account} pathname={pathname} onNav={() => setMobileOpen(false)} />
-            <button
-              aria-label="Close navigation"
-              className={styles.mobileClose}
-              onClick={() => setMobileOpen(false)}
-              ref={closeNavigation}
-              type="button"
-            >
-              <X aria-hidden="true" />
-            </button>
-          </aside>
+        <div className={styles.mobileOverlay}>
+          <button className={styles.mobileScrim} aria-label="Close navigation" onClick={() => setMobileOpen(false)} tabIndex={-1} type="button" />
+          <div aria-label="Workspace navigation" aria-modal="true" className={styles.mobileSidebar} ref={mobileNavigation} role="dialog">
+            <aside>
+              <SidebarContent account={account} pathname={pathname} onNav={() => setMobileOpen(false)} />
+              <button
+                aria-label="Close navigation"
+                className={styles.mobileClose}
+                onClick={() => setMobileOpen(false)}
+                ref={closeNavigation}
+                type="button"
+              >
+                <X aria-hidden="true" />
+              </button>
+            </aside>
+          </div>
         </div>
       )}
 
-      <div className={styles.workspace}>
+      <div className={styles.workspace} inert={mobileOpen ? true : undefined}>
         <header className={styles.mobileHeader}>
-          <button aria-label="Open navigation" onClick={() => setMobileOpen(true)} type="button">
+          <button aria-label="Open navigation" onClick={() => setMobileOpen(true)} ref={openNavigation} type="button">
             <Menu aria-hidden="true" />
           </button>
           <Link href="/dashboard" aria-label="QuotePlate home"><Wordmark /></Link>

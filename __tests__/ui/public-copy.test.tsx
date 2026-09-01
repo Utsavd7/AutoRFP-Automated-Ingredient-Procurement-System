@@ -88,7 +88,7 @@ describe('public website contract', () => {
     expect(markup).toContain(`${restaurantSampleRequest.items.length} items requested`);
     expect(markup).toContain('Labelled sample replies, not customer activity.');
     expect(markup).toContain(`Requested in sample ${restaurantSampleRequest.id}; coverage stays visible supplier by supplier.`);
-    expect(markup).toContain('One sample decision is waiting; no auto-choice is made.');
+    expect(markup).toContain('One sample decision is waiting; the product never chooses automatically.');
     expect(markup).toContain('Product rule: the restaurant records the final choice.');
 
     expect(landing).toContain('<ProductDecisionPreview');
@@ -166,7 +166,7 @@ describe('public website contract', () => {
     );
 
     expect(markup).toContain('aria-label="Controlled pilot terms"');
-    expect(markup).toContain('Up to four approved restaurant workspaces');
+    expect(markup).toContain('Up to twenty approved restaurant workspaces');
     expect(markup).toContain('Use the Google account approved for your workspace');
     expect(markup).toContain('No payment card. No billing.');
     expect(markup.indexOf('Controlled pilot terms')).toBeLessThan(

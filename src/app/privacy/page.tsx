@@ -16,7 +16,7 @@ export default function PrivacyPage() {
       <section>
         <h2>Data we collect</h2>
         <p>We collect the account and restaurant details entered during workspace setup, including names, work email addresses, phone numbers, restaurant addresses, and GSTIN when supplied. We also store the procurement records your team creates: menus, supplier contact details, requests, quotes, awards, and a limited action history.</p>
-        <p>If you choose Google sign-in, we use the basic identity information needed to verify your account. The product does not retain Google access tokens or refresh tokens.</p>
+        <p>If you choose Google to sign in, we use the basic identity information needed to verify your account. The product does not retain Google access tokens or refresh tokens.</p>
       </section>
       <section>
         <h2>How we use it</h2>
@@ -24,7 +24,7 @@ export default function PrivacyPage() {
       </section>
       <section>
         <h2>Who can see it</h2>
-        <p>Active members of your workspace can access its records according to their role. A supplier can see only the request connected to the supplier-specific link it receives. Infrastructure providers may process limited data to host the application and database. We may disclose information where the law requires it.</p>
+        <p>Active members of your workspace can access its records according to their role. A supplier can see only the request connected to its private link. Infrastructure providers may process limited data to host the application and database. We may disclose information where the law requires it.</p>
       </section>
       <section>
         <h2>Retention and deletion</h2>

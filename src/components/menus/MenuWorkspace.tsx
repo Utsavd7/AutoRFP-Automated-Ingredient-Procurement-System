@@ -28,7 +28,7 @@ import {
 
 import styles from './menu-workspace.module.css';
 
-export type MenuSummary = {
+type MenuSummary = {
   id: string;
   name: string;
   status: 'DRAFT' | 'APPROVED';

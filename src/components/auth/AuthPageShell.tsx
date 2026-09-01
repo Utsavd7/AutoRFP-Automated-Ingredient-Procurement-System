@@ -92,7 +92,7 @@ export function AuthPageShell(props: AuthPageShellProps) {
             <aside className={styles.pilotNotice} aria-label="Controlled pilot terms">
               <strong>Controlled pilot terms</strong>
               <ul>
-                <li>Up to four approved restaurant workspaces</li>
+                <li>Up to twenty approved restaurant workspaces</li>
                 <li>Use the Google account approved for your workspace</li>
                 <li>No payment card. No billing.</li>
               </ul>

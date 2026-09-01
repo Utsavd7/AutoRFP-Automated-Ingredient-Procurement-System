@@ -40,7 +40,7 @@ type ActivityRecord = {
   createdAt: string;
 };
 
-export type HistoryPageData = {
+type HistoryPageData = {
   requests: HistoryRequest[];
   nextCursor: string | null;
   recentQuoteRevisions: QuoteRevision[];

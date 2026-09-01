@@ -9,10 +9,11 @@ describe('mobile navigation accessibility contract', () => {
     );
 
     expect(source).toContain('onClick={onNav}');
-    expect(source).toContain(
-      "if (event.key === 'Escape') setMobileOpen(false)",
-    );
+    expect(source).toContain("if (event.key === 'Escape') {");
     expect(source).toContain('aria-label="Open navigation"');
     expect(source).toContain('aria-label="Close navigation"');
+    expect(source).toContain("if (event.key !== 'Tab') return");
+    expect(source).toContain('inert={mobileOpen ? true : undefined}');
+    expect(source).toContain('opener?.focus()');
   });
 });

@@ -11,6 +11,10 @@ import {
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import {
+  PROCUREMENT_CATEGORIES,
+  type ProcurementCategory,
+} from '@/lib/domain/procurement-categories';
 import type {
   IngredientSuggestionDto,
   MenuCleanupProposal,
@@ -24,7 +28,7 @@ type Unit = 'KILOGRAM' | 'GRAM' | 'LITRE' | 'MILLILITRE' | 'PIECE' | 'PACK' | 'C
 type DishDraft = MenuDocumentV1['dishes'][number];
 type IngredientDraft = DishDraft['ingredients'][number];
 
-export type ReviewedMenu = {
+type ReviewedMenu = {
   id: string;
   name: string;
   status: 'DRAFT' | 'APPROVED';
@@ -47,6 +51,10 @@ const unitOptions: Array<{ value: Unit; label: string }> = [
   { value: 'CASE', label: 'case' },
   { value: 'CRATE', label: 'crate' },
 ];
+
+const categoryOptions = Object.entries(PROCUREMENT_CATEGORIES) as Array<
+  [ProcurementCategory, string]
+>;
 
 function documentId(prefix: 'd' | 'i') {
   return `${prefix}${crypto.randomUUID().replaceAll('-', '').slice(0, 23)}`;
@@ -421,7 +429,7 @@ export function MenuEditor({
               </button>
             </header>
             <div className={styles.ingredientHeader} aria-hidden="true">
-              <span>Ingredient</span><span>Quantity</span><span>Unit</span><span />
+              <span>Ingredient</span><span>Quantity</span><span>Unit</span><span>Category</span><span />
             </div>
             <div className={styles.ingredients}>
               {dish.ingredients.map((ingredient, ingredientIndex) => (
@@ -454,6 +462,24 @@ export function MenuEditor({
                       onChange={(event) => changeIngredient(dishIndex, ingredientIndex, { unit: event.target.value as Unit })}
                     >
                       {unitOptions.map((unit) => <option value={unit.value} key={unit.value}>{unit.label}</option>)}
+                    </select>
+                    <ChevronDown aria-hidden="true" />
+                  </label>
+                  <label className={styles.unitSelect}>
+                    <span>Category</span>
+                    <select
+                      aria-label={`${ingredient.name || 'Ingredient'} category`}
+                      value={ingredient.specification.category}
+                      onChange={(event) => changeIngredient(dishIndex, ingredientIndex, {
+                        specification: {
+                          ...ingredient.specification,
+                          category: event.target.value as ProcurementCategory,
+                        },
+                      })}
+                    >
+                      {categoryOptions.map(([category, label]) => (
+                        <option value={category} key={category}>{label}</option>
+                      ))}
                     </select>
                     <ChevronDown aria-hidden="true" />
                   </label>

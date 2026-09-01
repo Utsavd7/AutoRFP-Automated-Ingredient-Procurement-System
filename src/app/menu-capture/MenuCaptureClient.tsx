@@ -32,22 +32,52 @@ export function MenuCaptureClient() {
   const urls = useRef<string[]>([]);
   const controller = useRef<AbortController | null>(null);
   const sessionPromise = useRef<Promise<PhoneTransferSession> | null>(null);
+  const sessionRef = useRef<PhoneTransferSession | null>(null);
   const batchLockedRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
-    const pending = sessionPromise.current ??= consumeCurrentPhoneTransferFragment();
-    void pending
-      .then((next) => {
+    const settleSession = (pending: Promise<PhoneTransferSession>) => {
+      void pending.then((next) => {
         if (cancelled) return;
+        if (sessionPromise.current !== pending) return;
+        sessionRef.current = next;
         setSession(next);
         setLinkState('ready');
-      })
-      .catch(() => {
+      }).catch(() => {
         if (cancelled) return;
+        if (sessionPromise.current !== pending) return;
+        sessionRef.current = null;
+        setSession(null);
         setLinkState('invalid');
       });
-    return () => { cancelled = true; };
+    };
+    const pending = sessionPromise.current ??= consumeCurrentPhoneTransferFragment();
+    settleSession(pending);
+
+    const onHashChange = () => {
+      controller.current?.abort();
+      controller.current = null;
+      urls.current.forEach((url) => URL.revokeObjectURL(url));
+      urls.current = [];
+      batchLockedRef.current = false;
+      sessionRef.current = null;
+      setSession(null);
+      setPhotos([]);
+      setSent(false);
+      setError('');
+      setProgress('');
+      setSending(false);
+      setBatchLocked(false);
+      setLinkState('checking');
+      sessionPromise.current = consumeCurrentPhoneTransferFragment();
+      settleSession(sessionPromise.current);
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('hashchange', onHashChange);
+    };
   }, []);
 
   useEffect(() => () => {
@@ -67,6 +97,7 @@ export function MenuCaptureClient() {
 
   async function selectPhotos(files: FileList | null) {
     if (!files || sending || batchLockedRef.current) return;
+    const activeSessionPromise = sessionPromise.current;
     setError('');
     try {
       const checked = await validateMenuPhotoSelection(
@@ -74,8 +105,10 @@ export function MenuCaptureClient() {
         readBrowserImageDimensions,
       );
       if (batchLockedRef.current) return;
+      if (sessionPromise.current !== activeSessionPromise) return;
       replacePhotos(checked);
     } catch (caught) {
+      if (sessionPromise.current !== activeSessionPromise) return;
       setError(caught instanceof Error ? caught.message : 'These photos could not be used.');
     }
   }
@@ -88,6 +121,7 @@ export function MenuCaptureClient() {
 
   async function sendPhotos() {
     if (!session || photos.length === 0 || sending) return;
+    const activeSession = session;
     const nextController = new AbortController();
     controller.current = nextController;
     batchLockedRef.current = true;
@@ -100,12 +134,16 @@ export function MenuCaptureClient() {
         token: session.token,
         key: session.key,
         readDimensions: readBrowserImageDimensions,
-        onProgress: ({ message }) => setProgress(message),
+        onProgress: ({ message }) => {
+          if (sessionRef.current === activeSession) setProgress(message);
+        },
         signal: nextController.signal,
       });
+      if (sessionRef.current !== activeSession) return;
       setSent(true);
       setProgress('');
     } catch (caught) {
+      if (sessionRef.current !== activeSession) return;
       if (caught instanceof DOMException && caught.name === 'AbortError') return;
       if (caught instanceof PhotoTransferClientError && caught.status === 410) {
         setLinkState('invalid');

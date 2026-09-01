@@ -149,6 +149,20 @@ test('sends a menu photo from the public mobile capture page without sign-in', a
     }),
   ]);
   expect(uploadRequests.every(({ url }) => !url.includes(token))).toBe(true);
+
+  await page.evaluate(({ key }) => {
+    window.location.hash = `token=fresh-network-mocked-token&key=${key}`;
+  }, { key: encodedKey });
+  await expect(page).toHaveURL(/\/menu-capture$/);
+  await expect(page.getByRole('heading', { name: 'Take or choose up to 10 photos' })).toBeVisible();
+  await expect(page.getByAltText('Menu photo 1')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Done' })).toBeDisabled();
+
+  await page.evaluate(() => {
+    window.location.hash = 'token=invalid&key=invalid';
+  });
+  await expect(page).toHaveURL(/\/menu-capture$/);
+  await expect(page.getByRole('heading', { name: 'This code is no longer ready' })).toBeVisible();
 });
 
 test('uses the approved QuotePlate product shell and exposes every core workspace', async ({

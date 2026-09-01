@@ -61,6 +61,29 @@ describe('phone menu photo transfer UI contracts', () => {
     expect(capture).toContain("batchLocked ? 'Try sending again' : 'Done'");
   });
 
+  it('replaces all capture state when a fresh code is scanned on the same page', () => {
+    const capture = readFileSync(
+      path.join(root, 'src/app/menu-capture/MenuCaptureClient.tsx'),
+      'utf8',
+    );
+
+    expect(capture).toContain("window.addEventListener('hashchange', onHashChange)");
+    expect(capture).toContain("window.removeEventListener('hashchange', onHashChange)");
+    expect(capture.match(/addEventListener\('hashchange'/g)).toHaveLength(1);
+    expect(capture).toContain('sessionPromise.current = consumeCurrentPhoneTransferFragment()');
+    expect(capture).toContain('if (sessionPromise.current !== pending) return');
+    expect(capture.match(/if \(sessionPromise\.current !== activeSessionPromise\) return/g)).toHaveLength(2);
+    expect(capture).toContain('controller.current?.abort()');
+    expect(capture).toContain('urls.current.forEach((url) => URL.revokeObjectURL(url))');
+    expect(capture).toContain('setPhotos([])');
+    expect(capture).toContain('setSent(false)');
+    expect(capture).toContain("setError('')");
+    expect(capture).toContain("setProgress('')");
+    expect(capture).toContain('batchLockedRef.current = false');
+    expect(capture).toContain('setBatchLocked(false)');
+    expect(capture).toContain("setLinkState('invalid')");
+  });
+
   it('promises automatic arrival without asking for sign-in or refresh', () => {
     const html = renderToStaticMarkup(
       <PhonePhotoTransfer

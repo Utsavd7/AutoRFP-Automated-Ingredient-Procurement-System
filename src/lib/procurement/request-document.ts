@@ -402,6 +402,24 @@ export function buildDefaultSourcingSelection(
   };
 }
 
+export function preserveRequestSourcingOverrides(
+  document: RequestItemsV1,
+): RequestItemsV1 {
+  return {
+    v: 1,
+    items: document.items.map((item) => ({
+      ...item,
+      specification: { ...item.specification },
+      sourcingOverride: item.sourcingOverride ? {
+        ...item.sourcingOverride,
+        modes: [...item.sourcingOverride.modes],
+        currentSupplierIds: [...item.sourcingOverride.currentSupplierIds],
+        selectedNewSupplierIds: [...item.sourcingOverride.selectedNewSupplierIds],
+      } : null,
+    })),
+  };
+}
+
 function selectionAcceptsVerifiedApplications(selection: SourcingSelectionV1) {
   return selection.acceptVerifiedApplications &&
     selection.modes.includes('VERIFIED_NEW');

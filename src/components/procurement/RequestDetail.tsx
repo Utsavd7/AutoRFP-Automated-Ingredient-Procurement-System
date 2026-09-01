@@ -689,7 +689,19 @@ export function RequestDetail({
         <header><div><p className={styles.eyebrow}>Demand</p><h2>Requested items</h2></div><span>{request.items.items.length} total</span></header>
         <div className={styles.itemTable}>
           <div className={styles.tableHeader}><span>Item</span><span>Quantity</span></div>
-          {request.items.items.map((item) => <div className={styles.itemRow} key={item.id}><strong>{item.name}</strong><span>{item.quantity} {unitLabel(item.unit)}</span></div>)}
+          {request.items.items.map((item) => (
+            <div className={styles.itemRow} key={item.id}>
+              <span>
+                <strong>{item.name}</strong>
+                {item.specification.referenceUrl ? (
+                  <a href={item.specification.referenceUrl} target="_blank" rel="noopener noreferrer">
+                    View food reference <ExternalLink aria-hidden="true" />
+                  </a>
+                ) : null}
+              </span>
+              <span>{item.quantity} {unitLabel(item.unit)}</span>
+            </div>
+          ))}
         </div>
         {request.commercialTerms && <div className={styles.terms}><strong>Terms shared with suppliers</strong><p>{request.commercialTerms}</p></div>}
       </section>

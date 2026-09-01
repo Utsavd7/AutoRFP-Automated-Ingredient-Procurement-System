@@ -20,6 +20,13 @@ export type MenuImageDimensions = {
   height: number;
 };
 
+export function mergeMenuPhotoFiles<T>(
+  current: readonly T[],
+  incoming: readonly T[],
+) {
+  return [...current, ...incoming];
+}
+
 export function photoIntakeModeFromSearch(search: string) {
   return new URLSearchParams(search).get('menuIntake') === 'photo'
     ? 'photo' as const

@@ -31,7 +31,7 @@ export function PublicLandingPage() {
           <div className="public-hero__copy public-reveal">
             <p className="public-eyebrow">Restaurant buying, made accountable</p>
             <h1>Compare every quote.<br /><em>Choose with proof.</em></h1>
-            <p className="public-hero__lede">Send one ingredient request to your existing suppliers, then compare price, delivery, coverage, INR totals, GST, freight, and payment terms before your restaurant records its own decision.</p>
+            <p className="public-hero__lede">Send one ingredient list to approved suppliers. Compare prices, delivery, missing items, GST, freight, and payment terms before you choose.</p>
             <div className="public-hero__actions">
               <Link className="public-button" href="/product">See the product <span aria-hidden="true">→</span></Link>
               <Link className="public-inline-link" href="/start">Start a pilot <span aria-hidden="true">↗</span></Link>

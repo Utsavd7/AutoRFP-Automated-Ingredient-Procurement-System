@@ -2,6 +2,7 @@ import {
   buildReviewedOcrMenuInput,
   MAX_MENU_IMAGE_BYTES,
   MAX_MENU_IMAGE_PIXELS,
+  mergeMenuPhotoFiles,
   photoIntakeModeFromSearch,
   validateMenuPhotoSelection,
 } from '@/lib/menu/photo-intake';
@@ -16,6 +17,13 @@ function photo(overrides: Partial<{ name: string; size: number; type: string }> 
 }
 
 describe('local menu photo intake', () => {
+  it('keeps earlier phone photos when another capture is added', () => {
+    const first = photo({ name: 'front.jpg' });
+    const second = photo({ name: 'back.jpg' });
+
+    expect(mergeMenuPhotoFiles([first], [second])).toEqual([first, second]);
+  });
+
   it('accepts at most five bounded images and checks decoded pixels before OCR', async () => {
     const dimensions = jest.fn().mockResolvedValue({ width: 4_000, height: 3_000 });
 

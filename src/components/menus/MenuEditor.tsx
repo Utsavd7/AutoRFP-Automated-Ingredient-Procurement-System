@@ -13,6 +13,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type {
   IngredientSuggestionDto,
+  MenuCleanupProposal,
   MenuDocumentV1,
 } from '@/lib/menu/menu-document';
 
@@ -32,6 +33,7 @@ export type ReviewedMenu = {
   approvedAt: string | null;
   updatedAt: string;
   document: MenuDocumentV1;
+  cleanupProposals?: MenuCleanupProposal[];
   ingredientSuggestionsByDishId?: Record<string, IngredientSuggestionDto[]>;
 };
 
@@ -82,6 +84,47 @@ function normalizeMenu(menu: ReviewedMenu): ReviewedMenu {
         })),
       })),
     },
+  };
+}
+
+export function applyMenuCleanupProposal(
+  document: MenuDocumentV1,
+  proposal: MenuCleanupProposal,
+): MenuDocumentV1 {
+  if (proposal.kind === 'MERGE_DUPLICATE_DISH') {
+    return {
+      ...document,
+      dishes: document.dishes
+        .filter(({ id }) => id !== proposal.dishId)
+        .map((dish, position) => ({ ...dish, position })),
+    };
+  }
+  return {
+    ...document,
+    dishes: document.dishes.map((dish) => {
+      if (dish.id !== proposal.dishId) return dish;
+      if (proposal.ingredientId === null) {
+        return dish.name === proposal.before ? { ...dish, name: proposal.after } : dish;
+      }
+      if (proposal.kind === 'MERGE_DUPLICATE_ITEM') {
+        return {
+          ...dish,
+          ingredients: dish.ingredients.filter(({ id }) => id !== proposal.ingredientId),
+        };
+      }
+      return {
+        ...dish,
+        ingredients: dish.ingredients.map((ingredient) => {
+          if (ingredient.id !== proposal.ingredientId) return ingredient;
+          if (proposal.kind === 'NORMALIZE_UNIT') {
+            return { ...ingredient, unit: proposal.after as IngredientDraft['unit'] };
+          }
+          return ingredient.name === proposal.before
+            ? { ...ingredient, name: proposal.after }
+            : ingredient;
+        }),
+      };
+    }),
   };
 }
 
@@ -186,6 +229,17 @@ export function MenuEditor({
         ],
       };
     }));
+  }
+
+  function applyCleanupProposal(proposal: MenuCleanupProposal) {
+    setDishes((current) => applyMenuCleanupProposal(
+      { ...menu!.document, dishes: current },
+      proposal,
+    ).dishes);
+    setMenu((current) => current ? {
+      ...current,
+      cleanupProposals: (current.cleanupProposals ?? []).filter(({ id }) => id !== proposal.id),
+    } : current);
   }
 
   const complete = Boolean(
@@ -330,6 +384,23 @@ export function MenuEditor({
         <div className={styles.error} role="alert">Check the highlighted menu details and try again.</div>
       )}
 
+      {(menu.cleanupProposals?.length ?? 0) > 0 && (
+        <section className={styles.cleanupPanel} aria-label="Suggested menu cleanup">
+          <header>
+            <div><p className={styles.eyebrow}>Suggested cleanup</p><h2>Small changes to review</h2></div>
+            <span>{menu.cleanupProposals!.length} found</span>
+          </header>
+          <div>
+            {menu.cleanupProposals!.map((proposal) => (
+              <article key={proposal.id}>
+                <span><strong>{proposal.before}</strong><small>Change to {proposal.after}</small></span>
+                <button type="button" onClick={() => applyCleanupProposal(proposal)}>Use change</button>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+
       <section className={styles.dishes} aria-label="Menu dishes">
         {dishes.map((dish, dishIndex) => (
           <article className={styles.dish} key={dish.id ?? `new-dish-${dishIndex}`}>
@@ -386,6 +457,22 @@ export function MenuEditor({
                     </select>
                     <ChevronDown aria-hidden="true" />
                   </label>
+                  <label className={styles.referenceField}>
+                    <span>Food photo or product link, optional</span>
+                    <input
+                      aria-label={`${ingredient.name || 'Ingredient'} food reference link`}
+                      type="url"
+                      inputMode="url"
+                      placeholder="https://example.com/item"
+                      value={ingredient.specification.referenceUrl ?? ''}
+                      onChange={(event) => changeIngredient(dishIndex, ingredientIndex, {
+                        specification: {
+                          ...ingredient.specification,
+                          referenceUrl: event.target.value || null,
+                        },
+                      })}
+                    />
+                  </label>
                   <button type="button" aria-label={`Remove ${ingredient.name || 'ingredient'}`} onClick={() => removeIngredient(dishIndex, ingredientIndex)}>
                     <Trash2 aria-hidden="true" />
                   </button>
@@ -400,7 +487,8 @@ export function MenuEditor({
                   .filter((suggestion) => !dish.ingredients.some(({ itemKey }) => itemKey === suggestion.itemKey))
                   .map((suggestion) => (
                     <button type="button" key={suggestion.id} onClick={() => addSuggestedIngredient(dishIndex, suggestion)}>
-                      <Plus aria-hidden="true" /> {suggestion.name}
+                      <Plus aria-hidden="true" />
+                      <span><strong>{suggestion.name}</strong><small>{suggestion.quantity} {unitOptions.find(({ value }) => value === suggestion.unit)?.label ?? suggestion.unit} · {suggestion.sourceLabel}</small></span>
                     </button>
                   ))}
               </div>

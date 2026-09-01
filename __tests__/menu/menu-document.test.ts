@@ -262,6 +262,8 @@ describe('ingredient suggestions', () => {
       { id: 'd2', name: 'Masala Dosa', position: 1, ingredients: [] },
       { id: 'd3', name: 'Tomato Soup', position: 2, ingredients: [] },
       { id: 'd4', name: 'Quantum Foam', position: 3, ingredients: [] },
+      { id: 'd5', name: 'Rajma', position: 4, ingredients: [] },
+      { id: 'd6', name: 'Veg Biryani', position: 5, ingredients: [] },
     ]);
     const approved = documentWith([
       {
@@ -310,6 +312,15 @@ describe('ingredient suggestions', () => {
         selected: false,
       }),
     ]);
+    expect(suggestions.d5).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'INGREDIENT', name: 'Rajma' }),
+      expect.objectContaining({ kind: 'INGREDIENT', name: 'Onion' }),
+      expect.objectContaining({ kind: 'INGREDIENT', name: 'Tomato' }),
+    ]));
+    expect(suggestions.d6).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'INGREDIENT', name: 'Basmati rice' }),
+      expect.objectContaining({ kind: 'INGREDIENT', name: 'Mixed vegetables' }),
+    ]));
 
     for (const suggestion of Object.values(suggestions).flat()) {
       expect(new TextEncoder().encode(suggestion.sourceLabel).byteLength).toBeLessThanOrEqual(160);

@@ -21,7 +21,7 @@ const content = {
     description:
       'Open current requests, compare supplier terms, and keep every award tied to the quote that earned it.',
     document: 'Account access',
-    note: 'No supplier, quote, or workspace data is stored in this browser.',
+    note: 'Restaurant records remain on the server; your browser stores only the session needed to keep you signed in.',
   },
   start: {
     eyebrow: 'India pilot',
@@ -88,14 +88,16 @@ export function AuthPageShell(props: AuthPageShellProps) {
             </div>
             <span aria-hidden="true">IN · 01</span>
           </div>
-          <aside className={styles.pilotNotice} aria-label="Controlled pilot terms">
-            <strong>Controlled pilot terms</strong>
-            <ul>
-              <li>Up to four approved restaurant workspaces</li>
-              <li>Use the Google account approved for your workspace</li>
-              <li>No payment card. No billing.</li>
-            </ul>
-          </aside>
+          {props.mode === 'start' && (
+            <aside className={styles.pilotNotice} aria-label="Controlled pilot terms">
+              <strong>Controlled pilot terms</strong>
+              <ul>
+                <li>Up to four approved restaurant workspaces</li>
+                <li>Use the Google account approved for your workspace</li>
+                <li>No payment card. No billing.</li>
+              </ul>
+            </aside>
+          )}
           <AuthForm {...props} />
         </section>
       </div>

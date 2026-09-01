@@ -21,6 +21,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   buildReviewedOcrMenuInput,
+  mergeMenuPhotoFiles,
   photoIntakeModeFromSearch,
   validateMenuPhotoSelection,
 } from '@/lib/menu/photo-intake';
@@ -190,11 +191,21 @@ export function MenuIntakeDialog({
     setMenuText('');
     setConfidences([]);
     try {
-      const checked = await validateMenuPhotoSelection([...files], readImageDimensions);
+      const checked = await validateMenuPhotoSelection(
+        mergeMenuPhotoFiles(photos.map(({ file }) => file), [...files]),
+        readImageDimensions,
+      );
       replacePhotos(checked);
     } catch (caught) {
       setCreateError(caught instanceof Error ? caught.message : 'These photos could not be used.');
     }
+  }
+
+  function removePhoto(index: number) {
+    replacePhotos(photos.filter((_, current) => current !== index).map(({ file }) => file));
+    setPhotoReady(false);
+    setMenuText('');
+    setConfidences([]);
   }
 
   async function readPhotos() {
@@ -445,6 +456,13 @@ export function MenuIntakeDialog({
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={photo.previewUrl} alt={`Menu photo ${index + 1}`} />
                         <figcaption>{index + 1}</figcaption>
+                        <button
+                          type="button"
+                          aria-label={`Remove menu photo ${index + 1}`}
+                          onClick={() => removePhoto(index)}
+                        >
+                          <X aria-hidden="true" />
+                        </button>
                       </figure>
                     ))}
                   </div>

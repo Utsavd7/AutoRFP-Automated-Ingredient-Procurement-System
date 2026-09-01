@@ -42,7 +42,7 @@ export const TUTORIAL_STEPS = [
   {
     title: 'Ask for prices',
     instruction:
-      'Click New request. Pick items, enter quantity and delivery date, then choose saved suppliers or invite new verified suppliers.',
+      'Click New request. Pick a checked menu, choose the ingredients, set the delivery date, then choose saved suppliers or invite new verified suppliers.',
     action: 'Create a request',
     href: '/procurement/new',
   },
@@ -56,7 +56,7 @@ export const TUTORIAL_STEPS = [
   {
     title: 'Use your buying history',
     instruction:
-      'Click Insights to review spending and supplier performance. Your saved requests, quotes, and decisions help with the next purchase.',
+      'Open Insights to review response rates, quote coverage, awarded value, submitted price ranges, and facts from previous buying.',
     action: 'Open insights',
     href: '/insights',
   },
@@ -181,7 +181,7 @@ export function TutorialGuide({
         <span className={styles.guideIcon}><BookOpenCheck aria-hidden="true" /></span>
         <span>
           <strong>Setup guide</strong>
-          <small>About two minutes</small>
+          <small>Six guided steps</small>
         </span>
         <span className={styles.counter}>Step {stepIndex + 1} of {TUTORIAL_STEPS.length}</span>
       </div>
@@ -199,7 +199,7 @@ export function TutorialGuide({
         <p className={styles.kicker}>What to click</p>
         <h2>{step.title}</h2>
         <p>{step.instruction}</p>
-        <Link className={styles.destination} href={step.href}>
+        <Link className={styles.destination} href={step.href} onClick={() => setExpanded(false)}>
           {step.action}
           <ChevronRight aria-hidden="true" />
         </Link>

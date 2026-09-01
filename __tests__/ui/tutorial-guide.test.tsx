@@ -46,6 +46,7 @@ describe('visible setup guide', () => {
     expect(html).toContain('Open overview');
     expect(html).toContain('Next');
     expect(html).toContain('Skip for now');
+    expect(html).toContain('Six guided steps');
     expect(html).toContain('aria-live="polite"');
   });
 

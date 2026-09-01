@@ -345,7 +345,7 @@ export function NewRequestForm({ initialData }: { initialData?: InitialData }) {
                   <label className={supplierIds.includes(supplier.id) ? styles.selectedSupplier : styles.supplier} key={supplier.id}>
                     <input type="checkbox" checked={supplierIds.includes(supplier.id)} onChange={() => toggleSupplier(supplier.id)} />
                     <span className={styles.supplierInitial}>{supplier.businessName.charAt(0).toUpperCase()}</span>
-                    <span><strong>{supplier.businessName}</strong><small>{supplier.contactName || supplier.city || supplier.phone || 'Contact details not added'}</small></span>
+                    <span><strong>{supplier.businessName}</strong><small>{supplier.relationshipType === 'CURRENT' ? 'Regular supplier' : 'New supplier'} · {supplier.contactName || supplier.city || supplier.phone || 'Contact details not added'}</small></span>
                     {supplierIds.includes(supplier.id) && <Check aria-hidden="true" />}
                   </label>
                 ))}

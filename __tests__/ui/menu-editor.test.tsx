@@ -1,12 +1,38 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { MenuEditor } from '@/components/menus/MenuEditor';
+import {
+  applyMenuCleanupProposal,
+  MenuEditor,
+} from '@/components/menus/MenuEditor';
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
 }));
 
 describe('menu editor', () => {
+  it('applies one reviewed cleanup change without touching other menu facts', () => {
+    const document = {
+      v: 1 as const,
+      source: { kind: 'PASTE' as const, canonicalUrl: null, permissionConfirmed: false },
+      dishes: [{
+        id: 'dish1', name: '1. Dal makhani ₹250', position: 0,
+        ingredients: [{
+          id: 'ingredient1', itemKey: 'tomato', name: 'Tomatos', quantity: '2',
+          unit: 'KILOGRAM' as const, specification: { v: 1 as const, category: 'VEGETABLES' as const },
+        }],
+      }],
+    };
+
+    expect(applyMenuCleanupProposal(document, {
+      id: 'p1', kind: 'CORRECT_SPELLING', source: 'DETERMINISTIC_RULE', applied: false,
+      dishId: 'dish1', ingredientId: 'ingredient1', before: 'Tomatos', after: 'Tomatoes',
+      evidence: 'Reviewed spelling.',
+    }).dishes[0]).toEqual({
+      ...document.dishes[0],
+      ingredients: [{ ...document.dishes[0].ingredients[0], name: 'Tomatoes' }],
+    });
+  });
+
   it('renders a reviewable dish and ingredient form', () => {
     const html = renderToStaticMarkup(
       <MenuEditor
@@ -57,6 +83,11 @@ describe('menu editor', () => {
               },
             ],
           },
+          cleanupProposals: [{
+            id: 'p1', kind: 'CORRECT_SPELLING', source: 'DETERMINISTIC_RULE', applied: false,
+            dishId: 'dish1', ingredientId: 'ingredient1', before: 'Urad daal', after: 'Urad dal',
+            evidence: 'Reviewed spelling.',
+          }],
         }}
       />,
     );
@@ -71,5 +102,11 @@ describe('menu editor', () => {
     expect(html).toContain('Add dish');
     expect(html).toContain('Quick add');
     expect(html).toContain('Butter');
+    expect(html).toContain('Suggested cleanup');
+    expect(html).toContain('Urad daal');
+    expect(html).toContain('Use change');
+    expect(html).toContain('Reviewed dish template');
+    expect(html).toContain('0.2 kg');
+    expect(html).toContain('Food photo or product link, optional');
   });
 });

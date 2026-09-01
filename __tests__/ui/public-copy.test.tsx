@@ -174,6 +174,20 @@ describe('public website contract', () => {
     );
   });
 
+  test('keeps sign in focused on account access and states browser session storage accurately', () => {
+    const markup = renderToStaticMarkup(
+      <AuthPageShell
+        callbackUrl="/dashboard"
+        googleAvailable
+        mode="signin"
+      />,
+    );
+
+    expect(markup).not.toContain('Controlled pilot terms');
+    expect(markup).toContain('your browser stores only the session needed to keep you signed in');
+    expect(markup).not.toContain('No supplier, quote, or workspace data is stored in this browser.');
+  });
+
   test('shows a factual product decision in the hero without inventing market data', () => {
     const markup = renderToStaticMarkup(<ProductDecisionPreview />);
 
@@ -203,7 +217,7 @@ describe('public website contract', () => {
     const markup = renderToStaticMarkup(<PublicLandingPage />);
     const allPublicSource = publicFiles.map(source).join('\n');
 
-    expect(markup).toMatch(/INR/);
+    expect(markup).toContain('₹');
     expect(markup).toMatch(/GST/);
     expect(markup).toMatch(/no supplier account/i);
     expect(markup).toMatch(/human (?:decision|approval)/i);

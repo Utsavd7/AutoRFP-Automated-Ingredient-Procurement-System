@@ -267,6 +267,15 @@ export function SupplierQuoteForm({
                   <div>
                     <h3>{item.name}</h3>
                     <p>{item.quantity} {unit}</p>
+                    {item.specification.referenceUrl ? (
+                      <a
+                        href={item.specification.referenceUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        View food reference
+                      </a>
+                    ) : null}
                   </div>
                   <label className={styles.noQuote}>
                     <input

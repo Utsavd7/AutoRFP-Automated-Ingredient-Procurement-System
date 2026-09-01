@@ -43,8 +43,6 @@ import {
 
 export const AWARD_BODY_BYTES = 512 * 1_024;
 export const AWARD_MAX_SELECTIONS = DOCUMENT_LIMITS.awardLines.lines;
-export const AWARD_SUPPLIER_SNAPSHOTS_BYTES =
-  DOCUMENT_LIMITS.awardSupplierSnapshots.jsonBytes;
 
 type ValidationErrors = Record<string, string[]>;
 

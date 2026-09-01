@@ -9,14 +9,20 @@ jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
 }));
 
-function requestItem(id: string, name: string, quantity: string, unit: 'KILOGRAM' | 'LITRE') {
+function requestItem(
+  id: string,
+  name: string,
+  quantity: string,
+  unit: 'KILOGRAM' | 'LITRE',
+  referenceUrl: string | null = null,
+) {
   return {
     id,
     itemKey: name.toLocaleLowerCase('en-IN'),
     name,
     quantity,
     unit,
-    specification: { v: 1 as const, category: unit === 'LITRE' ? 'DAIRY' as const : 'VEGETABLES' as const },
+    specification: { v: 1 as const, category: unit === 'LITRE' ? 'DAIRY' as const : 'VEGETABLES' as const, referenceUrl },
     sourcingOverride: null,
   };
 }
@@ -47,7 +53,7 @@ describe('procurement request detail', () => {
           id: 'request-1', title: 'Fresh produce · Week 36', status: 'OPEN', version: 2,
           deliveryDetails: { addressLine: '18 Market Road', city: 'Mumbai', state: 'Maharashtra', pin: '400001' },
           deliveryDate: '2026-09-05T00:00:00.000Z', quoteDeadline: '2026-09-03T10:00:00.000Z', commercialTerms: 'Payment in 15 days',
-          items: requestItemsDocument(requestItem('item-1', 'Tomato', '100', 'KILOGRAM')),
+          items: requestItemsDocument(requestItem('item-1', 'Tomato', '100', 'KILOGRAM', 'https://example.com/tomato-grade-a')),
           sourcing: requestSourcingDocument('supplier-1'),
           supplierRequests: [{ id: 'grant-1', supplierId: 'supplier-1', expiresAt: '2026-09-03T10:00:00.000Z', revokedAt: null, viewedAt: '2026-08-28T09:00:00.000Z', supplier: { id: 'supplier-1', businessName: 'GreenLeaf Fresh Foods', contactName: 'Meera Shah', phone: '+919876543210', whatsappNumber: '+919876543210', email: null, isActive: true } }],
         }}
@@ -60,6 +66,8 @@ describe('procurement request detail', () => {
 
     expect(html).toContain('Fresh produce · Week 36');
     expect(html).toContain('Tomato');
+    expect(html).toContain('View food reference');
+    expect(html).toContain('https://example.com/tomato-grade-a');
     expect(html).toContain('GreenLeaf Fresh Foods');
     expect(html).toContain('₹83,664.00');
     expect(html).toContain('Viewed');

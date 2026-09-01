@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 
 import { writeAuditEvent } from '@/lib/audit/write-event';
 import { withTenant } from '@/lib/db/tenant-transaction';
@@ -219,15 +219,6 @@ export function createTutorialOperations(
       );
     },
   };
-}
-
-type TutorialClient = Pick<PrismaClient, '$queryRaw' | '$transaction'>;
-
-export function createPrismaTutorialOperations(client: TutorialClient) {
-  return createTutorialOperations({
-    ...defaultDependencies,
-    transact: (tenantId, callback) => withTenant(tenantId, callback, client),
-  });
 }
 
 export const tutorialOperations = createTutorialOperations();

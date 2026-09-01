@@ -170,6 +170,7 @@
     bottom: .6rem;
     width: calc(100vw - 1.2rem);
   }
+  .guide { max-height: calc(100svh - 1.2rem); overflow-y: auto; }
   .heading { padding-inline: .85rem; }
   .body { padding-inline: 1rem; }
   .resume { grid-template-columns: 2.5rem minmax(0, 1fr); }

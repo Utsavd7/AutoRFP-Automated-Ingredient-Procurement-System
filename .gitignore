@@ -79,6 +79,8 @@ next-env.d.ts
 
 # ── Local design exploration ───────────────────────────────
 /.superpowers/
+/AGENTS.md
+/CLAUDE.md
 
 # ── One-off test files ────────────────────────────────────
 test.js

@@ -12,3 +12,5 @@
 @media(max-width:56rem){.purchaseOrders{grid-template-columns:1fr}.purchaseOrders>p{margin:0}}
 @media(max-width:44rem){.exportPanel>header{align-items:flex-start;flex-direction:column}.exportPanel>header>span{max-width:none;text-align:left}.exportGrid{grid-template-columns:1fr}.exportGrid>button,.purchaseOrders button{min-height:4.75rem}.purchaseOrders{padding:.75rem}}
 .grantNotviewed{color:#5c5c56}
+.itemRow>span:first-child{display:grid;gap:.22rem}.itemRow a{width:fit-content;display:inline-flex;align-items:center;gap:.3rem;color:#82451f;font-size:.7rem;font-weight:750;text-underline-offset:.16rem}.itemRow a svg{width:.72rem;height:.72rem}
+.quoteBreakdown,.quoteFacts{font-size:.75rem}.quoteCards article>p{font-size:.75rem}.comparisonWrap thead th{font-size:.72rem}.comparisonWrap tbody th,.comparisonWrap td>strong{font-size:.78rem}.comparisonWrap tbody th small,.comparisonWrap td small,.comparisonWrap td em{font-size:.72rem}.unavailable{font-size:.75rem}

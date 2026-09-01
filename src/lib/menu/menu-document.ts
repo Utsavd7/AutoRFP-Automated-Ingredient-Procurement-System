@@ -601,6 +601,61 @@ const REVIEWED_TEMPLATES: Readonly<Record<string, readonly TemplateItem[]>> = {
     { itemKey: 'urad-dal', name: 'Urad dal', quantity: '0.25', unit: 'KILOGRAM' },
     { itemKey: 'potato', name: 'Potato', quantity: '0.5', unit: 'KILOGRAM' },
   ],
+  rajma: [
+    { itemKey: 'rajma', name: 'Rajma', quantity: '1', unit: 'KILOGRAM' },
+    { itemKey: 'onion', name: 'Onion', quantity: '0.35', unit: 'KILOGRAM' },
+    { itemKey: 'tomato', name: 'Tomato', quantity: '0.4', unit: 'KILOGRAM' },
+    { itemKey: 'spices', name: 'Spices', quantity: '0.05', unit: 'KILOGRAM' },
+  ],
+  chole: [
+    { itemKey: 'chickpeas', name: 'Chickpeas', quantity: '1', unit: 'KILOGRAM' },
+    { itemKey: 'onion', name: 'Onion', quantity: '0.35', unit: 'KILOGRAM' },
+    { itemKey: 'tomato', name: 'Tomato', quantity: '0.4', unit: 'KILOGRAM' },
+    { itemKey: 'spices', name: 'Spices', quantity: '0.05', unit: 'KILOGRAM' },
+  ],
+  'veg biryani': [
+    { itemKey: 'basmati-rice', name: 'Basmati rice', quantity: '1', unit: 'KILOGRAM' },
+    { itemKey: 'mixed-vegetables', name: 'Mixed vegetables', quantity: '0.75', unit: 'KILOGRAM' },
+    { itemKey: 'yogurt', name: 'Yogurt', quantity: '0.25', unit: 'KILOGRAM' },
+    { itemKey: 'biryani-masala', name: 'Biryani masala', quantity: '0.05', unit: 'KILOGRAM' },
+  ],
+  'chicken biryani': [
+    { itemKey: 'basmati-rice', name: 'Basmati rice', quantity: '1', unit: 'KILOGRAM' },
+    { itemKey: 'chicken', name: 'Chicken', quantity: '1', unit: 'KILOGRAM' },
+    { itemKey: 'yogurt', name: 'Yogurt', quantity: '0.25', unit: 'KILOGRAM' },
+    { itemKey: 'biryani-masala', name: 'Biryani masala', quantity: '0.05', unit: 'KILOGRAM' },
+  ],
+  idli: [
+    { itemKey: 'idli-rice', name: 'Idli rice', quantity: '1', unit: 'KILOGRAM' },
+    { itemKey: 'urad-dal', name: 'Urad dal', quantity: '0.3', unit: 'KILOGRAM' },
+  ],
+  poha: [
+    { itemKey: 'poha', name: 'Poha', quantity: '1', unit: 'KILOGRAM' },
+    { itemKey: 'onion', name: 'Onion', quantity: '0.3', unit: 'KILOGRAM' },
+    { itemKey: 'peanuts', name: 'Peanuts', quantity: '0.15', unit: 'KILOGRAM' },
+  ],
+  'pav bhaji': [
+    { itemKey: 'potato', name: 'Potato', quantity: '1', unit: 'KILOGRAM' },
+    { itemKey: 'mixed-vegetables', name: 'Mixed vegetables', quantity: '1', unit: 'KILOGRAM' },
+    { itemKey: 'pav', name: 'Pav', quantity: '12', unit: 'PIECE' },
+    { itemKey: 'butter', name: 'Butter', quantity: '0.2', unit: 'KILOGRAM' },
+  ],
+  'butter chicken': [
+    { itemKey: 'chicken', name: 'Chicken', quantity: '1', unit: 'KILOGRAM' },
+    { itemKey: 'tomato', name: 'Tomato', quantity: '0.5', unit: 'KILOGRAM' },
+    { itemKey: 'butter', name: 'Butter', quantity: '0.2', unit: 'KILOGRAM' },
+    { itemKey: 'cream', name: 'Cream', quantity: '0.2', unit: 'LITRE' },
+  ],
+  'palak paneer': [
+    { itemKey: 'spinach', name: 'Spinach', quantity: '1', unit: 'KILOGRAM' },
+    { itemKey: 'paneer', name: 'Paneer', quantity: '0.6', unit: 'KILOGRAM' },
+    { itemKey: 'onion', name: 'Onion', quantity: '0.25', unit: 'KILOGRAM' },
+  ],
+  sambar: [
+    { itemKey: 'toor-dal', name: 'Toor dal', quantity: '1', unit: 'KILOGRAM' },
+    { itemKey: 'mixed-vegetables', name: 'Mixed vegetables', quantity: '0.75', unit: 'KILOGRAM' },
+    { itemKey: 'tamarind', name: 'Tamarind', quantity: '0.08', unit: 'KILOGRAM' },
+  ],
 };
 
 const DISH_NAME_ITEMS: readonly TemplateItem[] = [

@@ -23,7 +23,7 @@ const request: PublicQuoteRequestDto = {
     {
       id: 'tomato', itemKey: 'tomato', name: 'Tomato', quantity: '100',
       unit: 'KILOGRAM',
-      specification: { v: 1, category: 'VEGETABLES' },
+      specification: { v: 1, category: 'VEGETABLES', referenceUrl: 'https://example.com/tomato-grade-a' },
     },
     {
       id: 'paneer', itemKey: 'paneer', name: 'Paneer', quantity: '25.5',
@@ -50,6 +50,8 @@ test('supplier quote form is understandable, complete, and account-free', () => 
   expect(html).toContain('Use the service entrance before 8 AM.');
   expect(html).toContain('Tomato');
   expect(html).toContain('100 kg');
+  expect(html).toContain('View food reference');
+  expect(html).toContain('https://example.com/tomato-grade-a');
   expect(html).toContain('Paneer');
   expect(html).toContain('Price per kg');
   expect(html).toContain('GST %');

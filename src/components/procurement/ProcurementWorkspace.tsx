@@ -160,8 +160,8 @@ export function ProcurementWorkspace({
                 <span>{request.itemCount} {request.itemCount === 1 ? 'item' : 'items'}</span>
                 <span>{request.supplierCount} {request.supplierCount === 1 ? 'supplier' : 'suppliers'}</span>
               </span>
-              <span className={styles.date}><CalendarDays aria-hidden="true" />{deadlineText(request.quoteDeadline)}</span>
-              <span className={styles.date}>{shortDate(request.deliveryDate)}</span>
+              <span className={styles.date}><small className={styles.mobileLabel}>Quote by</small><CalendarDays aria-hidden="true" />{deadlineText(request.quoteDeadline)}</span>
+              <span className={styles.date}><small className={styles.mobileLabel}>Delivery</small>{shortDate(request.deliveryDate)}</span>
               <span><i className={styles[`status${request.status}`]}>{statusLabel[request.status]}</i></span>
               <ArrowRight className={styles.arrow} aria-hidden="true" />
             </button>

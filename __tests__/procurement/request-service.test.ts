@@ -1,6 +1,7 @@
 import { DOCUMENT_LIMITS } from '@/lib/domain/document-limits';
 import {
   buildDefaultSourcingSelection,
+  preserveRequestSourcingOverrides,
   collectExplicitSupplierIds,
   RequestDocumentValidationError,
   requestAcceptsVerifiedApplications,
@@ -198,6 +199,15 @@ describe('compact request documents and request commands', () => {
       currentSupplierIds: ['current-b'],
       selectedNewSupplierIds: ['new-a'],
       acceptVerifiedApplications: true,
+    });
+  });
+
+  it('preserves item specific supplier choices while the default selection changes', () => {
+    expect(preserveRequestSourcingOverrides(
+      { v: 1, items: [item('ingredient-a', selectedNewOnly), item('ingredient-b')] },
+    )).toEqual({
+      v: 1,
+      items: [item('ingredient-a', selectedNewOnly), item('ingredient-b')],
     });
   });
 

@@ -5,6 +5,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 
 import {
   buildDefaultSourcingSelection,
+  preserveRequestSourcingOverrides,
   type RequestItemsV1,
   type RequestSourcingV1,
 } from '@/lib/procurement/request-document';
@@ -197,13 +198,7 @@ export function DraftRequestEditor({
         body: JSON.stringify({
           expectedVersion: request.version,
           title: title.trim(),
-          items: {
-            v: 1,
-            items: request.items.items.map((item) => ({
-              ...item,
-              sourcingOverride: null,
-            })),
-          },
+          items: preserveRequestSourcingOverrides(request.items),
           sourcing: {
             v: 1,
             default: defaultSourcing,

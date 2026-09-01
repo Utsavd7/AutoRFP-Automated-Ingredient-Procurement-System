@@ -6,6 +6,8 @@ export const MAX_PHOTO_TRANSFER_BATCH_BYTES = 40 * 1_024 * 1_024;
 export const MAX_PHOTO_TRANSFER_ENCRYPTED_OVERHEAD_BYTES = 16;
 export const MAX_PHOTO_TRANSFER_FILENAME_LENGTH = 120;
 export const MAX_PHOTO_TRANSFER_TOKEN_LENGTH = 1_024;
+export const MAX_PHOTO_TRANSFER_METADATA_HEADER_LENGTH = 1_024;
+export const PHOTO_TRANSFER_METADATA_HEADER = 'x-photo-transfer-metadata';
 
 export const PHOTO_TRANSFER_MIME_TYPES = [
   'image/jpeg',
@@ -80,7 +82,7 @@ function invalidManifest(): never {
   throw new Error('Invalid photo transfer manifest.');
 }
 
-function parseFileMetadata(
+export function parsePhotoTransferFileMetadata(
   value: unknown,
   expectedIndex: number,
 ): PhotoTransferFileMetadata {
@@ -168,7 +170,8 @@ export function parsePhotoTransferManifest(stored: unknown): PhotoTransferManife
     completedAt = Number(value.completedAt);
   }
 
-  const files = value.files.map((file, index) => parseFileMetadata(file, index));
+  const files = value.files.map((file, index) =>
+    parsePhotoTransferFileMetadata(file, index));
   const totalSize = files.reduce((total, file) => total + file.size, 0);
   if (totalSize > MAX_PHOTO_TRANSFER_BATCH_BYTES) return invalidManifest();
 
@@ -179,4 +182,94 @@ export function parsePhotoTransferManifest(stored: unknown): PhotoTransferManife
     ...(completedAt === undefined ? {} : { completedAt }),
     files,
   };
+}
+
+export class PhotoTransferMetadataHeaderError extends Error {
+  constructor(readonly kind: 'MALFORMED' | 'INVALID') {
+    super('Invalid photo transfer metadata.');
+    this.name = 'PhotoTransferMetadataHeaderError';
+  }
+}
+
+function encodeBase64Url(bytes: Uint8Array) {
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
+
+function decodeBase64Url(value: string) {
+  if (
+    value.length === 0
+    || value.length > MAX_PHOTO_TRANSFER_METADATA_HEADER_LENGTH
+    || !/^[A-Za-z0-9_-]+$/.test(value)
+    || value.length % 4 === 1
+  ) {
+    throw new PhotoTransferMetadataHeaderError('MALFORMED');
+  }
+
+  try {
+    const padded = `${value.replace(/-/g, '+').replace(/_/g, '/')}${'='.repeat((4 - value.length % 4) % 4)}`;
+    const binary = atob(padded);
+    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+    if (encodeBase64Url(bytes) !== value) {
+      throw new PhotoTransferMetadataHeaderError('MALFORMED');
+    }
+    return bytes;
+  } catch (error) {
+    if (error instanceof PhotoTransferMetadataHeaderError) throw error;
+    throw new PhotoTransferMetadataHeaderError('MALFORMED');
+  }
+}
+
+export function encodePhotoTransferMetadataHeader(
+  value: PhotoTransferFileMetadata,
+) {
+  let metadata: PhotoTransferFileMetadata;
+  try {
+    metadata = parsePhotoTransferFileMetadata(value, value.index);
+  } catch {
+    throw new PhotoTransferMetadataHeaderError('INVALID');
+  }
+  const encoded = encodeBase64Url(
+    new TextEncoder().encode(JSON.stringify(metadata)),
+  );
+  if (encoded.length > MAX_PHOTO_TRANSFER_METADATA_HEADER_LENGTH) {
+    throw new PhotoTransferMetadataHeaderError('INVALID');
+  }
+  return encoded;
+}
+
+export function parsePhotoTransferMetadataHeader(
+  value: string | null,
+): PhotoTransferFileMetadata {
+  if (value === null) throw new PhotoTransferMetadataHeaderError('MALFORMED');
+
+  let parsed: unknown;
+  try {
+    const decoded = new TextDecoder('utf-8', { fatal: true }).decode(
+      decodeBase64Url(value),
+    );
+    parsed = JSON.parse(decoded) as unknown;
+  } catch (error) {
+    if (error instanceof PhotoTransferMetadataHeaderError) throw error;
+    throw new PhotoTransferMetadataHeaderError('MALFORMED');
+  }
+
+  try {
+    const index = typeof parsed === 'object'
+      && parsed !== null
+      && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>).index
+      : undefined;
+    if (!Number.isInteger(index)) {
+      throw new PhotoTransferMetadataHeaderError('INVALID');
+    }
+    return parsePhotoTransferFileMetadata(parsed, Number(index));
+  } catch (error) {
+    if (error instanceof PhotoTransferMetadataHeaderError) throw error;
+    throw new PhotoTransferMetadataHeaderError('INVALID');
+  }
 }

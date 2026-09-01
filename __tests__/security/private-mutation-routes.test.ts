@@ -48,4 +48,17 @@ describe('private browser mutation route matrix', () => {
     expect(code.indexOf('dependencies.rateLimit(', checkAt)).toBeGreaterThan(checkAt);
     expect(code).toContain('privateMutationResponse');
   });
+
+  it('protects photo-transfer laptop and phone mutations before auth or storage', () => {
+    const code = source('src/lib/menu/photo-transfer-http.ts');
+    const laptopGuard = code.indexOf('browserJsonMutationRejection(request');
+    const uploadOriginGuard = code.indexOf('browserMutationOriginRejection(request');
+
+    expect(laptopGuard).toBeGreaterThan(-1);
+    expect(code.indexOf('dependencies.accountContext()', laptopGuard)).toBeGreaterThan(laptopGuard);
+    expect(uploadOriginGuard).toBeGreaterThan(-1);
+    expect(code.indexOf('phoneSession(token)', uploadOriginGuard)).toBeGreaterThan(uploadOriginGuard);
+    expect(code).toContain('dependencies.storeFactory()');
+    expect(code).toContain('privateNoStoreResponse');
+  });
 });

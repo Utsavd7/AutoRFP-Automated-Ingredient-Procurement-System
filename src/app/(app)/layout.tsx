@@ -152,20 +152,55 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, [accountRetry, router]);
 
   useEffect(() => {
-    if (!ready || !account || document.visibilityState !== 'visible') return;
+    if (!ready || !account) return;
+    let warmed = false;
+    let scheduled = false;
+    let idleId: number | null = null;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+    const cancelScheduledWarm = () => {
+      if (idleId !== null) window.cancelIdleCallback(idleId);
+      if (timeoutId !== null) clearTimeout(timeoutId);
+      idleId = null;
+      timeoutId = null;
+      scheduled = false;
+    };
     const warmWorkspaceRoutes = () => {
+      idleId = null;
+      timeoutId = null;
+      scheduled = false;
+      if (document.visibilityState !== 'visible') return;
+      warmed = true;
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       void Promise.all(
         Object.values(WORKSPACE_FIRST_REQUESTS).map((url) => prefetchWorkspace(url)),
       );
     };
 
-    if ('requestIdleCallback' in window) {
-      const idleId = window.requestIdleCallback(warmWorkspaceRoutes, { timeout: 1_500 });
-      return () => window.cancelIdleCallback(idleId);
-    }
+    const scheduleWarm = () => {
+      if (warmed || scheduled || document.visibilityState !== 'visible') return;
+      scheduled = true;
+      if ('requestIdleCallback' in window) {
+        idleId = window.requestIdleCallback(warmWorkspaceRoutes, { timeout: 1_500 });
+        return;
+      }
+      timeoutId = setTimeout(warmWorkspaceRoutes, 150);
+    };
 
-    const timeoutId = setTimeout(warmWorkspaceRoutes, 150);
-    return () => clearTimeout(timeoutId);
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') {
+        cancelScheduledWarm();
+        return;
+      }
+      scheduleWarm();
+    };
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    scheduleWarm();
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      cancelScheduledWarm();
+    };
   }, [account, ready]);
 
   useEffect(() => {

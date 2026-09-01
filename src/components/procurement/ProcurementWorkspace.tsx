@@ -68,16 +68,16 @@ export function ProcurementWorkspace({
   const [loadingMore, setLoadingMore] = useState(false);
   const initialLoadStarted = useRef(false);
 
-  const loadRequests = useCallback(async (cursor?: string) => {
+  const loadRequests = useCallback(async (cursor?: string, usePrefetch = false) => {
     if (cursor) setLoadingMore(true);
     else setLoading(true);
     setError('');
     try {
       const params = new URLSearchParams({ limit: '50' });
       if (cursor) params.set('cursor', cursor);
-      const response = await (cursor
-        ? fetch(`/api/requests?${params}`, { cache: 'no-store' })
-        : workspaceFetch('/api/requests?limit=50', { cache: 'no-store' }));
+      const response = await (usePrefetch
+        ? workspaceFetch('/api/requests?limit=50', { cache: 'no-store' })
+        : fetch(`/api/requests?${params}`, { cache: 'no-store' }));
       if (!response.ok) throw new Error(await responseMessage(response, 'We could not load procurement requests.'));
       const result = (await response.json()) as { requests?: ProcurementRequestSummary[]; nextCursor?: string | null };
       const loaded = result.requests ?? [];
@@ -96,7 +96,7 @@ export function ProcurementWorkspace({
   useEffect(() => {
     if (initialRequests !== undefined || initialLoadStarted.current) return;
     initialLoadStarted.current = true;
-    void loadRequests();
+    void loadRequests(undefined, true);
   }, [initialRequests, loadRequests]);
 
   const shown = filter === 'ALL' ? requests : requests.filter(({ status }) => status === filter);

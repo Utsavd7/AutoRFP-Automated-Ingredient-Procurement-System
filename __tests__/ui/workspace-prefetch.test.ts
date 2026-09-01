@@ -149,8 +149,32 @@ describe('workspace prefetch', () => {
     expect(source).toContain('onPointerEnter={() => void prefetchWorkspace');
     expect(source).toContain('onFocus={() => void prefetchWorkspace');
     expect(source).toContain("document.visibilityState !== 'visible'");
+    expect(source).toContain("document.addEventListener('visibilitychange', onVisibilityChange)");
+    expect(source).toContain("document.removeEventListener('visibilitychange', onVisibilityChange)");
+    expect(source).toContain('if (warmed || scheduled || document.visibilityState');
+    expect(source).toContain('warmed = true');
     expect(source).toContain('requestIdleCallback');
     expect(source).toContain('cancelIdleCallback');
+  });
+
+  it('uses prefetched responses only from procurement and menu initial effects', () => {
+    const procurement = readFileSync(
+      join(process.cwd(), 'src', 'components', 'procurement', 'ProcurementWorkspace.tsx'),
+      'utf8',
+    );
+    const menus = readFileSync(
+      join(process.cwd(), 'src', 'components', 'menus', 'MenuWorkspace.tsx'),
+      'utf8',
+    );
+
+    expect(procurement).toContain('async (cursor?: string, usePrefetch = false)');
+    expect(procurement).toContain('void loadRequests(undefined, true)');
+    expect(procurement).toContain('usePrefetch\n        ? workspaceFetch');
+    expect(procurement).toContain('onClick={() => void loadRequests()}>Try again');
+    expect(menus).toContain('async (cursor?: string, usePrefetch = false)');
+    expect(menus).toContain('void loadMenus(undefined, true)');
+    expect(menus).toContain('usePrefetch\n        ? workspaceFetch');
+    expect(menus).toContain('onClick={() => void loadMenus()}>Try again');
   });
 
   it('uses the prefetched response only for each matching first page', () => {

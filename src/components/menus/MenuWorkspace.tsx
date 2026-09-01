@@ -638,16 +638,16 @@ export function MenuWorkspace({
   const [loadingMore, setLoadingMore] = useState(false);
   const initialLoadStarted = useRef(false);
 
-  const loadMenus = useCallback(async (cursor?: string) => {
+  const loadMenus = useCallback(async (cursor?: string, usePrefetch = false) => {
     if (cursor) setLoadingMore(true);
     else setLoading(true);
     setError('');
     try {
       const params = new URLSearchParams({ limit: '50' });
       if (cursor) params.set('cursor', cursor);
-      const response = await (cursor
-        ? fetch(`/api/menus?${params}`, { cache: 'no-store' })
-        : workspaceFetch('/api/menus?limit=50', { cache: 'no-store' }));
+      const response = await (usePrefetch
+        ? workspaceFetch('/api/menus?limit=50', { cache: 'no-store' })
+        : fetch(`/api/menus?${params}`, { cache: 'no-store' }));
       if (!response.ok) throw new Error(await responseMessage(response, 'We could not load menus.'));
       const result = (await response.json()) as { menus?: MenuSummary[]; nextCursor?: string | null };
       const loaded = result.menus ?? [];
@@ -666,7 +666,7 @@ export function MenuWorkspace({
   useEffect(() => {
     if (initialMenus !== undefined || initialLoadStarted.current) return;
     initialLoadStarted.current = true;
-    void loadMenus();
+    void loadMenus(undefined, true);
   }, [initialMenus, loadMenus]);
 
   useEffect(() => {

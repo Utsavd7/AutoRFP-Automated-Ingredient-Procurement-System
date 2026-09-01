@@ -24,20 +24,23 @@ describe('local menu photo intake', () => {
     expect(mergeMenuPhotoFiles([first], [second])).toEqual([first, second]);
   });
 
-  it('accepts at most five bounded images and checks decoded pixels before OCR', async () => {
+  it('accepts at most ten bounded images and checks decoded pixels before OCR', async () => {
     const dimensions = jest.fn().mockResolvedValue({ width: 4_000, height: 3_000 });
+    const tenPhotos = Array.from({ length: 10 }, (_, index) => photo({
+      name: `menu-${index + 1}.jpg`,
+    }));
 
     await expect(validateMenuPhotoSelection(
-      [photo(), photo(), photo(), photo(), photo()],
+      tenPhotos,
       dimensions,
-    )).resolves.toHaveLength(5);
-    expect(dimensions).toHaveBeenCalledTimes(5);
+    )).resolves.toHaveLength(10);
+    expect(dimensions).toHaveBeenCalledTimes(10);
 
     dimensions.mockClear();
     await expect(validateMenuPhotoSelection(
-      [photo(), photo(), photo(), photo(), photo(), photo()],
+      [...tenPhotos, photo({ name: 'menu-11.jpg' })],
       dimensions,
-    )).rejects.toThrow('up to 5');
+    )).rejects.toThrow('up to 10');
     expect(dimensions).not.toHaveBeenCalled();
   });
 

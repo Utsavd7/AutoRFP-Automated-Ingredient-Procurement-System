@@ -1,4 +1,4 @@
-export const MAX_MENU_IMAGES = 5;
+export const MAX_MENU_IMAGES = 10;
 export const MAX_MENU_IMAGE_BYTES = 8 * 1_024 * 1_024;
 export const MAX_MENU_IMAGE_PIXELS = 20_000_000;
 export const MAX_MENU_IMAGE_EDGE = 8_000;
@@ -38,7 +38,7 @@ export async function validateMenuPhotoSelection<T extends MenuPhotoCandidate>(
   readDimensions: (photo: T) => Promise<MenuImageDimensions>,
 ) {
   if (photos.length === 0 || photos.length > MAX_MENU_IMAGES) {
-    throw new Error('Choose between 1 and up to 5 menu photos.');
+    throw new Error('Choose between 1 and up to 10 menu photos.');
   }
 
   for (const photo of photos) {

@@ -20,6 +20,67 @@ export type MenuImageDimensions = {
   height: number;
 };
 
+export type RecognizedMenuLine = {
+  text: string;
+  confidence: number;
+};
+
+const LEADING_MENU_MARKER = /^(?:[\u2022\u00b7\u25cf\u25e6\u25aa\u25ab*-]+\s*|\d{1,3}\s*[.)]\s*)/;
+const PRICE = /(?:₹\s*|(?:rs\.?|inr)\s*)\d+(?:\.\d{1,2})?/i;
+const PRICE_AMOUNT = /(?:₹\s*|(?:rs\.?|inr)\s*)?\d+(?:\.\d{1,2})?/i;
+const BARE_PRICE = /\b(?:1\d{2}|[2-9]\d{2,})(?:\.\d{1,2})?\s*$/;
+const CATEGORY_HEADING = /^(?:veg(?:etarian)?\s+)?(?:starters?|appeti[sz]ers?|soups?|salads?|mains?|main\s+course|curr(?:y|ies)|tandoori|breads?|rice|noodles?|pasta|pizza|burgers?|sandwiches|desserts?|beverages?|drinks?|mocktails?|cocktails?|tea|coffee|breakfast|combos?|thalis?|sweets?|non[ -]?veg|specials?|chef'?s\s+specials?|signature\s+dishes|menu)$/i;
+const METADATA = /\b(?:gst|tax(?:es)?|phone|mobile|contact|call|whatsapp|order\s+(?:now|online)|available\s+on|swiggy|zomato|home\s+delivery|dine[ -]?in|takeaway|timings?|hours?|address)\b/i;
+const DESCRIPTION = /^(?:served\s+with|made\s+with|choice\s+of)\b/i;
+
+function isPriceOnly(text: string) {
+  return new RegExp(`^${PRICE.source}\\s*(?:\\/-)?$`, 'i').test(text) || /^\d+(?:\.\d{1,2})?\s*\/?-?$/.test(text);
+}
+
+function stripTrailingPrices(text: string) {
+  let cleaned = text;
+  // Menus commonly put two size prices after a dish, e.g. "Half 180 Full 320".
+  cleaned = cleaned.replace(new RegExp(`\\s+(?:half|full)\\s+${PRICE_AMOUNT.source}(?:\\s+(?:half|full)\\s+${PRICE_AMOUNT.source})*\\s*$`, 'i'), '');
+  cleaned = cleaned.replace(new RegExp(`\\s+${PRICE.source}\\s*(?:\\/-)?\\s*$`, 'i'), '');
+  cleaned = cleaned.replace(/\s+\d+(?:\.\d{1,2})?\s*\/-\s*$/, '');
+  return cleaned.replace(BARE_PRICE, '').trim();
+}
+
+/**
+ * Removes high-confidence menu OCR noise while retaining uncertain dish names.
+ */
+export function cleanRecognizedMenuLines(
+  lines: readonly RecognizedMenuLine[],
+): RecognizedMenuLine[] {
+  const seen = new Set<string>();
+  const cleaned: RecognizedMenuLine[] = [];
+
+  for (const line of lines) {
+    let text = line.text.replace(/\s+/g, ' ').trim().replace(LEADING_MENU_MARKER, '').trim();
+    if (
+      text.length === 0 ||
+      /^[^\p{L}\p{N}]+$/u.test(text) ||
+      isPriceOnly(text) ||
+      CATEGORY_HEADING.test(text) ||
+      DESCRIPTION.test(text) ||
+      METADATA.test(text) ||
+      (/\bopen\b.*\b(?:am|pm)\b/i.test(text)) ||
+      (/^\d+\s+.*\b(?:road|rd\.?|street|st\.?|lane|nagar|colony)\b/i.test(text)) ||
+      /(?:\+?\d[\d\s()-]*){10,}/.test(text)
+    ) continue;
+
+    text = stripTrailingPrices(text);
+    if (!/\p{L}/u.test(text)) continue;
+
+    const key = text.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    cleaned.push({ text, confidence: line.confidence });
+  }
+
+  return cleaned;
+}
+
 export function mergeMenuPhotoFiles<T>(
   current: readonly T[],
   incoming: readonly T[],

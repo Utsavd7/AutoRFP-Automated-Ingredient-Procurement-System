@@ -1,15 +1,14 @@
 import type { Worker } from 'tesseract.js';
+import {
+  cleanRecognizedMenuLines,
+  type RecognizedMenuLine,
+} from './photo-intake';
 
 type OcrProgress = {
   image: number;
   total: number;
   progress: number;
   status: string;
-};
-
-type RecognizedLine = {
-  text: string;
-  confidence: number;
 };
 
 function abortError() {
@@ -20,7 +19,7 @@ function checkedSignal(signal: AbortSignal) {
   if (signal.aborted) throw abortError();
 }
 
-function resultLines(result: Tesseract.Page): RecognizedLine[] {
+function resultLines(result: Tesseract.Page): RecognizedMenuLine[] {
   const lines = result.blocks?.flatMap((block) =>
     block.paragraphs.flatMap((paragraph) => paragraph.lines),
   ) ?? [];
@@ -83,7 +82,7 @@ export async function recognizeMenuPhotos(
     });
     checkedSignal(options.signal);
 
-    const recognized: RecognizedLine[] = [];
+    const recognized: RecognizedMenuLine[] = [];
     for (const [index, photo] of photos.entries()) {
       checkedSignal(options.signal);
       activeImage = index + 1;
@@ -102,9 +101,10 @@ export async function recognizeMenuPhotos(
       recognized.push(...resultLines(result.data));
     }
 
+    const cleaned = cleanRecognizedMenuLines(recognized);
     return {
-      text: recognized.map((line) => line.text).join('\n'),
-      confidences: recognized.map((line) => line.confidence),
+      text: cleaned.map((line) => line.text).join('\n'),
+      confidences: cleaned.map((line) => line.confidence),
     };
   } catch (error) {
     if (options.signal.aborted) throw abortError();
@@ -114,4 +114,3 @@ export async function recognizeMenuPhotos(
     await terminate();
   }
 }
-

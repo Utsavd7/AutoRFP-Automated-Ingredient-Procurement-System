@@ -28,6 +28,9 @@ describe('parseMenuInput', () => {
     'http://restaurant.example/menu.pdf',
     'ftp://restaurant.example/menu.txt',
     'www.restaurant.example/menu',
+    'data:image/png;base64,AA==',
+    'blob:https://restaurant.example/photo-id',
+    'file:///Users/owner/menu.pdf',
   ])('rejects URL-like menu text: %s', (menuText) => {
     const result = parseMenuInput({ menuText });
 
@@ -40,6 +43,97 @@ describe('parseMenuInput', () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.errors.sourceUrl).toBeDefined();
+  });
+
+  it('rejects unknown top-level and nested fields instead of silently trusting them', () => {
+    const topLevel = parseMenuInput({
+      menuText: 'Paneer Tikka',
+      tenantId: 'client-controlled-tenant',
+    });
+    const nested = parseMenuInput({
+      menuText: 'Paneer Tikka',
+      source: {
+        kind: 'OCR',
+        documentKind: 'MENU',
+        lines: [{ text: 'Paneer Tikka', confidence: 0.92, imageBase64: 'data:image/png;base64,AA==' }],
+      },
+    });
+
+    expect(topLevel).toEqual(expect.objectContaining({ ok: false }));
+    expect(nested).toEqual(expect.objectContaining({ ok: false }));
+  });
+
+  it('accepts bounded OCR text and transient confidence evidence without retaining image data', () => {
+    expect(parseMenuInput({
+      menuText: 'Tomato\nOnion',
+      source: {
+        kind: 'OCR',
+        documentKind: 'BUYING_LIST',
+        lines: [
+          { text: 'Tomato', confidence: 0.94 },
+          { text: 'Onion', confidence: 0.71 },
+        ],
+      },
+    })).toEqual({
+      ok: true,
+      value: {
+        menuText: 'Tomato\nOnion',
+        source: {
+          kind: 'OCR',
+          canonicalUrl: null,
+          permissionConfirmed: false,
+        },
+      },
+    });
+  });
+
+  test.each([
+    ['an unsupported document kind', { documentKind: 'PHOTO' }],
+    ['confidence above one', { lines: [{ text: 'Tomato', confidence: 1.01 }, { text: 'Onion', confidence: 0.8 }] }],
+    ['confidence below zero', { lines: [{ text: 'Tomato', confidence: -0.01 }, { text: 'Onion', confidence: 0.8 }] }],
+    ['non-finite confidence', { lines: [{ text: 'Tomato', confidence: Number.NaN }, { text: 'Onion', confidence: 0.8 }] }],
+    ['text that disagrees with the reviewed lines', { lines: [{ text: 'Potato', confidence: 0.9 }] }],
+  ])('rejects OCR payload with %s', (_label, change) => {
+    const source = {
+      kind: 'OCR',
+      documentKind: 'BUYING_LIST',
+      lines: [
+        { text: 'Tomato', confidence: 0.94 },
+        { text: 'Onion', confidence: 0.71 },
+      ],
+      ...change,
+    };
+    expect(parseMenuInput({ menuText: 'Tomato\nOnion', source }))
+      .toEqual(expect.objectContaining({ ok: false }));
+  });
+
+  it('accepts only a confirmed canonical permitted URL provenance value', () => {
+    expect(parseMenuInput({
+      menuText: 'Paneer Tikka',
+      source: {
+        kind: 'PERMITTED_URL',
+        canonicalUrl: 'https://restaurant.example/menu',
+        permissionConfirmed: true,
+      },
+    })).toEqual({
+      ok: true,
+      value: {
+        menuText: 'Paneer Tikka',
+        source: {
+          kind: 'PERMITTED_URL',
+          canonicalUrl: 'https://restaurant.example/menu',
+          permissionConfirmed: true,
+        },
+      },
+    });
+    expect(parseMenuInput({
+      menuText: 'Paneer Tikka',
+      source: {
+        kind: 'PERMITTED_URL',
+        canonicalUrl: 'https://restaurant.example/menu?tracking=1',
+        permissionConfirmed: true,
+      },
+    })).toEqual(expect.objectContaining({ ok: false }));
   });
 
   it('measures the 100,000-byte limit as UTF-8 bytes', () => {

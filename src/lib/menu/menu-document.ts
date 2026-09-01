@@ -169,10 +169,11 @@ function canonicalSourceUrl(value: unknown): string {
     parsed.protocol !== 'https:' ||
     parsed.username !== '' ||
     parsed.password !== '' ||
+    parsed.search !== '' ||
     parsed.hash !== '' ||
     parsed.toString() !== value
   ) {
-    fail('Menu source canonicalUrl must be a canonical HTTPS URL without credentials or a fragment.');
+    fail('Menu source canonicalUrl must be a canonical HTTPS URL without credentials, query details, or a fragment.');
   }
   return value;
 }

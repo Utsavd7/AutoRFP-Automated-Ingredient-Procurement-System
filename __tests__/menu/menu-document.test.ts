@@ -83,6 +83,16 @@ describe('MenuDocumentV1', () => {
     );
   });
 
+  test('keeps permitted URL provenance canonical and free of tracking details', () => {
+    const input = documentWith();
+    input.source = {
+      kind: 'PERMITTED_URL',
+      canonicalUrl: 'https://restaurant.example/menu?campaign=1',
+      permissionConfirmed: true,
+    };
+    expect(() => validateMenuDocument(input)).toThrow(MenuDocumentValidationError);
+  });
+
   test.each([
     ['root keys', () => ({ ...documentWith(), extra: true })],
     [

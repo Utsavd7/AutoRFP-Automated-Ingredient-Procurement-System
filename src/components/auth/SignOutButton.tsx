@@ -5,6 +5,8 @@ import { signOut } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useId, useState } from 'react';
 
+import { setWorkspacePrefetchScope } from '@/lib/client/workspace-prefetch';
+
 type SignOutButtonProps = {
   className?: string;
 };
@@ -22,6 +24,7 @@ export function SignOutButton({ className = '' }: SignOutButtonProps) {
     setError(null);
     setPending(true);
     try {
+      setWorkspacePrefetchScope(null);
       await signOut({ callbackUrl: '/signin', redirect: false });
       const account = await fetch('/api/account', { cache: 'no-store' });
       if (account.status !== 401) throw new Error('Session is still active');

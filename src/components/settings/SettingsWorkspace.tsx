@@ -28,8 +28,8 @@ import {
 import { createSignInRedirect } from '@/lib/auth/callback-url';
 import type { WorkspaceSettingsData as SettingsData } from '@/lib/account/workspace-settings';
 import {
-  clearWorkspacePrefetch,
   workspaceFetch,
+  workspaceMutationFetch,
 } from '@/lib/client/workspace-prefetch';
 
 import styles from './settings-workspace.module.css';
@@ -246,7 +246,7 @@ export function InviteMemberDialog({
     setSaving(true);
     setError('');
     try {
-      const response = await fetch('/api/members/invitations', {
+      const response = await workspaceMutationFetch('/api/members/invitations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'invite-member', email, role }),
@@ -257,7 +257,6 @@ export function InviteMemberDialog({
       }
       const result = (await response.json()) as { invitation?: { link?: string } };
       if (!result.invitation?.link) throw new Error('The invitation link was not returned.');
-      clearWorkspacePrefetch();
       setLink(result.invitation.link);
       onCreated();
     } catch (caught) {
@@ -437,7 +436,7 @@ export function SettingsWorkspace({ initialData }: { initialData?: WorkspaceSett
     setError('');
     setFieldErrors({});
     try {
-      const response = await fetch('/api/settings', {
+      const response = await workspaceMutationFetch('/api/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ details: form }),
@@ -449,7 +448,6 @@ export function SettingsWorkspace({ initialData }: { initialData?: WorkspaceSett
       }
       const result = (await response.json()) as { workspace?: WorkspaceForm };
       if (!result.workspace) throw new Error('The saved restaurant details were not returned.');
-      clearWorkspacePrefetch();
       setForm(result.workspace);
       setData((current) => current ? { ...current, workspace: result.workspace! } : current);
       setSaved(true);
@@ -466,7 +464,7 @@ export function SettingsWorkspace({ initialData }: { initialData?: WorkspaceSett
     setActionError('');
     try {
       const invitationAction = action.type === 'invitation';
-      const response = await fetch(
+      const response = await workspaceMutationFetch(
         invitationAction ? '/api/members/invitations' : '/api/settings',
         {
           method: invitationAction ? 'DELETE' : 'POST',
@@ -480,7 +478,6 @@ export function SettingsWorkspace({ initialData }: { initialData?: WorkspaceSett
         const problem = await responseProblem(response, 'We could not change this access.');
         throw new Error(problem.message);
       }
-      clearWorkspacePrefetch();
       setAction(null);
       await load();
     } catch (caught) {

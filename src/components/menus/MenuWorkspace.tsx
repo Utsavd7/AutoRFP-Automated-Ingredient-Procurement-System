@@ -20,8 +20,8 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
-  clearWorkspacePrefetch,
   workspaceFetch,
+  workspaceMutationFetch,
 } from '@/lib/client/workspace-prefetch';
 import {
   buildReviewedOcrMenuInput,
@@ -258,7 +258,7 @@ export function MenuIntakeDialog({
     setImportingWebsite(true);
     setCreateError('');
     try {
-      const response = await fetch('/api/menu-import/url', {
+      const response = await workspaceMutationFetch('/api/menu-import/url', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -276,7 +276,6 @@ export function MenuIntakeDialog({
       if (!result.menuText || !result.canonicalUrl) {
         throw new Error('The menu text was not returned.');
       }
-      clearWorkspacePrefetch();
       setMenuText(result.menuText);
       setCanonicalWebsiteUrl(result.canonicalUrl);
     } catch (caught) {
@@ -318,7 +317,7 @@ export function MenuIntakeDialog({
     setSaving(true);
     setCreateError('');
     try {
-      const response = await fetch('/api/parse-menu', {
+      const response = await workspaceMutationFetch('/api/parse-menu', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(input),
@@ -328,7 +327,6 @@ export function MenuIntakeDialog({
       }
       const result = (await response.json()) as { menuId?: string };
       if (!result.menuId) throw new Error('The menu draft was not returned.');
-      clearWorkspacePrefetch();
       onCreated(result.menuId);
     } catch (caught) {
       setCreateError(caught instanceof Error

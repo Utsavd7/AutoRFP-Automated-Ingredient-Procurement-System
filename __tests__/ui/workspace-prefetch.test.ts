@@ -1,7 +1,10 @@
 import {
   clearWorkspacePrefetch,
   prefetchWorkspace,
+  setWorkspacePrefetchScope,
+  warmWorkspacePrefetch,
   workspaceFetch,
+  workspaceMutationFetch,
 } from '@/lib/client/workspace-prefetch';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -18,12 +21,13 @@ function jsonResponse(value: unknown, init?: ResponseInit) {
 describe('workspace prefetch', () => {
   beforeEach(() => {
     clearWorkspacePrefetch();
+    setWorkspacePrefetchScope('workspace-a');
     jest.restoreAllMocks();
     jest.useRealTimers();
   });
 
   afterEach(() => {
-    clearWorkspacePrefetch();
+    setWorkspacePrefetchScope(null);
     jest.useRealTimers();
   });
 
@@ -140,6 +144,68 @@ describe('workspace prefetch', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it('cannot consume workspace A data after switching to workspace B', async () => {
+    const fetchMock = jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse({ workspace: 'a' }))
+      .mockResolvedValueOnce(jsonResponse({ workspace: 'b' }));
+
+    await prefetchWorkspace(overviewUrl);
+    setWorkspacePrefetchScope('workspace-b');
+    const response = await workspaceFetch(overviewUrl);
+
+    await expect(response.json()).resolves.toEqual({ workspace: 'b' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not prefetch or consume cached data without an active workspace scope', async () => {
+    const fetchMock = jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(jsonResponse({ source: 'network' }));
+    setWorkspacePrefetchScope(null);
+
+    await prefetchWorkspace(overviewUrl);
+    const response = await workspaceFetch(overviewUrl);
+
+    await expect(response.json()).resolves.toEqual({ source: 'network' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears cached first pages only after a successful non-GET mutation', async () => {
+    const fetchMock = jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse({ source: 'prefetch' }))
+      .mockResolvedValueOnce(jsonResponse({ saved: true }))
+      .mockResolvedValueOnce(jsonResponse({ source: 'network' }));
+
+    await prefetchWorkspace(overviewUrl);
+    await workspaceMutationFetch('/api/requests', { method: 'POST' });
+    const response = await workspaceFetch(overviewUrl);
+
+    await expect(response.json()).resolves.toEqual({ source: 'network' });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('keeps at most two idle warm requests active and excludes the current route', async () => {
+    let active = 0;
+    let maximumActive = 0;
+    const requested: string[] = [];
+    jest.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      requested.push(String(input));
+      active += 1;
+      maximumActive = Math.max(maximumActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active -= 1;
+      return jsonResponse({ ok: true });
+    });
+
+    await warmWorkspacePrefetch('/dashboard');
+
+    expect(requested).toHaveLength(6);
+    expect(requested).not.toContain('/api/overview');
+    expect(maximumActive).toBe(2);
+  });
+
   it('prefetches sidebar destinations on intent and warms them once while idle', () => {
     const source = readFileSync(
       join(process.cwd(), 'src', 'app', '(app)', 'layout.tsx'),
@@ -155,6 +221,54 @@ describe('workspace prefetch', () => {
     expect(source).toContain('warmed = true');
     expect(source).toContain('requestIdleCallback');
     expect(source).toContain('cancelIdleCallback');
+    expect(source).toContain('warmWorkspacePrefetch(window.location.pathname)');
+    expect(source).not.toContain('Object.values(WORKSPACE_FIRST_REQUESTS).map');
+  });
+
+  it('sets and ends the private cache scope at account and sign-out boundaries', () => {
+    const layout = readFileSync(
+      join(process.cwd(), 'src', 'app', '(app)', 'layout.tsx'),
+      'utf8',
+    );
+    const signOut = readFileSync(
+      join(process.cwd(), 'src', 'components', 'auth', 'SignOutButton.tsx'),
+      'utf8',
+    );
+
+    expect(layout).toContain('setWorkspacePrefetchScope(loaded.workspaceId)');
+    expect(layout).toContain('setWorkspacePrefetchScope(null)');
+    expect(layout.indexOf('setWorkspacePrefetchScope(loaded.workspaceId)'))
+      .toBeLessThan(layout.indexOf('setReady(true)'));
+    expect(signOut).toContain('setWorkspacePrefetchScope(null)');
+    expect(signOut.indexOf('setWorkspacePrefetchScope(null)'))
+      .toBeLessThan(signOut.indexOf("signOut({ callbackUrl: '/signin'"));
+  });
+
+  it('centralizes successful signed-in mutation invalidation', () => {
+    const expectedCalls = [
+      ['src/components/procurement/NewRequestForm.tsx', "workspaceMutationFetch('/api/requests'"],
+      ['src/components/procurement/DraftRequestEditor.tsx', 'workspaceMutationFetch(`/api/requests/${encodeURIComponent(request.id)}`'],
+      ['src/components/procurement/RequestDetail.tsx', 'workspaceMutationFetch(`/api/requests/${encodeURIComponent(request.id)}/open`'],
+      ['src/components/procurement/RequestDetail.tsx', 'workspaceMutationFetch(`/api/requests/${encodeURIComponent(request.id)}/links`'],
+      ['src/components/procurement/RequestDetail.tsx', 'workspaceMutationFetch(`/api/requests/${encodeURIComponent(request.id)}/award`'],
+      ['src/components/menus/MenuEditor.tsx', 'workspaceMutationFetch(`/api/menus/${encodeURIComponent(menu.id)}`'],
+      ['src/components/menus/MenuEditor.tsx', 'workspaceMutationFetch(`/api/menus/${encodeURIComponent(saved.id)}/approve`'],
+      ['src/components/menus/MenuWorkspace.tsx', "workspaceMutationFetch('/api/menu-import/url'"],
+      ['src/components/menus/MenuWorkspace.tsx', "workspaceMutationFetch('/api/parse-menu'"],
+      ['src/components/suppliers/SupplierWorkspace.tsx', 'workspaceMutationFetch('],
+      ['src/components/settings/SettingsWorkspace.tsx', 'workspaceMutationFetch('],
+      ['src/components/reporting/HistoryWorkspace.tsx', 'workspaceMutationFetch('],
+    ] as const;
+
+    for (const [file, call] of expectedCalls) {
+      expect(readFileSync(join(process.cwd(), file), 'utf8')).toContain(call);
+    }
+
+    const requestDetail = readFileSync(
+      join(process.cwd(), 'src', 'components', 'procurement', 'RequestDetail.tsx'),
+      'utf8',
+    );
+    expect(requestDetail).toContain('fetch(`/api/requests/${encodeURIComponent(request.id)}/qr`');
   });
 
   it('uses prefetched responses only from procurement and menu initial effects', () => {

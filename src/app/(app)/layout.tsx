@@ -24,6 +24,8 @@ import { TutorialGuide } from '@/components/tutorial/TutorialGuide';
 import { createSignInRedirect } from '@/lib/auth/callback-url';
 import {
   prefetchWorkspace,
+  setWorkspacePrefetchScope,
+  warmWorkspacePrefetch,
   WORKSPACE_FIRST_REQUESTS,
 } from '@/lib/client/workspace-prefetch';
 import type { RestaurantAccount } from '@/lib/tenant';
@@ -114,6 +116,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let active = true;
+    setWorkspacePrefetchScope(null);
     const redirectToSignIn = () => {
       const currentLocation = `${window.location.pathname}${window.location.search}${window.location.hash}`;
       router.replace(createSignInRedirect(currentLocation));
@@ -129,12 +132,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         const data = (await response.json()) as {
           account?: RestaurantAccount;
           tutorial?: TutorialStateDto;
+          workspaceId?: string;
         };
-        if (!data.account) throw new Error('Account response was incomplete');
-        return data;
+        if (!data.account || !data.workspaceId) throw new Error('Account response was incomplete');
+        return {
+          account: data.account,
+          tutorial: data.tutorial,
+          workspaceId: data.workspaceId,
+        };
       })
       .then((loaded) => {
         if (!active || !loaded) return;
+        setWorkspacePrefetchScope(loaded.workspaceId);
         setAccount(loaded.account!);
         setTutorial(loaded.tutorial ?? null);
         setAccountUnavailable(false);
@@ -148,6 +157,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
     return () => {
       active = false;
+      setWorkspacePrefetchScope(null);
     };
   }, [accountRetry, router]);
 
@@ -172,9 +182,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       if (document.visibilityState !== 'visible') return;
       warmed = true;
       document.removeEventListener('visibilitychange', onVisibilityChange);
-      void Promise.all(
-        Object.values(WORKSPACE_FIRST_REQUESTS).map((url) => prefetchWorkspace(url)),
-      );
+      void warmWorkspacePrefetch(window.location.pathname);
     };
 
     const scheduleWarm = () => {

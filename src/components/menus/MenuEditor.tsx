@@ -11,6 +11,7 @@ import {
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { workspaceMutationFetch } from '@/lib/client/workspace-prefetch';
 import {
   PROCUREMENT_CATEGORIES,
   type ProcurementCategory,
@@ -267,7 +268,7 @@ export function MenuEditor({
     setNotice('');
     setFieldErrors({});
     try {
-      const response = await fetch(`/api/menus/${encodeURIComponent(menu.id)}`, {
+      const response = await workspaceMutationFetch(`/api/menus/${encodeURIComponent(menu.id)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -323,7 +324,7 @@ export function MenuEditor({
       return;
     }
     try {
-      const response = await fetch(`/api/menus/${encodeURIComponent(saved.id)}/approve`, {
+      const response = await workspaceMutationFetch(`/api/menus/${encodeURIComponent(saved.id)}/approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ expectedVersion: saved.version }),

@@ -3,6 +3,7 @@
 import { Check, X } from 'lucide-react';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 
+import { workspaceMutationFetch } from '@/lib/client/workspace-prefetch';
 import {
   buildDefaultSourcingSelection,
   preserveRequestSourcingOverrides,
@@ -258,7 +259,7 @@ export function DraftRequestEditor({
               ),
         };
       });
-      const response = await fetch(`/api/requests/${encodeURIComponent(request.id)}`, {
+      const response = await workspaceMutationFetch(`/api/requests/${encodeURIComponent(request.id)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

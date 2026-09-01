@@ -4,6 +4,7 @@ import { ArrowLeft, CalendarDays, Check, ChevronDown, MapPin, Store, Users } fro
 import { useRouter } from 'next/navigation';
 import { FormEvent, useEffect, useRef, useState } from 'react';
 
+import { workspaceMutationFetch } from '@/lib/client/workspace-prefetch';
 import type { MenuDocumentV1 } from '@/lib/menu/menu-document';
 import { buildDefaultSourcingSelection } from '@/lib/procurement/request-document';
 
@@ -231,7 +232,7 @@ export function NewRequestForm({ initialData }: { initialData?: InitialData }) {
         supplierIds,
         openToNewSuppliers,
       );
-      const response = await fetch('/api/requests', {
+      const response = await workspaceMutationFetch('/api/requests', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

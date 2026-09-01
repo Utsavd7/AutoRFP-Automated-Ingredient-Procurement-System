@@ -27,6 +27,7 @@ import {
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { workspaceMutationFetch } from '@/lib/client/workspace-prefetch';
 import { formatInr } from '@/lib/domain/money';
 import type {
   RequestItemsV1,
@@ -355,7 +356,7 @@ export function RequestDetail({
     setWorking('open');
     setError('');
     try {
-      const response = await fetch(`/api/requests/${encodeURIComponent(request.id)}/open`, {
+      const response = await workspaceMutationFetch(`/api/requests/${encodeURIComponent(request.id)}/open`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expectedVersion: request.version }),
       });
       if (!response.ok) throw new Error(await problemMessage(response, 'We could not open this request.'));
@@ -384,7 +385,7 @@ export function RequestDetail({
     setWorking(`${action}:${grant.id}`);
     setError('');
     try {
-      const response = await fetch(`/api/requests/${encodeURIComponent(request.id)}/links`, {
+      const response = await workspaceMutationFetch(`/api/requests/${encodeURIComponent(request.id)}/links`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ supplierRequestId: grant.id, expectedVersion: request.version, action }),
       });
@@ -618,7 +619,7 @@ export function RequestDetail({
             mode: 'SPLIT', expectedRequestVersion: request.version, rationale: rationale.trim(),
             selections: splitPreview?.selections ?? [],
           };
-      const response = await fetch(`/api/requests/${encodeURIComponent(request.id)}/award`, {
+      const response = await workspaceMutationFetch(`/api/requests/${encodeURIComponent(request.id)}/award`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
       });
       if (!response.ok) throw new Error(await problemMessage(response, 'We could not record this award.'));

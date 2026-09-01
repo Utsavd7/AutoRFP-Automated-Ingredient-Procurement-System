@@ -44,6 +44,7 @@ describe('account read route', () => {
     expect(response.status).toBe(200);
     expectPrivate(response);
     await expect(response.json()).resolves.toEqual({
+      workspaceId: 'tenant-a',
       account: {
         name: 'Monsoon Table',
         addressLine: '1 Market Road',

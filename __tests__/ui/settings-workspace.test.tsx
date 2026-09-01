@@ -80,7 +80,7 @@ describe('settings workspace UI', () => {
     expect(readFileSync(
       path.resolve(__dirname, '../../src/components/settings/SettingsWorkspace.tsx'),
       'utf8',
-    )).toContain("fetch('/api/members/invitations'");
+    )).toContain("workspaceMutationFetch('/api/members/invitations'");
     expect(html).not.toMatch(/tokenDigest|raw token|tenant ID/i);
   });
 

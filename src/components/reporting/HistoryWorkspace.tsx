@@ -5,8 +5,8 @@ import { useRouter } from 'next/navigation';
 import { FormEvent, useEffect, useRef, useState } from 'react';
 
 import {
-  clearWorkspacePrefetch,
   workspaceFetch,
+  workspaceMutationFetch,
 } from '@/lib/client/workspace-prefetch';
 import { formatInr } from '@/lib/domain/money';
 import styles from './reporting.module.css';
@@ -189,7 +189,7 @@ export function HistoryWorkspace({ initialPage }: { initialPage?: HistoryPageDat
     setRepeating(true);
     setError('');
     try {
-      const response = await fetch(`/api/requests/${encodeURIComponent(repeatSource.id)}/repeat`, {
+      const response = await workspaceMutationFetch(`/api/requests/${encodeURIComponent(repeatSource.id)}/repeat`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           expectedSourceVersion: repeatSource.version,
@@ -201,7 +201,6 @@ export function HistoryWorkspace({ initialPage }: { initialPage?: HistoryPageDat
       if (!response.ok) throw new Error(await responseProblem(response, 'We could not create the repeated request.'));
       const result = (await response.json()) as { request?: { id: string } };
       if (!result.request?.id) throw new Error('The new draft was not returned.');
-      clearWorkspacePrefetch();
       router.push(`/procurement/${encodeURIComponent(result.request.id)}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'We could not create the repeated request.');

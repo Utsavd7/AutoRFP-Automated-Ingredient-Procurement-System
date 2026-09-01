@@ -18,8 +18,8 @@ import {
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 
 import {
-  clearWorkspacePrefetch,
   workspaceFetch,
+  workspaceMutationFetch,
 } from '@/lib/client/workspace-prefetch';
 import {
   PROCUREMENT_CATEGORIES,
@@ -414,7 +414,7 @@ export function SupplierWorkspace({
     setEditorError('');
     setFieldErrors({});
     try {
-      const response = await fetch(
+      const response = await workspaceMutationFetch(
         editing ? `/api/suppliers/${encodeURIComponent(editing.id)}` : '/api/suppliers',
         {
           method: editing ? 'PUT' : 'POST',
@@ -428,7 +428,6 @@ export function SupplierWorkspace({
         throw new Error(problem.message);
       }
       const result = (await response.json()) as { supplier: SupplierSummary };
-      clearWorkspacePrefetch();
       setSuppliers((current) => {
         const withoutSaved = current.filter(({ id }) => id !== result.supplier.id);
         if (
@@ -452,7 +451,7 @@ export function SupplierWorkspace({
       return;
     }
     setError('');
-    const response = await fetch(`/api/suppliers/${encodeURIComponent(supplier.id)}`, {
+    const response = await workspaceMutationFetch(`/api/suppliers/${encodeURIComponent(supplier.id)}`, {
       method: 'DELETE',
     });
     if (!response.ok) {
@@ -460,7 +459,6 @@ export function SupplierWorkspace({
       setError(problem.message);
       return;
     }
-    clearWorkspacePrefetch();
     setSuppliers((current) => current.filter(({ id }) => id !== supplier.id));
     setNotice('Supplier deactivated.');
   }
@@ -477,7 +475,7 @@ export function SupplierWorkspace({
     setReviewing(workId);
     setError('');
     try {
-      const response = await fetch(`/api/suppliers/${encodeURIComponent(supplier.id)}/verify`, {
+      const response = await workspaceMutationFetch(`/api/suppliers/${encodeURIComponent(supplier.id)}/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ decision }),
@@ -490,7 +488,6 @@ export function SupplierWorkspace({
         supplier: SupplierSummary;
         link?: { url: string; expiresAt: string };
       };
-      clearWorkspacePrefetch();
       setSuppliers((current) => {
         const withoutReviewed = current.filter(({ id }) => id !== result.supplier.id);
         if (
@@ -536,7 +533,7 @@ export function SupplierWorkspace({
     setImporting(true);
     setError('');
     try {
-      const response = await fetch('/api/suppliers/import', {
+      const response = await workspaceMutationFetch('/api/suppliers/import', {
         method: 'POST',
         headers: { 'Content-Type': 'text/csv; charset=utf-8' },
         body: file,
@@ -546,7 +543,6 @@ export function SupplierWorkspace({
         throw new Error(problem.message);
       }
       const result = (await response.json()) as { importedCount?: number };
-      clearWorkspacePrefetch();
       setNotice(`${result.importedCount ?? 0} suppliers imported.`);
       await loadSuppliers();
     } catch (caught) {

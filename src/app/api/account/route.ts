@@ -27,6 +27,7 @@ export async function GET() {
     ));
   }
   return privateResponse(NextResponse.json({
+    workspaceId: context.tenant.id,
     account: tenantToAccount(context.tenant),
     tutorial: tutorialStateDto(tutorialStateFromUser(context.user)),
   }));

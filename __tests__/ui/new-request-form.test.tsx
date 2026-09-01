@@ -11,7 +11,7 @@ describe('new procurement request', () => {
     const html = renderToStaticMarkup(
       <NewRequestForm
         initialData={{
-          menus: [{ id: 'menu-1', name: 'Dinner menu', status: 'APPROVED', version: 3, _count: { recipes: 12, requests: 0 } }],
+          menus: [{ id: 'menu-1', name: 'Dinner menu', status: 'APPROVED', version: 3 }],
           suppliers: [{ id: 'supplier-1', businessName: 'GreenLeaf Fresh Foods', contactName: 'Meera Shah', phone: '+919876543210', email: null, city: 'Navi Mumbai', isActive: true }],
           account: { addressLine: '18 Market Road', city: 'Mumbai', state: 'Maharashtra', pin: '400001' },
           menuNextCursor: 'menu-page-2',

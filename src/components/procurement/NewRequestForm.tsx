@@ -4,6 +4,8 @@ import { ArrowLeft, CalendarDays, Check, ChevronDown, MapPin, Store, Users } fro
 import { useRouter } from 'next/navigation';
 import { FormEvent, useEffect, useRef, useState } from 'react';
 
+import type { MenuDocumentV1 } from '@/lib/menu/menu-document';
+
 import styles from './new-request-form.module.css';
 
 type MenuSummary = {
@@ -11,11 +13,9 @@ type MenuSummary = {
   name: string;
   status: 'DRAFT' | 'APPROVED';
   version: number;
-  _count: { recipes: number; requests: number };
 };
 
-type Ingredient = { id: string; name: string; quantity: string; unit: string };
-type ReviewedMenu = MenuSummary & { recipes: Array<{ id: string; name: string; ingredients: Ingredient[] }> };
+type ReviewedMenu = MenuSummary & { document: MenuDocumentV1 };
 
 type SupplierChoice = {
   id: string;
@@ -275,7 +275,7 @@ export function NewRequestForm({ initialData }: { initialData?: InitialData }) {
               <span>Approved menu *</span>
               <select value={menuId} disabled={loadingMenu} onChange={(event) => void chooseMenu(event.target.value)}>
                 <option value="">Choose an approved menu</option>
-                {menus.map((menu) => <option value={menu.id} key={menu.id}>{menu.name} · {menu._count.recipes} {menu._count.recipes === 1 ? 'dish' : 'dishes'}</option>)}
+                {menus.map((menu) => <option value={menu.id} key={menu.id}>{menu.name}</option>)}
               </select><ChevronDown aria-hidden="true" />
             </label>
             {loadingMenu && <p className={styles.choiceStatus} role="status">Loading the checked ingredient list…</p>}
@@ -289,7 +289,7 @@ export function NewRequestForm({ initialData }: { initialData?: InitialData }) {
                   <button type="button" className={selectionMode === 'ALL' ? styles.selected : ''} onClick={() => setSelectionMode('ALL')}>All ingredients</button>
                   <button type="button" className={selectionMode === 'SELECTED' ? styles.selected : ''} onClick={() => setSelectionMode('SELECTED')}>Choose ingredients</button>
                 </div>
-                {selectionMode === 'SELECTED' && selectedMenu.recipes.map((dish) => (
+                {selectionMode === 'SELECTED' && selectedMenu.document.dishes.map((dish) => (
                   <fieldset key={dish.id}>
                     <legend>{dish.name}</legend>
                     {dish.ingredients.map((ingredient) => (

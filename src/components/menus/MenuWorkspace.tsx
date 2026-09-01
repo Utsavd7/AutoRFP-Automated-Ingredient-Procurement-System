@@ -13,7 +13,6 @@ export type MenuSummary = {
   version: number;
   approvedAt: string | null;
   updatedAt: string;
-  _count: { recipes: number; requests: number };
 };
 
 async function responseMessage(response: Response, fallback: string) {
@@ -211,9 +210,9 @@ export function MenuWorkspace({
               </span>
               <strong>{menu.name}</strong>
               <span className={styles.cardMeta}>
-                {menu._count.recipes} {menu._count.recipes === 1 ? 'dish' : 'dishes'}
-                <i aria-hidden="true" />
-                {menu._count.requests} {menu._count.requests === 1 ? 'request' : 'requests'}
+                {menu.status === 'APPROVED'
+                  ? 'Ready to use in a request'
+                  : 'Open and check the ingredient list'}
               </span>
               <span className={styles.cardBottom}>
                 Updated {formatUpdated(menu.updatedAt)}

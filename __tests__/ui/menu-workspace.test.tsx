@@ -18,7 +18,6 @@ describe('menu workspace', () => {
             version: 2,
             approvedAt: null,
             updatedAt: '2026-08-28T08:00:00.000Z',
-            _count: { recipes: 12, requests: 0 },
           },
         ]}
         initialError=""
@@ -27,7 +26,7 @@ describe('menu workspace', () => {
 
     expect(html).toContain('Menus');
     expect(html).toContain('Dinner menu');
-    expect(html).toContain('12 dishes');
+    expect(html).toContain('Open and check the ingredient list');
     expect(html).toContain('Needs review');
     expect(html).toContain('Add menu');
     expect(html).toContain('Nothing is sent to suppliers');

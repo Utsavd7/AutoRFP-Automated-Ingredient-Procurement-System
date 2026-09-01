@@ -17,6 +17,8 @@ import {
 const TOKEN_VERSION = 1;
 const SESSION_ID_BYTES = 24;
 const SIGNATURE_BYTES = 32;
+const EXPIRY_INDEX_TIMESTAMP_DIGITS = 13;
+const MAX_EXPIRY_INDEX_TIMESTAMP = 9_999_999_999_999;
 const INVALID_TOKEN_MESSAGE = 'Invalid or expired photo transfer.';
 
 export type PhotoTransferTokenPayload = {
@@ -173,6 +175,23 @@ export function derivePhotoTransferSessionPrefix(sessionId: string) {
   validateStorageSessionId(sessionId);
   const digest = createHash('sha256').update(sessionId, 'utf8').digest('hex');
   return `sessions/${digest}`;
+}
+
+export function derivePhotoTransferExpiryIndexKey(
+  sessionId: string,
+  expiresAt: number,
+) {
+  validateStorageSessionId(sessionId);
+  if (
+    !Number.isSafeInteger(expiresAt)
+    || expiresAt <= 0
+    || expiresAt > MAX_EXPIRY_INDEX_TIMESTAMP
+  ) {
+    throw new Error('Invalid photo transfer expiry.');
+  }
+  const digest = createHash('sha256').update(sessionId, 'utf8').digest('hex');
+  const timestamp = String(expiresAt).padStart(EXPIRY_INDEX_TIMESTAMP_DIGITS, '0');
+  return `expiry/${timestamp}/${digest}.json`;
 }
 
 export function derivePhotoTransferManifestKey(sessionId: string) {

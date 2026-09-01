@@ -600,10 +600,7 @@ function resolveSelectedRevisions(input: {
     if (
       !grant ||
       !supplier ||
-      !supplier.isActive ||
-      grant.revokedAt !== null ||
-      !(grant.expiresAt instanceof Date) ||
-      grant.expiresAt.getTime() <= input.databaseNow.getTime()
+      !supplier.isActive
     ) {
       conflict('Every awarded line must use an active and available supplier quote.');
     }
@@ -787,6 +784,14 @@ function allocationDocument(lines: SelectedLine[]): AwardAllocationLinesV1 {
   };
 }
 
+function awardRequestedSpecification(
+  specification: SelectedLine['requestItem']['specification'],
+) {
+  const snapshot = { ...specification };
+  delete snapshot.thumbnailWebpBase64;
+  return snapshot;
+}
+
 function supplierDocument(lines: SelectedLine[]): AwardSupplierSnapshotsV1 {
   const selected = new Map<string, ResolvedRevision>();
   for (const line of lines) {
@@ -839,7 +844,9 @@ function supplierDocument(lines: SelectedLine[]): AwardSupplierSnapshotsV1 {
           itemName: line.requestItem.name,
           requestedQuantity: line.requestItem.quantity,
           requestedUnit: line.requestItem.unit,
-          requestedSpecification: line.requestItem.specification,
+          requestedSpecification: awardRequestedSpecification(
+            line.requestItem.specification,
+          ),
           taxInclusive: line.quoteItem.taxInclusive,
           suppliedBrand: line.quoteItem.suppliedBrand,
           suppliedPackSize: line.quoteItem.suppliedPackSize,

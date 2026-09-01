@@ -281,6 +281,8 @@ async function seedRequest(
     supplierKinds?: Array<'A' | 'B' | 'INACTIVE'>;
     revisionsA?: number;
     expired?: boolean;
+    grantExpired?: boolean;
+    grantRevoked?: boolean;
     tokenA?: string;
   },
 ) {
@@ -330,7 +332,11 @@ async function seedRequest(
       requestId: input.requestId,
       supplierId: supplierIds[index]!,
       tokenDigest: digestOpaqueToken('supplier-request', token),
-      expiresAt: farFuture,
+      createdAt: new Date('2026-08-01T00:00:00.000Z'),
+      expiresAt: input.grantExpired
+        ? new Date('2026-08-29T00:00:00.000Z')
+        : farFuture,
+      revokedAt: input.grantRevoked ? databaseNow : null,
       quoteRevision: revisions,
       quoteRevisions: quoteDocument({
         supplier,
@@ -400,6 +406,20 @@ describe('compact awards with restricted PostgreSQL', () => {
           ownerId: 'owner-a',
           requestId: 'request-inactive',
           supplierKinds: ['INACTIVE'],
+        });
+        await seedRequest(admin, {
+          tenantId: 'tenant-a',
+          ownerId: 'owner-a',
+          requestId: 'request-link-expired',
+          supplierKinds: ['A'],
+          grantExpired: true,
+        });
+        await seedRequest(admin, {
+          tenantId: 'tenant-a',
+          ownerId: 'owner-a',
+          requestId: 'request-link-revoked',
+          supplierKinds: ['A'],
+          grantRevoked: true,
         });
         await seedRequest(admin, {
           tenantId: 'tenant-b',
@@ -476,6 +496,23 @@ describe('compact awards with restricted PostgreSQL', () => {
               rationale: 'Unavailable quotes cannot be awarded.',
             },
           }, app)).rejects.toBeInstanceOf(AwardConflictError);
+        }
+
+        for (const requestId of [
+          'request-link-expired',
+          'request-link-revoked',
+        ] as const) {
+          await expect(createAward({
+            actor: owner,
+            requestId,
+            award: {
+              mode: 'WHOLE',
+              expectedRequestVersion: 2,
+              supplierRequestId: `${requestId}-grant-a`,
+              quoteRevision: 1,
+              rationale: 'The submitted quote remains valid for this award.',
+            },
+          }, app)).resolves.toMatchObject({ requestId });
         }
 
         await expect(createAward({
@@ -557,6 +594,10 @@ describe('compact awards with restricted PostgreSQL', () => {
             ]),
           },
         });
+        expect(
+          validated.supplierSnapshots.suppliers[0]!.lines[0]!
+            .requestedSpecification,
+        ).not.toHaveProperty('thumbnailWebpBase64');
         const committedRequest = await admin.procurementRequest.findUniqueOrThrow({
           where: { id: 'request-split' },
         });

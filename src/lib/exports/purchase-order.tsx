@@ -27,7 +27,6 @@ export type PurchaseOrderData = {
   requestId: string;
   requestTitle: string;
   awardedAt: string;
-  rationale: string | null;
   buyer: Party;
   delivery: {
     requestedDeliveryDate: string;
@@ -36,6 +35,7 @@ export type PurchaseOrderData = {
     state: string;
     pin: string;
     instructions: string | null;
+    commercialTerms: string | null;
   };
   supplier: {
     supplierId: string;
@@ -49,16 +49,28 @@ export type PurchaseOrderData = {
     state: string | null;
     pin: string | null;
     freightPaise: string;
+    minimumOrder: string | null;
     commercialTerms: string | null;
+    notes: string | null;
     deliveryDate: string;
+    validUntil: string;
   };
   lines: Array<{
     requestItemId: string;
     itemName: string;
+    requestedDescription: string | null;
+    requestedBrand: string | null;
+    suppliedBrand: string | null;
+    requestedPackSize: string | null;
+    suppliedPackSize: string | null;
+    requestedQualityGrade: string | null;
+    suppliedQualityGrade: string | null;
+    substitution: string | null;
     quantity: string;
     unit: string;
     unitRatePaise: string;
     gstBasisPoints: number;
+    taxInclusive: boolean;
     subtotalPaise: string;
     gstPaise: string;
     totalPaise: string;
@@ -150,12 +162,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#f7f4ed',
     paddingVertical: 6,
   },
-  item: { width: '26%', paddingRight: 6 },
-  qty: { width: '13%', textAlign: 'right' },
-  rate: { width: '16%', textAlign: 'right' },
-  gst: { width: '13%', textAlign: 'right' },
-  amount: { width: '16%', textAlign: 'right' },
-  total: { width: '16%', textAlign: 'right' },
+  item: { width: '40%', paddingRight: 8 },
+  itemName: { fontFamily: 'Helvetica-Bold' },
+  specification: { color: '#59625f', fontSize: 7, marginTop: 2 },
+  qty: { width: '12%', textAlign: 'right' },
+  rate: { width: '13%', textAlign: 'right' },
+  gst: { width: '10%', textAlign: 'right' },
+  amount: { width: '12%', textAlign: 'right' },
+  total: { width: '13%', textAlign: 'right' },
   totals: { marginTop: 12, marginLeft: '55%' },
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3 },
   grandTotal: {
@@ -248,16 +262,44 @@ function PurchaseOrderDocument({ data }: { data: PurchaseOrderData }) {
             <Text style={styles.amount}>Net INR</Text>
             <Text style={styles.total}>Gross INR</Text>
           </View>
-          {data.lines.map((line) => (
-            <View style={styles.tableRow} key={`${line.requestItemId}-${line.quantity}`} wrap={false}>
-              <Text style={styles.item}>{line.itemName}</Text>
-              <Text style={styles.qty}>{line.quantity} {line.unit}</Text>
-              <Text style={styles.rate}>{rupees(line.unitRatePaise)}</Text>
-              <Text style={styles.gst}>{gstPercent(line.gstBasisPoints)}</Text>
-              <Text style={styles.amount}>{rupees(line.subtotalPaise)}</Text>
-              <Text style={styles.total}>{rupees(line.totalPaise)}</Text>
-            </View>
-          ))}
+          {data.lines.map((line) => {
+            const requested = [
+              line.requestedDescription,
+              line.requestedBrand ? `brand ${line.requestedBrand}` : null,
+              line.requestedPackSize ? `pack ${line.requestedPackSize}` : null,
+              line.requestedQualityGrade
+                ? `grade ${line.requestedQualityGrade}`
+                : null,
+            ].filter((value): value is string => value !== null).join(' · ');
+            const supplied = [
+              line.suppliedBrand ? `brand ${line.suppliedBrand}` : null,
+              line.suppliedPackSize ? `pack ${line.suppliedPackSize}` : null,
+              line.suppliedQualityGrade
+                ? `grade ${line.suppliedQualityGrade}`
+                : null,
+              line.substitution ? `substitution ${line.substitution}` : null,
+            ].filter((value): value is string => value !== null).join(' · ');
+            return (
+              <View style={styles.tableRow} key={`${line.requestItemId}-${line.quantity}`} wrap={false}>
+                <View style={styles.item}>
+                  <Text style={styles.itemName}>{line.itemName}</Text>
+                  <Text style={styles.specification}>
+                    Requested: {requested || 'No additional specification'}
+                  </Text>
+                  <Text style={styles.specification}>
+                    Supplied: {supplied || 'As requested'}
+                  </Text>
+                </View>
+                <Text style={styles.qty}>{line.quantity} {line.unit}</Text>
+                <Text style={styles.rate}>{rupees(line.unitRatePaise)}</Text>
+                <Text style={styles.gst}>
+                  {gstPercent(line.gstBasisPoints)} {line.taxInclusive ? 'incl.' : 'excl.'}
+                </Text>
+                <Text style={styles.amount}>{rupees(line.subtotalPaise)}</Text>
+                <Text style={styles.total}>{rupees(line.totalPaise)}</Text>
+              </View>
+            );
+          })}
         </View>
 
         <View style={styles.totals} wrap={false}>
@@ -269,9 +311,16 @@ function PurchaseOrderDocument({ data }: { data: PurchaseOrderData }) {
 
         <View style={styles.notes} wrap={false}>
           <Text style={styles.label}>Terms and delivery notes</Text>
-          <Text>{data.supplier.commercialTerms ?? 'No additional commercial terms recorded.'}</Text>
+          <Text>Buyer terms: {data.delivery.commercialTerms ?? 'None recorded.'}</Text>
+          <Text style={{ marginTop: 4 }}>
+            Supplier terms: {data.supplier.commercialTerms ?? 'None recorded.'}
+          </Text>
+          <Text style={{ marginTop: 4 }}>
+            Minimum order: {data.supplier.minimumOrder ?? 'None recorded.'}
+          </Text>
+          <Text style={{ marginTop: 4 }}>Quote valid until: {data.supplier.validUntil}</Text>
+          {data.supplier.notes ? <Text style={{ marginTop: 4 }}>Supplier notes: {data.supplier.notes}</Text> : null}
           {data.delivery.instructions ? <Text style={{ marginTop: 4 }}>Delivery: {data.delivery.instructions}</Text> : null}
-          {data.rationale ? <Text style={{ marginTop: 4 }}>Award note: {data.rationale}</Text> : null}
         </View>
 
         <View style={styles.footer} fixed>
@@ -284,8 +333,8 @@ function PurchaseOrderDocument({ data }: { data: PurchaseOrderData }) {
 }
 
 export async function renderPurchaseOrderPdf(data: PurchaseOrderData) {
-  if (data.lines.length < 1 || data.lines.length > 1_000) {
-    throw new TypeError('Purchase order requires between 1 and 1,000 lines.');
+  if (data.lines.length < 1 || data.lines.length > 2_000) {
+    throw new TypeError('Purchase order requires between 1 and 2,000 lines.');
   }
   const buffer = await renderToBuffer(<PurchaseOrderDocument data={data} />);
   if (buffer.byteLength > MAX_EXPORT_BYTES) {

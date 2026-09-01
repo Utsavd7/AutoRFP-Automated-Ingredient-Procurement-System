@@ -7,6 +7,7 @@ import {
   readBoundedJson,
   RequestBodyTooLargeError,
 } from '@/lib/api/read-bounded-json';
+import { AwardDocumentStorageCorruptionError } from '@/lib/awards/award-document';
 import {
   AWARD_BODY_BYTES,
   AwardConflictError,
@@ -104,6 +105,15 @@ export async function POST(request: Request, context: AwardRouteContext) {
           422,
           'Award snapshot is too large',
           error.message,
+        ),
+      );
+    }
+    if (error instanceof AwardDocumentStorageCorruptionError) {
+      return privateResponse(
+        problemResponse(
+          503,
+          'Award data unavailable',
+          'The stored request or quote data could not be verified.',
         ),
       );
     }

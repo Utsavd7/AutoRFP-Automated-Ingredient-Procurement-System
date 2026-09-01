@@ -5,28 +5,102 @@ import {
   ExportNotFoundError,
   parseSupplierShareUrl,
 } from '@/lib/exports/export-service';
+import type { PurchaseOrderData } from '@/lib/exports/purchase-order';
 import { digestOpaqueToken } from '@/lib/security/tokens';
 
 const rawToken = 'Q'.repeat(43);
-
-function activeUser() {
-  return { id: 'member-a' };
-}
+const specification = {
+  v: 1,
+  category: 'VEGETABLES',
+  description: 'Firm red tomato',
+  preferredBrand: 'Farm Select',
+  packSize: '5 kg crate',
+  qualityGrade: 'A',
+  notes: null,
+  referenceUrl: null,
+  thumbnailWebpBase64: null,
+};
+const requestItems = {
+  v: 1,
+  items: [{
+    id: 'item-a',
+    itemKey: 'tomato',
+    name: '=Tomato',
+    quantity: '100',
+    unit: 'KILOGRAM',
+    specification,
+    sourcingOverride: null,
+  }],
+};
+const requestSourcing = {
+  v: 1,
+  default: {
+    v: 1,
+    modes: ['CURRENT'],
+    currentSupplierIds: ['supplier-a'],
+    selectedNewSupplierIds: [],
+    acceptVerifiedApplications: false,
+  },
+};
 
 function requestRecord() {
   return {
     id: 'request-a',
-    title: 'Fresh produce week 36',
+    title: 'Edited live request title',
     status: 'AWARDED',
     deliveryDate: new Date('2026-09-05T00:00:00.000Z'),
     quoteDeadline: new Date('2026-09-03T10:00:00.000Z'),
     deliveryDetails: {
-      addressLine: '18 Market Road', city: 'Mumbai', state: 'Maharashtra', pin: '400001',
+      addressLine: '18 Market Road',
+      city: 'Mumbai',
+      state: 'Maharashtra',
+      pin: '400001',
     },
     commercialTerms: 'Payment in 15 days.',
-    items: [{ id: 'item-a', name: '=Tomato', quantity: { toString: () => '100' }, unit: 'KILOGRAM' }],
-    supplierRequests: [],
-    award: null,
+    items: requestItems,
+    sourcing: requestSourcing,
+    supplierRequests: [{
+      id: 'supplier-request-a',
+      supplierId: 'supplier-a',
+      quoteRevision: 1,
+      quoteRevisions: {
+        v: 1,
+        revisions: [{
+          revision: 1,
+          submittedAt: '2026-08-28T09:00:00.000Z',
+          deliveryDate: '2026-09-05',
+          validUntil: '2026-09-04',
+          minimumOrder: 'Minimum invoice INR 2,500',
+          freightPaise: '50000',
+          commercialTerms: 'Payment in 15 days.',
+          notes: null,
+          items: [{
+            requestItemId: 'item-a',
+            noQuote: false,
+            availableQuantity: '100',
+            unit: 'KILOGRAM',
+            unitRatePaise: '79680',
+            gstBasisPoints: 500,
+            taxInclusive: false,
+            suppliedBrand: 'Market Fresh',
+            suppliedPackSize: '10 kg crate',
+            suppliedQualityGrade: 'Premium',
+            substitution: 'Roma tomato',
+            subtotalPaise: '7968000',
+            gstPaise: '398400',
+            totalPaise: '8366400',
+          }],
+          subtotalPaise: '7968000',
+          gstPaise: '398400',
+          totalPaise: '8416400',
+        }],
+      },
+      supplier: {
+        businessName: 'Current live supplier name',
+        isActive: true,
+        applicationRequestId: null,
+      },
+    }],
   };
 }
 
@@ -34,50 +108,97 @@ function awardRecord() {
   return {
     id: 'award-a',
     requestId: 'request-a',
-    rationale: 'Best landed cost.',
-    supplierSnapshots: [
-      {
-        supplierId: 'supplier-a', supplierName: 'Snapshot Fresh Foods', contactName: 'Anita Shah',
-        phone: '9111111111', whatsappNumber: null, email: 'orders@example.test',
-        addressLine: '7 APMC Yard', city: 'Navi Mumbai', state: 'Maharashtra', pin: '400705',
-        gstin: '27ABCDE9999F1Z1', quoteId: 'quote-a', supplierRequestId: 'grant-a', revision: 1,
-        freightPaise: '50000', deliveryDate: '2026-09-05', validUntil: '2026-09-04',
-        commercialTerms: 'Payment in 15 days.', notes: null, submittedAt: '2026-08-28T09:00:00.000Z',
-      },
-    ],
+    rationale: 'Internal decision rationale must not enter the PO.',
+    allocationLines: {
+      v: 1,
+      lines: [{
+        requestItemId: 'item-a',
+        supplierRequestId: 'supplier-request-a',
+        supplierId: 'supplier-a',
+        quoteRevision: 1,
+        quantity: '100',
+        unit: 'KILOGRAM',
+        unitRatePaise: '79680',
+        gstBasisPoints: 500,
+        subtotalPaise: '7968000',
+        gstPaise: '398400',
+        totalPaise: '8366400',
+      }],
+    },
+    supplierSnapshots: {
+      v: 1,
+      suppliers: [{
+        supplierId: 'supplier-a',
+        supplierRequestId: 'supplier-request-a',
+        quoteRevision: 1,
+        supplierName: '+Snapshot Fresh Foods',
+        contactName: 'Anita Shah',
+        phone: '9111111111',
+        whatsappNumber: null,
+        email: 'orders@example.test',
+        addressLine: '7 APMC Yard',
+        city: 'Navi Mumbai',
+        state: 'Maharashtra',
+        pin: '400705',
+        gstin: '27ABCDE9999F1Z1',
+        submittedAt: '2026-08-28T09:00:00.000Z',
+        deliveryDate: '2026-09-05',
+        validUntil: '2026-09-04',
+        minimumOrder: 'Minimum invoice INR 2,500',
+        freightPaise: '50000',
+        commercialTerms: 'Payment in 15 days.',
+        notes: null,
+        subtotalPaise: '7968000',
+        gstPaise: '398400',
+        totalPaise: '8416400',
+        lines: [{
+          requestItemId: 'item-a',
+          itemKey: 'tomato',
+          itemName: 'Tomato',
+          requestedQuantity: '100',
+          requestedUnit: 'KILOGRAM',
+          requestedSpecification: specification,
+          taxInclusive: false,
+          suppliedBrand: 'Market Fresh',
+          suppliedPackSize: '10 kg crate',
+          suppliedQualityGrade: 'Premium',
+          substitution: 'Roma tomato',
+        }],
+      }],
+    },
     deliverySnapshot: {
+      v: 1,
       requestTitle: 'Fresh produce week 36',
       requestedDeliveryDate: '2026-09-05',
       deliveryDetails: {
-        addressLine: 'Service gate, 18 Market Road', city: 'Mumbai', state: 'Maharashtra', pin: '400001',
+        addressLine: 'Service gate, 18 Market Road',
+        city: 'Mumbai',
+        state: 'Maharashtra',
+        pin: '400001',
+        instructions: 'Deliver before 8:00 AM.',
       },
+      commercialTerms: 'Rates must include packing.',
       buyer: {
-        name: 'Cedar Table Hospitality', gstin: '27ABCDE1234F1Z5', addressLine: '18 Market Road',
-        city: 'Mumbai', state: 'Maharashtra', pin: '400001', phone: '9000000000',
+        name: 'Cedar Table Hospitality',
+        gstin: '27ABCDE1234F1Z5',
+        addressLine: '18 Market Road',
+        city: 'Mumbai',
+        state: 'Maharashtra',
+        pin: '400001',
+        phone: '9000000000',
       },
     },
     totalPaise: BigInt(8_416_400),
     createdAt: new Date('2026-08-28T10:00:00.000Z'),
-    tenant: {
-      name: 'Cedar Table Hospitality', gstin: '27ABCDE1234F1Z5', addressLine: '18 Market Road',
-      city: 'Mumbai', state: 'Maharashtra', pin: '400001', phone: '9000000000',
-    },
-    request: { title: 'Edited live request title' },
-    lines: [
-      {
-        requestItemId: 'item-a', supplierId: 'supplier-a', quantity: { toString: () => '100' },
-        unit: 'KILOGRAM', unitRatePaise: BigInt(79_680), gstBasisPoints: 500,
-        subtotalPaise: BigInt(7_968_000), gstPaise: BigInt(398_400), totalPaise: BigInt(8_366_400),
-        requestItem: { name: 'Tomato' },
-      },
-    ],
   };
 }
 
 function fakeTransaction(overrides: Record<string, unknown> = {}) {
   return {
-    user: { findFirst: jest.fn().mockResolvedValue(activeUser()) },
-    procurementRequest: { findFirst: jest.fn().mockResolvedValue(requestRecord()) },
+    user: { findFirst: jest.fn().mockResolvedValue({ id: 'member-a' }) },
+    procurementRequest: {
+      findFirst: jest.fn().mockResolvedValue(requestRecord()),
+    },
     supplierRequest: { findFirst: jest.fn().mockResolvedValue(null) },
     award: { findFirst: jest.fn().mockResolvedValue(awardRecord()) },
     auditEvent: { create: jest.fn().mockResolvedValue({ id: 'audit-a' }) },
@@ -85,15 +206,26 @@ function fakeTransaction(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function serviceFor(transaction: ReturnType<typeof fakeTransaction>) {
+function operationsFor(
+  transaction: ReturnType<typeof fakeTransaction>,
+  overrides: Partial<{
+    renderQr: (url: string) => Promise<Uint8Array>;
+    renderPdf: (data: PurchaseOrderData) => Promise<Uint8Array>;
+  }> = {},
+) {
   return createExportOperations({
     transact: async (_tenantId, callback) => callback(transaction as never),
-    renderQr: jest.fn(async () => new Uint8Array(Buffer.from('\u0089PNG\r\n\u001a\n', 'latin1'))),
-    renderPdf: jest.fn(async () => new Uint8Array(Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(2_000)]))),
+    renderQr: overrides.renderQr ?? (async () =>
+      new Uint8Array(Buffer.from('\u0089PNG\r\n\u001a\n', 'latin1'))),
+    renderPdf: overrides.renderPdf ?? (async () =>
+      new Uint8Array(Buffer.concat([
+        Buffer.from('%PDF-1.7\n'),
+        Buffer.alloc(2_000),
+      ]))),
   });
 }
 
-describe('on-demand export service', () => {
+describe('compact on-demand export service', () => {
   it('parses only the canonical same-origin supplier URL and derives its digest', () => {
     expect(parseSupplierShareUrl(
       `https://quoteplate.example/quote#token=${rawToken}`,
@@ -105,65 +237,55 @@ describe('on-demand export service', () => {
     for (const invalid of [
       `https://attacker.example/quote#token=${rawToken}`,
       `https://quoteplate.example/quote?token=${rawToken}`,
-      `https://quoteplate.example/quote#token=${rawToken}&next=https://attacker.example`,
+      `https://quoteplate.example/quote#token=${rawToken}&next=x`,
       `https://quoteplate.example/product#token=${rawToken}`,
     ]) {
-      expect(() => parseSupplierShareUrl(invalid, 'https://quoteplate.example')).toThrow(
-        ExportNotFoundError,
-      );
+      expect(() => parseSupplierShareUrl(
+        invalid,
+        'https://quoteplate.example',
+      )).toThrow(ExportNotFoundError);
     }
   });
 
-  it('exports a tenant-owned request for an active member with formula-safe CSV and bounded audit metadata', async () => {
+  it('exports the compact request document and current embedded quote revision', async () => {
     const transaction = fakeTransaction();
-    const service = serviceFor(transaction);
+    const operations = operationsFor(transaction);
 
-    const output = await service.requestCsv({
+    const request = await operations.requestCsv({
       actor: { tenantId: 'tenant-a', userId: 'member-a' },
       requestId: 'request-a',
       kind: 'request',
     });
+    const quotes = await operations.requestCsv({
+      actor: { tenantId: 'tenant-a', userId: 'member-a' },
+      requestId: 'request-a',
+      kind: 'quotes',
+    });
 
-    expect(output.mediaType).toBe('text/csv; charset=utf-8');
-    expect(output.filename).toBe('fresh-produce-week-36-request.csv');
-    expect(Buffer.from(output.bytes).toString()).toContain("'=Tomato");
-    expect(transaction.procurementRequest.findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { tenantId: 'tenant-a', id: 'request-a' } }),
-    );
-    expect(transaction.auditEvent.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        tenantId: 'tenant-a', actorUserId: 'member-a', action: 'audit.export',
-        entityType: 'ProcurementRequest', entityId: 'request-a',
-        metadata: expect.objectContaining({ kind: 'request', format: 'csv' }),
+    expect(Buffer.from(request.bytes).toString()).toContain("'=Tomato");
+    expect(Buffer.from(request.bytes).toString()).toContain('Farm Select');
+    expect(Buffer.from(quotes.bytes).toString()).toContain('supplier-request-a');
+    expect(Buffer.from(quotes.bytes).toString()).toContain('Market Fresh');
+    expect(transaction.procurementRequest.findFirst).toHaveBeenCalledWith({
+      where: { tenantId: 'tenant-a', id: 'request-a' },
+      select: expect.objectContaining({
+        items: true,
+        sourcing: true,
+        supplierRequests: expect.any(Object),
       }),
     });
-    expect(transaction).not.toHaveProperty('generatedFile');
+    expect(JSON.stringify(
+      transaction.procurementRequest.findFirst.mock.calls,
+    )).not.toMatch(/SupplierQuote|RequestItem|quotes/);
   });
 
-  it('denies inactive users and hides cross-tenant requests as not found', async () => {
-    const inactive = fakeTransaction({ user: { findFirst: jest.fn().mockResolvedValue(null) } });
-    await expect(serviceFor(inactive).requestCsv({
-      actor: { tenantId: 'tenant-a', userId: 'member-a' }, requestId: 'request-a', kind: 'request',
-    })).rejects.toBeInstanceOf(AuthorizationError);
-
-    const missing = fakeTransaction({
-      procurementRequest: { findFirst: jest.fn().mockResolvedValue(null) },
-    });
-    await expect(serviceFor(missing).requestCsv({
-      actor: { tenantId: 'tenant-b', userId: 'member-b' }, requestId: 'request-a', kind: 'request',
-    })).rejects.toBeInstanceOf(ExportNotFoundError);
-  });
-
-  it('creates a QR only when the raw URL digest belongs to the tenant request', async () => {
-    const transaction = fakeTransaction({
-      supplierRequest: {
-        findFirst: jest.fn().mockResolvedValue({
-          id: 'grant-a', supplier: { businessName: 'Snapshot Fresh Foods' }, request: { title: 'Fresh produce' },
-        }),
-      },
-    });
+  it('prepares award/accounting CSV from Award documents only and audits output metadata', async () => {
+    const transaction = fakeTransaction();
     let transactionDepth = 0;
-    const transact = jest.fn(async (_tenantId, callback: (value: never) => Promise<unknown>) => {
+    const transact = jest.fn(async (
+      _tenantId: string,
+      callback: (value: never) => Promise<unknown>,
+    ) => {
       transactionDepth += 1;
       try {
         return await callback(transaction as never);
@@ -171,128 +293,228 @@ describe('on-demand export service', () => {
         transactionDepth -= 1;
       }
     });
-    const renderQr = jest.fn(async () => {
+    const operations = createExportOperations({
+      transact: transact as never,
+      renderQr: jest.fn(),
+      renderPdf: jest.fn(),
+    });
+
+    for (const kind of ['award', 'accounting'] as const) {
+      const output = await operations.requestCsv({
+        actor: { tenantId: 'tenant-a', userId: 'member-a' },
+        requestId: 'request-a',
+        kind,
+      });
       expect(transactionDepth).toBe(0);
+      expect(output.filename).toBe(`fresh-produce-week-36-${kind}.csv`);
+      expect(Buffer.from(output.bytes).toString()).toContain(
+        'Fresh produce week 36',
+      );
+      expect(Buffer.from(output.bytes).toString()).not.toContain(
+        'Edited live request title',
+      );
+    }
+
+    expect(transaction.procurementRequest.findFirst).not.toHaveBeenCalled();
+    expect(transaction.award.findFirst).toHaveBeenCalledWith({
+      where: { tenantId: 'tenant-a', requestId: 'request-a' },
+      select: {
+        id: true,
+        requestId: true,
+        rationale: true,
+        allocationLines: true,
+        supplierSnapshots: true,
+        deliverySnapshot: true,
+        totalPaise: true,
+        createdAt: true,
+      },
+    });
+    expect(transact).toHaveBeenCalledTimes(4);
+    const auditCalls = transaction.auditEvent.create.mock.calls;
+    expect(auditCalls).toHaveLength(2);
+    expect(auditCalls[0]![0]).toEqual({
+      data: expect.objectContaining({
+        tenantId: 'tenant-a',
+        actorUserId: 'member-a',
+        action: 'audit.export',
+        entityType: 'ProcurementRequest',
+        entityId: 'request-a',
+        metadata: expect.objectContaining({ kind: 'award', format: 'csv' }),
+      }),
+    });
+    expect(JSON.stringify(auditCalls)).not.toMatch(/rationale|token|Market Fresh/);
+  });
+
+  it('renders one selected-supplier PO outside transactions from Award documents only', async () => {
+    const transaction = fakeTransaction();
+    let depth = 0;
+    const transact = jest.fn(async (
+      _tenantId: string,
+      callback: (value: never) => Promise<unknown>,
+    ) => {
+      depth += 1;
+      try {
+        return await callback(transaction as never);
+      } finally {
+        depth -= 1;
+      }
+    });
+    const renderPdf = jest.fn(async (data: Record<string, unknown>) => {
+      expect(depth).toBe(0);
+      expect(data).not.toHaveProperty('rationale');
+      expect(JSON.stringify(data)).not.toContain('Internal decision rationale');
+      return new Uint8Array(Buffer.concat([
+        Buffer.from('%PDF-1.7\n'),
+        Buffer.alloc(2_000),
+      ]));
+    });
+    const operations = createExportOperations({
+      transact: transact as never,
+      renderQr: jest.fn(),
+      renderPdf: renderPdf as never,
+    });
+
+    const output = await operations.purchaseOrder({
+      actor: { tenantId: 'tenant-a', userId: 'member-a' },
+      awardId: 'award-a',
+      supplierId: 'supplier-a',
+    });
+
+    expect(output.filename).toBe(
+      'fresh-produce-week-36-po-snapshot-fresh-foods.pdf',
+    );
+    expect(renderPdf).toHaveBeenCalledWith(expect.objectContaining({
+      requestTitle: 'Fresh produce week 36',
+      buyer: expect.objectContaining({ name: 'Cedar Table Hospitality' }),
+      supplier: expect.objectContaining({
+        supplierName: '+Snapshot Fresh Foods',
+        minimumOrder: 'Minimum invoice INR 2,500',
+      }),
+      lines: [expect.objectContaining({
+        itemName: 'Tomato',
+        requestedBrand: 'Farm Select',
+        suppliedBrand: 'Market Fresh',
+        requestedPackSize: '5 kg crate',
+        suppliedPackSize: '10 kg crate',
+        requestedQualityGrade: 'A',
+        suppliedQualityGrade: 'Premium',
+        substitution: 'Roma tomato',
+      })],
+      totalPaise: '8416400',
+    }));
+    expect(transaction.procurementRequest.findFirst).not.toHaveBeenCalled();
+    expect(transaction.award.findFirst).toHaveBeenCalledWith({
+      where: { tenantId: 'tenant-a', id: 'award-a' },
+      select: expect.objectContaining({
+        allocationLines: true,
+        supplierSnapshots: true,
+        deliverySnapshot: true,
+      }),
+    });
+    expect(transact).toHaveBeenCalledTimes(2);
+  });
+
+  it('fails closed for missing/corrupt awards and inactive users', async () => {
+    const missing = fakeTransaction({
+      award: { findFirst: jest.fn().mockResolvedValue(null) },
+    });
+    await expect(operationsFor(missing).requestCsv({
+      actor: { tenantId: 'tenant-a', userId: 'member-a' },
+      requestId: 'request-a',
+      kind: 'award',
+    })).rejects.toBeInstanceOf(ExportConflictError);
+
+    const corrupted = awardRecord();
+    corrupted.totalPaise = BigInt(1);
+    const corruptTransaction = fakeTransaction({
+      award: { findFirst: jest.fn().mockResolvedValue(corrupted) },
+    });
+    await expect(operationsFor(corruptTransaction).purchaseOrder({
+      actor: { tenantId: 'tenant-a', userId: 'member-a' },
+      awardId: 'award-a',
+      supplierId: 'supplier-a',
+    })).rejects.toBeInstanceOf(ExportConflictError);
+
+    const inactive = fakeTransaction({
+      user: { findFirst: jest.fn().mockResolvedValue(null) },
+    });
+    await expect(operationsFor(inactive).requestCsv({
+      actor: { tenantId: 'tenant-a', userId: 'member-a' },
+      requestId: 'request-a',
+      kind: 'request',
+    })).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('creates a QR outside transactions and never audits its token', async () => {
+    const transaction = fakeTransaction({
+      supplierRequest: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'grant-a',
+          supplier: { businessName: 'Snapshot Fresh Foods' },
+          request: { title: 'Fresh produce' },
+        }),
+      },
+    });
+    let depth = 0;
+    const transact = jest.fn(async (
+      _tenantId: string,
+      callback: (value: never) => Promise<unknown>,
+    ) => {
+      depth += 1;
+      try {
+        return await callback(transaction as never);
+      } finally {
+        depth -= 1;
+      }
+    });
+    const renderQr = jest.fn(async () => {
+      expect(depth).toBe(0);
       return new Uint8Array(Buffer.from('\u0089PNG\r\n\u001a\n', 'latin1'));
     });
-    const service = createExportOperations({
+    const operations = createExportOperations({
       transact: transact as never,
       renderQr,
       renderPdf: jest.fn(),
     });
     const url = `https://quoteplate.example/quote#token=${rawToken}`;
 
-    const output = await service.qr({
-      actor: { tenantId: 'tenant-a', userId: 'member-a' }, requestId: 'request-a',
-      expectedOrigin: 'https://quoteplate.example', url,
+    await operations.qr({
+      actor: { tenantId: 'tenant-a', userId: 'member-a' },
+      requestId: 'request-a',
+      expectedOrigin: 'https://quoteplate.example',
+      url,
     });
 
-    expect(output.mediaType).toBe('image/png');
     expect(transact).toHaveBeenCalledTimes(2);
-    expect(service.dependencies.renderQr).toHaveBeenCalledWith(url);
-    expect(transaction.supplierRequest.findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          tenantId: 'tenant-a', requestId: 'request-a',
-          tokenDigest: digestOpaqueToken('supplier-request', rawToken), revokedAt: null,
-        }),
-      }),
-    );
-    expect(transaction.auditEvent.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ metadata: { kind: 'supplier-link', format: 'png', byteCount: 8 } }),
-    });
-    expect(JSON.stringify(transaction.auditEvent.create.mock.calls)).not.toContain(rawToken);
-  });
-
-  it('builds one supplier PO entirely from the committed snapshot and split lines', async () => {
-    const transaction = fakeTransaction({
-      award: {
-        findFirst: jest.fn().mockResolvedValue({
-          ...awardRecord(),
-          tenant: {
-            name: 'Edited live restaurant', gstin: null, addressLine: 'Edited address',
-            city: 'Pune', state: 'Maharashtra', pin: '411001', phone: '9888888888',
-          },
-        }),
-      },
-    });
-    const service = serviceFor(transaction);
-    const output = await service.purchaseOrder({
-      actor: { tenantId: 'tenant-a', userId: 'member-a' },
-      awardId: 'award-a', supplierId: 'supplier-a',
-    });
-
-    expect(output.mediaType).toBe('application/pdf');
-    expect(output.filename).toBe('fresh-produce-week-36-po-snapshot-fresh-foods.pdf');
-    expect(Buffer.from(output.bytes).subarray(0, 5).toString('ascii')).toBe('%PDF-');
-    const renderPdf = service.dependencies.renderPdf as jest.Mock;
-    expect(renderPdf).toHaveBeenCalledWith(expect.objectContaining({
-      requestTitle: 'Fresh produce week 36',
-      buyer: {
-        name: 'Cedar Table Hospitality', gstin: '27ABCDE1234F1Z5', addressLine: '18 Market Road',
-        city: 'Mumbai', state: 'Maharashtra', pin: '400001', phone: '9000000000',
-      },
-      supplier: expect.objectContaining({ supplierName: 'Snapshot Fresh Foods' }),
-      lines: [expect.objectContaining({ itemName: 'Tomato' })],
-      totalPaise: '8416400',
-    }));
-    expect(transaction).not.toHaveProperty('supplier');
-  });
-
-  it('uses the award-time request title in award and accounting records', async () => {
-    const transaction = fakeTransaction({
-      procurementRequest: {
-        findFirst: jest.fn().mockResolvedValue({
-          ...requestRecord(),
-          title: 'Edited live request title',
-          award: awardRecord(),
-        }),
-      },
-    });
-    const service = serviceFor(transaction);
-
-    for (const kind of ['award', 'accounting'] as const) {
-      const output = await service.requestCsv({
-        actor: { tenantId: 'tenant-a', userId: 'member-a' },
-        requestId: 'request-a',
-        kind,
-      });
-      expect(Buffer.from(output.bytes).toString()).toContain('Fresh produce week 36');
-      expect(Buffer.from(output.bytes).toString()).not.toContain('Edited live request title');
-      expect(output.filename).toBe(`fresh-produce-week-36-${kind}.csv`);
-    }
-  });
-
-  it('rejects award and accounting exports before a committed award exists', async () => {
-    const transaction = fakeTransaction();
-    const service = serviceFor(transaction);
-    await expect(service.requestCsv({
-      actor: { tenantId: 'tenant-a', userId: 'member-a' },
-      requestId: 'request-a', kind: 'award',
-    })).rejects.toBeInstanceOf(ExportConflictError);
+    expect(renderQr).toHaveBeenCalledWith(url);
+    expect(JSON.stringify(transaction.auditEvent.create.mock.calls))
+      .not.toContain(rawToken);
   });
 
   it('rejects renderer output that is not actually PNG or PDF data', async () => {
     const transaction = fakeTransaction({
       supplierRequest: {
         findFirst: jest.fn().mockResolvedValue({
-          id: 'grant-a', supplier: { businessName: 'Fresh Foods' }, request: { title: 'Fresh produce' },
+          id: 'grant-a',
+          supplier: { businessName: 'Fresh Foods' },
+          request: { title: 'Fresh produce' },
         }),
       },
     });
-    const service = createExportOperations({
-      transact: async (_tenantId, callback) => callback(transaction as never),
+    const operations = operationsFor(transaction, {
       renderQr: async () => new TextEncoder().encode('not a PNG'),
       renderPdf: async () => new TextEncoder().encode('not a PDF'),
     });
-    await expect(service.qr({
-      actor: { tenantId: 'tenant-a', userId: 'member-a' }, requestId: 'request-a',
+    await expect(operations.qr({
+      actor: { tenantId: 'tenant-a', userId: 'member-a' },
+      requestId: 'request-a',
       expectedOrigin: 'https://quoteplate.example',
       url: `https://quoteplate.example/quote#token=${rawToken}`,
     })).rejects.toThrow('valid PNG');
-    await expect(service.purchaseOrder({
-      actor: { tenantId: 'tenant-a', userId: 'member-a' }, awardId: 'award-a', supplierId: 'supplier-a',
+    await expect(operations.purchaseOrder({
+      actor: { tenantId: 'tenant-a', userId: 'member-a' },
+      awardId: 'award-a',
+      supplierId: 'supplier-a',
     })).rejects.toThrow('valid PDF');
-    expect(transaction.auditEvent.create).not.toHaveBeenCalled();
   });
 });

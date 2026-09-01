@@ -1,165 +1,111 @@
 import {
-  AWARD_SUPPLIER_SNAPSHOTS_BYTES,
-  assertAwardSupplierSnapshotsSize,
-  AwardSnapshotTooLargeError,
+  AWARD_MAX_SELECTIONS,
   AwardValidationError,
   validateAwardInput,
 } from '@/lib/awards/award-service';
 
-describe('award input', () => {
-  it('preflights supplier snapshots at the same 2 MiB boundary enforced by PostgreSQL', () => {
-    const compactSuppliers = Array.from({ length: 100 }, (_, index) => ({
-      supplierId: `supplier-${index}`,
-      supplierName: `Supplier ${index} ${'N'.repeat(120)}`,
-      contactName: `Contact ${index} ${'C'.repeat(80)}`,
-      addressLine: `${index}, ${'Market Road '.repeat(18)}`,
-      city: 'Bengaluru',
-      state: 'Karnataka',
-      pin: '560038',
-      freightPaise: '0',
-    }));
+const whole = {
+  mode: 'WHOLE',
+  expectedRequestVersion: 2,
+  supplierRequestId: 'supplier-request-a',
+  quoteRevision: 3,
+  rationale: 'The supplier confirmed full stock and the required delivery date.',
+} as const;
 
-    expect(() => assertAwardSupplierSnapshotsSize(compactSuppliers)).not.toThrow();
-    expect(
-      new TextEncoder().encode(JSON.stringify(compactSuppliers)).byteLength,
-    ).toBeGreaterThan(16_384);
-    expect(
-      new TextEncoder().encode(JSON.stringify(compactSuppliers)).byteLength,
-    ).toBeLessThan(AWARD_SUPPLIER_SNAPSHOTS_BYTES);
-    expect(() =>
-      assertAwardSupplierSnapshotsSize([
-        { supplierId: 'too-large', supplierName: '₹'.repeat(700_000) },
-      ]),
-    ).toThrow(AwardSnapshotTooLargeError);
+const split = {
+  mode: 'SPLIT',
+  expectedRequestVersion: 2,
+  rationale: 'Split across confirmed stock while preserving one delivery window.',
+  selections: [
+    {
+      requestItemId: 'tomato',
+      supplierRequestId: 'supplier-request-a',
+      quoteRevision: 3,
+      quantity: '75',
+    },
+    {
+      requestItemId: 'tomato',
+      supplierRequestId: 'supplier-request-b',
+      quoteRevision: 1,
+      quantity: '25',
+    },
+  ],
+} as const;
+
+describe('compact award decision input', () => {
+  it('accepts only an explicit whole supplier-request revision or split allocation decision', () => {
+    expect(validateAwardInput(whole)).toEqual(whole);
+    expect(validateAwardInput(split)).toEqual(split);
   });
 
-  it('accepts a bounded whole-basket human decision', () => {
-    expect(
-      validateAwardInput({
-        mode: 'WHOLE',
-        expectedRequestVersion: 2,
-        supplierQuoteId: 'quote-a',
-        rationale: 'Best complete landed cost with delivery on the requested date.',
-      }),
-    ).toEqual({
-      mode: 'WHOLE',
-      expectedRequestVersion: 2,
-      supplierQuoteId: 'quote-a',
-      rationale: 'Best complete landed cost with delivery on the requested date.',
+  it.each([
+    'supplierId',
+    'unitRatePaise',
+    'gstBasisPoints',
+    'subtotalPaise',
+    'gstPaise',
+    'totalPaise',
+    'freightPaise',
+    'unit',
+    'specification',
+    'tenantId',
+    'awardedByUserId',
+  ])('rejects client-derived %s', (field) => {
+    expect(() => validateAwardInput({ ...whole, [field]: 'client fact' })).toThrow(
+      AwardValidationError,
+    );
+    expect(() => validateAwardInput({
+      ...split,
+      selections: [{ ...split.selections[0], [field]: 'client fact' }],
+    })).toThrow(AwardValidationError);
+  });
+
+  it('requires a bounded rationale and an exact positive latest quote revision', () => {
+    for (const candidate of [
+      { ...whole, rationale: '' },
+      { ...whole, rationale: 'x'.repeat(501) },
+      { ...whole, quoteRevision: undefined },
+      { ...whole, quoteRevision: 0 },
+      { ...whole, quoteRevision: 1.5 },
+      { ...split, selections: [{ ...split.selections[0], quantity: '1.0001' }] },
+      { ...split, selections: [] },
+    ]) {
+      expect(() => validateAwardInput(candidate)).toThrow(AwardValidationError);
+    }
+  });
+
+  it('rejects duplicate allocation identities and non-plain/accessor input', () => {
+    expect(() => validateAwardInput({
+      ...split,
+      selections: [split.selections[0], { ...split.selections[0] }],
+    })).toThrow(AwardValidationError);
+
+    const inherited = Object.assign(Object.create({ tenantId: 'polluted' }), whole);
+    const accessor = { ...whole } as Record<string, unknown>;
+    Object.defineProperty(accessor, 'rationale', {
+      enumerable: true,
+      get: () => 'hidden',
     });
-  });
-
-  it('accepts split quantities but never accepts client totals, tax, supplier, or tenant fields', () => {
-    expect(
-      validateAwardInput({
-        mode: 'SPLIT',
-        expectedRequestVersion: 2,
-        rationale: 'Split for complete stock coverage and one delivery window.',
-        selections: [
-          {
-            requestItemId: 'tomato',
-            supplierQuoteItemId: 'quote-item-a',
-            quantity: '75',
-          },
-          {
-            requestItemId: 'tomato',
-            supplierQuoteItemId: 'quote-item-b',
-            quantity: '25',
-          },
-        ],
-      }),
-    ).toMatchObject({ mode: 'SPLIT', selections: expect.any(Array) });
-
-    for (const forbidden of ['tenantId', 'totalPaise', 'gstPaise', 'supplierId']) {
-      expect(() =>
-        validateAwardInput({
-          mode: 'WHOLE',
-          expectedRequestVersion: 2,
-          supplierQuoteId: 'quote-a',
-          rationale: 'Human decision.',
-          [forbidden]: 'client-controlled',
-        }),
-      ).toThrow(AwardValidationError);
+    for (const candidate of [inherited, accessor]) {
+      expect(() => validateAwardInput(candidate)).toThrow(AwardValidationError);
     }
   });
 
-  it('requires an explicit human rationale and rejects duplicate or unbounded selections', () => {
-    expect(() =>
-      validateAwardInput({
-        mode: 'WHOLE',
-        expectedRequestVersion: 2,
-        supplierQuoteId: 'quote-a',
-        rationale: '',
-      }),
-    ).toThrow(AwardValidationError);
-
-    expect(() =>
-      validateAwardInput({
-        mode: 'SPLIT',
-        expectedRequestVersion: 2,
-        rationale: 'Complete coverage.',
-        selections: [
-          {
-            requestItemId: 'tomato',
-            supplierQuoteItemId: 'quote-item-a',
-            quantity: '50',
-          },
-          {
-            requestItemId: 'tomato',
-            supplierQuoteItemId: 'quote-item-a',
-            quantity: '50',
-          },
-        ],
-      }),
-    ).toThrow(AwardValidationError);
-
-    expect(() =>
-      validateAwardInput({
-        mode: 'SPLIT',
-        expectedRequestVersion: 2,
-        rationale: 'Complete coverage.',
-        selections: [],
-      }),
-    ).toThrow(AwardValidationError);
-  });
-
-  it('rejects malformed versions, quantities, identifiers, and unknown nested fields', () => {
-    const invalid = [
-      {
-        mode: 'WHOLE',
-        expectedRequestVersion: 0,
-        supplierQuoteId: 'quote-a',
-        rationale: 'Human decision.',
-      },
-      {
-        mode: 'SPLIT',
-        expectedRequestVersion: 2,
-        rationale: 'Human decision.',
-        selections: [
-          {
-            requestItemId: 'tomato',
-            supplierQuoteItemId: 'quote-item-a',
-            quantity: '1.0001',
-          },
-        ],
-      },
-      {
-        mode: 'SPLIT',
-        expectedRequestVersion: 2,
-        rationale: 'Human decision.',
-        selections: [
-          {
-            requestItemId: 'tomato',
-            supplierQuoteItemId: 'quote-item-a',
-            quantity: '1',
-            unitRatePaise: '1',
-          },
-        ],
-      },
-    ];
-
-    for (const input of invalid) {
-      expect(() => validateAwardInput(input)).toThrow(AwardValidationError);
+  it('accepts the 2,000-line boundary and rejects one more line', () => {
+    const selections = Array.from({ length: AWARD_MAX_SELECTIONS }, (_, index) => ({
+      requestItemId: `item-${index}`,
+      supplierRequestId: 'supplier-request-a',
+      quoteRevision: 3,
+      quantity: '0.001',
+    }));
+    const boundary = validateAwardInput({ ...split, selections });
+    expect(boundary.mode).toBe('SPLIT');
+    if (boundary.mode === 'SPLIT') {
+      expect(boundary.selections).toHaveLength(AWARD_MAX_SELECTIONS);
     }
+    expect(() => validateAwardInput({
+      ...split,
+      selections: [...selections, { ...selections[0]!, requestItemId: 'overflow' }],
+    })).toThrow(AwardValidationError);
   });
 });

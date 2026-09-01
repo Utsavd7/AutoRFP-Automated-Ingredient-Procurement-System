@@ -1,6 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
 
 import { AuthorizationError } from '@/lib/auth/guards';
+import { validateAwardDocuments } from '@/lib/awards/award-document';
 import {
   type TenantTransactionHost,
   withTenant,
@@ -484,6 +485,14 @@ export async function getQuoteComparison(
         },
       );
       const compared = compareLatestQuotes(comparisonRequest, quotes);
+      const award = request.award
+        ? validateAwardDocuments({
+            allocationLines: request.award.allocationLines,
+            supplierSnapshots: request.award.supplierSnapshots,
+            deliverySnapshot: request.award.deliverySnapshot,
+            totalPaise: request.award.totalPaise,
+          })
+        : null;
       return {
         ...compared,
         request: {
@@ -495,10 +504,12 @@ export async function getQuoteComparison(
                 id: request.award.id,
                 requestId: request.award.requestId,
                 rationale: request.award.rationale,
-                allocationLines: request.award.allocationLines,
-                suppliers: request.award.supplierSnapshots,
-                deliverySnapshot: request.award.deliverySnapshot,
-                totalPaise: request.award.totalPaise.toString(),
+                allocationLines: award!.allocationLines,
+                lines: award!.allocationLines.lines,
+                suppliers: award!.supplierSnapshots.suppliers,
+                deliverySnapshot: award!.deliverySnapshot,
+                totalPaise: award!.totalPaise,
+                splitAward: award!.splitAward,
                 createdAt: request.award.createdAt.toISOString(),
               }
             : null,

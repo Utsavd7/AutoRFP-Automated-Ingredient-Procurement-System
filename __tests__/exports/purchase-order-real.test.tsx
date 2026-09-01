@@ -7,7 +7,7 @@ import { build } from 'esbuild';
 
 const purchaseOrder = {
   awardId: 'award-real-1234', requestId: 'request-real-1234', requestTitle: 'Fresh produce week 36',
-  awardedAt: '2026-08-28T10:00:00.000Z', rationale: 'Complete delivery at the best landed cost.',
+  awardedAt: '2026-08-28T10:00:00.000Z',
   buyer: {
     name: 'Cedar Table Hospitality', gstin: '27ABCDE1234F1Z5', addressLine: '18 Market Road',
     city: 'Mumbai', state: 'Maharashtra', pin: '400001', phone: '9000000000',
@@ -15,17 +15,23 @@ const purchaseOrder = {
   delivery: {
     requestedDeliveryDate: '2026-09-05', addressLine: 'Service gate, 18 Market Road',
     city: 'Mumbai', state: 'Maharashtra', pin: '400001', instructions: 'Deliver before 8:00 AM.',
+    commercialTerms: 'Rates must include packing.',
   },
   supplier: {
     supplierId: 'supplier-real-1234', supplierName: 'GreenLeaf Fresh Foods', gstin: '27ABCDE9999F1Z1',
     contactName: 'Anita Shah', phone: '9111111111', email: 'orders@greenleaf.example',
     addressLine: '7 APMC Yard', city: 'Navi Mumbai', state: 'Maharashtra', pin: '400705',
-    freightPaise: '50000', commercialTerms: 'Payment in 15 days.', deliveryDate: '2026-09-06',
+    freightPaise: '50000', minimumOrder: 'Minimum invoice INR 2,500.',
+    commercialTerms: 'Payment in 15 days.', notes: 'Use ventilated crates.',
+    deliveryDate: '2026-09-06', validUntil: '2026-09-04',
   },
   lines: [{
     requestItemId: 'item-1', itemName: 'Tomato', quantity: '100', unit: 'KILOGRAM',
+    requestedDescription: 'Firm red tomato', requestedBrand: 'Farm Select', suppliedBrand: 'Market Fresh',
+    requestedPackSize: '5 kg crate', suppliedPackSize: '10 kg crate',
+    requestedQualityGrade: 'A', suppliedQualityGrade: 'Premium', substitution: 'Roma tomato',
     unitRatePaise: '79680', gstBasisPoints: 500, subtotalPaise: '7968000',
-    gstPaise: '398400', totalPaise: '8366400',
+    taxInclusive: false, gstPaise: '398400', totalPaise: '8366400',
   }],
   subtotalPaise: '7968000', gstPaise: '398400', freightPaise: '50000', totalPaise: '8416400',
 };
@@ -85,5 +91,11 @@ test('the production renderer creates an A4 purchase order with committed commer
   expect(text).toContain('Requested delivery: 2026-09-05');
   expect(text).toContain('Supplier committed delivery: 2026-09-06');
   expect(text).toContain('Payment in 15 days.');
+  expect(text).toContain('Firm red tomato');
+  expect(text).toContain('Farm Select');
+  expect(text).toContain('Market Fresh');
+  expect(text).toContain('Roma tomato');
+  expect(text).toContain('Rates must include packing.');
+  expect(text).not.toContain('Award note');
   expect(text).toContain('INR 84164.00');
 });

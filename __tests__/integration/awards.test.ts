@@ -1,9 +1,14 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 
 import {
+  AwardDocumentStorageCorruptionError,
+  validateAwardDocuments,
+} from '@/lib/awards/award-document';
+import {
   AwardConflictError,
+  AwardNotFoundError,
   createAward,
 } from '@/lib/awards/award-service';
 import { AuthorizationError } from '@/lib/auth/guards';
@@ -12,6 +17,11 @@ import {
   QuoteComparisonNotFoundError,
 } from '@/lib/comparison/compare-quotes';
 import {
+  appendQuoteRevision,
+  type QuoteRequestItem,
+  type QuoteRevisionsV1,
+} from '@/lib/quotes/quote-revisions';
+import {
   PublicQuoteUnavailableError,
   submitPublicSupplierQuote,
 } from '@/lib/quotes/public-quote-service';
@@ -19,80 +29,189 @@ import { digestOpaqueToken } from '@/lib/security/tokens';
 
 import { withMigratedPostgres } from './setup/postgres';
 
-function appDatabaseUrl(databaseUrl: string, password: string) {
+const farFuture = new Date('2099-09-01T00:00:00.000Z');
+const databaseNow = new Date('2026-08-30T10:00:00.123Z');
+
+function appDatabaseUrl(databaseUrl: string, password: string, name?: string) {
   const url = new URL(databaseUrl);
   url.username = 'autorfp_app';
   url.password = password;
+  if (name) url.searchParams.set('application_name', name);
   return url.toString();
 }
 
-async function provisionAppClient(admin: PrismaClient, databaseUrl: string) {
+async function appClient(
+  admin: PrismaClient,
+  databaseUrl: string,
+  name?: string,
+) {
   const password = randomBytes(24).toString('hex');
   await admin.$executeRawUnsafe(`ALTER ROLE autorfp_app PASSWORD '${password}'`);
   const client = new PrismaClient({
-    datasources: { db: { url: appDatabaseUrl(databaseUrl, password) } },
+    datasources: { db: { url: appDatabaseUrl(databaseUrl, password, name) } },
   });
   await client.$connect();
-  return client;
+  return { client, password };
 }
 
-function namedAppDatabaseUrl(databaseUrl: string, password: string, name: string) {
-  const url = new URL(appDatabaseUrl(databaseUrl, password));
-  url.searchParams.set('application_name', name);
-  return url.toString();
+function item(
+  id: string,
+  name: string,
+  quantity: string,
+): QuoteRequestItem & { sourcingOverride: null } {
+  return {
+    id,
+    itemKey: id,
+    name,
+    quantity,
+    unit: 'KILOGRAM',
+    specification: {
+      v: 1,
+      category: 'VEGETABLES',
+      description: `${name} requested specification`,
+      preferredBrand: 'Farm Select',
+      packSize: '5 kg crate',
+      qualityGrade: 'A',
+      notes: 'No bruising',
+      referenceUrl: null,
+      thumbnailWebpBase64: null,
+    },
+    sourcingOverride: null,
+  };
 }
 
-async function waitForDatabaseLock(admin: PrismaClient, applicationName: string) {
-  const deadline = Date.now() + 10_000;
-  while (Date.now() < deadline) {
-    const waiting = await admin.$queryRaw<Array<{ waiting: boolean }>>`
-      SELECT EXISTS (
-        SELECT 1
-        FROM pg_catalog.pg_stat_activity
-        WHERE application_name = ${applicationName}
-          AND wait_event_type = 'Lock'
-      ) AS "waiting"
-    `;
-    if (waiting[0]?.waiting) return;
-    await new Promise((resolve) => setTimeout(resolve, 25));
+const requestItems = [
+  item('tomato', 'Tomato', '100'),
+  item('coriander', 'Coriander', '10'),
+];
+
+function requestDocuments(supplierIds: string[]) {
+  return {
+    items: { v: 1, items: requestItems },
+    sourcing: {
+      v: 1,
+      default: {
+        v: 1,
+        modes: ['CURRENT'],
+        currentSupplierIds: supplierIds,
+        selectedNewSupplierIds: [],
+        acceptVerifiedApplications: false,
+      },
+    },
+  };
+}
+
+function quoteSubmission(input: {
+  supplier: 'A' | 'B';
+  validUntil?: string;
+  tomatoRateInr?: string;
+}) {
+  const supplierA = input.supplier === 'A';
+  return {
+    deliveryDate: '2099-09-02',
+    validUntil: input.validUntil ?? '2099-09-01',
+    minimumOrder: supplierA ? 'Minimum invoice INR 5,000' : null,
+    freightInr: supplierA ? '500' : '250',
+    commercialTerms: supplierA
+      ? 'Payment within 15 days'
+      : 'Payment within 7 days',
+    notes: supplierA ? 'Grade A produce' : null,
+    items: [
+      {
+        requestItemId: 'tomato',
+        noQuote: false,
+        availableQuantity: supplierA ? '100' : '40',
+        unit: 'KILOGRAM',
+        unitRateInr: input.tomatoRateInr ?? (supplierA ? '700' : '680'),
+        gstPercent: '5',
+        taxInclusive: false,
+        suppliedBrand: supplierA ? 'Harvest House' : 'GreenLeaf',
+        suppliedPackSize: '5 kg crate',
+        suppliedQualityGrade: supplierA ? 'Premium' : 'A',
+        substitution: supplierA ? 'Vine-ripened equivalent' : null,
+      },
+      {
+        requestItemId: 'coriander',
+        noQuote: false,
+        availableQuantity: '10',
+        unit: 'KILOGRAM',
+        unitRateInr: supplierA ? '900' : '950',
+        gstPercent: '5',
+        taxInclusive: false,
+        suppliedBrand: null,
+        suppliedPackSize: '1 kg bunch',
+        suppliedQualityGrade: 'A',
+        substitution: null,
+      },
+    ],
+  };
+}
+
+function quoteDocument(input: {
+  supplier: 'A' | 'B';
+  revisions?: number;
+  validUntil?: string;
+}) {
+  let document: QuoteRevisionsV1 = { v: 1, revisions: [] };
+  const count = input.revisions ?? 1;
+  for (let revision = 0; revision < count; revision += 1) {
+    document = appendQuoteRevision(
+      document,
+      quoteSubmission({
+        supplier: input.supplier,
+        validUntil: input.validUntil,
+        tomatoRateInr:
+          input.supplier === 'A' ? String(690 + revision * 10) : undefined,
+      }),
+      {
+        requestItems,
+        expectedLatestRevision: revision,
+        storedLatestRevision: revision,
+        databaseNow: input.validUntil === '2026-08-20'
+          ? new Date('2026-08-01T10:00:00.000Z')
+          : new Date(databaseNow.getTime() + revision),
+      },
+    );
   }
-  throw new Error(`${applicationName} did not reach the expected row lock.`);
+  return document;
 }
 
 async function seedTenant(
   admin: PrismaClient,
-  input: {
-    tenantId: string;
-    ownerId: string;
-    ownerEmail: string;
-    memberId?: string;
-    memberEmail?: string;
-  },
+  input: { tenantId: string; ownerId: string; includeMember?: boolean },
 ) {
   await admin.tenant.create({
     data: {
       id: input.tenantId,
       name: `${input.tenantId} Restaurant`,
-      addressLine: '12, 100 Feet Road',
-      city: 'Bengaluru',
-      state: 'Karnataka',
-      pin: '560038',
+      addressLine: '18 Koregaon Park Road',
+      city: 'Pune',
+      state: 'Maharashtra',
+      pin: '411001',
       phone: '9000000000',
+      gstin: '27ABCDE1234F1Z5',
       users: {
         create: [
           {
             id: input.ownerId,
             name: `${input.ownerId} Owner`,
-            email: input.ownerEmail,
+            email: `${input.ownerId}@example.test`,
             role: 'OWNER',
           },
-          ...(input.memberId && input.memberEmail
+          ...(input.includeMember
             ? [
                 {
-                  id: input.memberId,
-                  name: `${input.memberId} Member`,
-                  email: input.memberEmail,
+                  id: `${input.tenantId}-member`,
+                  name: 'Member',
+                  email: `${input.tenantId}-member@example.test`,
                   role: 'MEMBER' as const,
+                },
+                {
+                  id: `${input.tenantId}-deactivated-owner`,
+                  name: 'Former owner',
+                  email: `${input.tenantId}-former@example.test`,
+                  role: 'OWNER' as const,
+                  accountState: 'DEACTIVATED' as const,
                 },
               ]
             : []),
@@ -102,272 +221,155 @@ async function seedTenant(
   });
 }
 
-type SeedQuoteOptions = {
-  expired?: boolean;
-  includeHistoricalRevision?: boolean;
-};
+async function seedSuppliers(
+  admin: PrismaClient,
+  tenantId: string,
+  ownerId: string,
+) {
+  await admin.supplier.createMany({
+    data: [
+      {
+        id: `${tenantId}-supplier-a`,
+        tenantId,
+        businessName: 'A Produce',
+        contactName: 'Asha Rao',
+        phone: '9000000001',
+        email: 'orders@aproduce.example',
+        addressLine: '1 Market Road',
+        city: 'Pune',
+        state: 'Maharashtra',
+        pin: '411001',
+        gstin: '27AAAAA1111A1Z1',
+        relationshipType: 'CURRENT',
+        verificationStatus: 'VERIFIED',
+        verifiedAt: databaseNow,
+        verifiedByUserId: ownerId,
+        capabilities: { v: 1, categories: [], items: [] },
+      },
+      {
+        id: `${tenantId}-supplier-b`,
+        tenantId,
+        businessName: 'B Produce',
+        contactName: 'Bina Shah',
+        relationshipType: 'CURRENT',
+        verificationStatus: 'VERIFIED',
+        verifiedAt: databaseNow,
+        verifiedByUserId: ownerId,
+        capabilities: { v: 1, categories: [], items: [] },
+      },
+      {
+        id: `${tenantId}-supplier-inactive`,
+        tenantId,
+        businessName: 'Inactive Produce',
+        isActive: false,
+        relationshipType: 'CURRENT',
+        verificationStatus: 'VERIFIED',
+        verifiedAt: databaseNow,
+        verifiedByUserId: ownerId,
+        capabilities: { v: 1, categories: [], items: [] },
+      },
+    ],
+  });
+}
 
-async function seedOpenRequest(
+async function seedRequest(
   admin: PrismaClient,
   input: {
-    requestId: string;
     tenantId: string;
     ownerId: string;
-    supplierAId: string;
-    supplierBId: string;
-    options?: SeedQuoteOptions;
+    requestId: string;
+    supplierKinds?: Array<'A' | 'B' | 'INACTIVE'>;
+    revisionsA?: number;
+    expired?: boolean;
+    tokenA?: string;
   },
 ) {
-  const tomatoId = `${input.requestId}-tomato`;
-  const corianderId = `${input.requestId}-coriander`;
-  const grantAId = `${input.requestId}-grant-a`;
-  const grantBId = `${input.requestId}-grant-b`;
+  const supplierKinds = input.supplierKinds ?? ['A', 'B'];
+  const supplierIds = supplierKinds.map((kind) =>
+    kind === 'A'
+      ? `${input.tenantId}-supplier-a`
+      : kind === 'B'
+        ? `${input.tenantId}-supplier-b`
+        : `${input.tenantId}-supplier-inactive`,
+  );
+  const documents = requestDocuments(supplierIds);
   await admin.procurementRequest.create({
     data: {
       id: input.requestId,
+      tenantId: input.tenantId,
       title: `${input.requestId} weekly produce`,
       status: 'OPEN',
       version: 2,
+      items: documents.items as unknown as Prisma.InputJsonValue,
+      sourcing: documents.sourcing as unknown as Prisma.InputJsonValue,
       deliveryDetails: {
-        addressLine: '12, 100 Feet Road',
-        city: 'Bengaluru',
-        state: 'Karnataka',
-        pin: '560038',
+        addressLine: '18 Koregaon Park Road',
+        city: 'Pune',
+        state: 'Maharashtra',
+        pin: '411001',
+        instructions: 'Use the service entrance',
       },
-      deliveryDate: new Date('2099-01-10T00:00:00.000Z'),
-      quoteDeadline: new Date('2099-01-09T10:00:00.000Z'),
-      commercialTerms: 'Payment in 15 days.',
-      openedAt: new Date('2099-01-01T09:00:00.000Z'),
-      tenant: { connect: { id: input.tenantId } },
-      createdBy: {
-        connect: {
-          tenantId_id: { tenantId: input.tenantId, id: input.ownerId },
-        },
-      },
-      items: {
-        create: [
-          {
-            id: tomatoId,
-            name: 'Tomato',
-            quantity: '100',
-            unit: 'KILOGRAM',
-            tenant: { connect: { id: input.tenantId } },
-          },
-          {
-            id: corianderId,
-            name: 'Coriander',
-            quantity: '10',
-            unit: 'KILOGRAM',
-            tenant: { connect: { id: input.tenantId } },
-          },
-        ],
-      },
+      deliveryDate: new Date('2099-09-02T00:00:00.000Z'),
+      quoteDeadline: farFuture,
+      commercialTerms: 'Rates must include packing.',
+      openedAt: databaseNow,
+      createdByUserId: input.ownerId,
     },
   });
-  await admin.supplierRequest.createMany({
-    data: [
-      {
-        id: grantAId,
-        tenantId: input.tenantId,
-        requestId: input.requestId,
-        supplierId: input.supplierAId,
-        tokenDigest: createHash('sha256').update(grantAId).digest('hex'),
-        expiresAt: new Date('2099-01-09T10:00:00.000Z'),
-      },
-      {
-        id: grantBId,
-        tenantId: input.tenantId,
-        requestId: input.requestId,
-        supplierId: input.supplierBId,
-        tokenDigest: createHash('sha256').update(grantBId).digest('hex'),
-        expiresAt: new Date('2099-01-09T10:00:00.000Z'),
-      },
-    ],
-  });
 
-  let staleQuoteId: string | null = null;
-  let staleTomatoQuoteItemId: string | null = null;
-  if (input.options?.includeHistoricalRevision) {
-    const stale = await admin.supplierQuote.create({
-      data: {
-        id: `${input.requestId}-quote-a-r1`,
-        tenantId: input.tenantId,
-        supplierRequestId: grantAId,
-        revision: 1,
-        subtotalPaise: BigInt(8_000_000),
-        gstPaise: BigInt(400_000),
-        freightPaise: BigInt(50_000),
-        totalPaise: BigInt(8_450_000),
-        deliveryDate: new Date('2099-01-10T00:00:00.000Z'),
-        validUntil: new Date('2099-01-11T00:00:00.000Z'),
-        commercialTerms: 'Old revision.',
-      },
-    });
-    staleQuoteId = stale.id;
-    staleTomatoQuoteItemId = `${input.requestId}-quote-a-r1-tomato`;
-    await admin.supplierQuoteItem.createMany({
-      data: [
-        {
-          id: staleTomatoQuoteItemId,
-          tenantId: input.tenantId,
-          quoteId: stale.id,
-          requestItemId: tomatoId,
-          noQuote: false,
-          availableQuantity: '100',
-          unit: 'KILOGRAM',
-          unitRatePaise: BigInt(710_00),
-          gstBasisPoints: 500,
-          subtotalPaise: BigInt(7_100_000),
-          gstPaise: BigInt(355_000),
-          totalPaise: BigInt(7_455_000),
-        },
-        {
-          id: `${input.requestId}-quote-a-r1-coriander`,
-          tenantId: input.tenantId,
-          quoteId: stale.id,
-          requestItemId: corianderId,
-          noQuote: false,
-          availableQuantity: '10',
-          unit: 'KILOGRAM',
-          unitRatePaise: BigInt(900_00),
-          gstBasisPoints: 500,
-          subtotalPaise: BigInt(900_000),
-          gstPaise: BigInt(45_000),
-          totalPaise: BigInt(945_000),
-        },
-      ],
-    });
-  }
-
-  const quoteA = await admin.supplierQuote.create({
-    data: {
-      id: `${input.requestId}-quote-a-latest`,
+  const grants = supplierKinds.map((kind, index) => {
+    const supplier = kind === 'B' ? 'B' : 'A';
+    const revisions = kind === 'A' ? input.revisionsA ?? 1 : 1;
+    const id = `${input.requestId}-grant-${kind.toLowerCase()}`;
+    const token = kind === 'A' && input.tokenA
+      ? input.tokenA
+      : `${input.requestId}-${kind}-${index}`.padEnd(43, kind).slice(0, 43);
+    return {
+      id,
       tenantId: input.tenantId,
-      supplierRequestId: grantAId,
-      revision: input.options?.includeHistoricalRevision ? 2 : 1,
-      subtotalPaise: BigInt(7_900_000),
-      gstPaise: BigInt(395_000),
-      freightPaise: BigInt(50_000),
-      totalPaise: BigInt(8_345_000),
-      deliveryDate: new Date('2099-01-10T00:00:00.000Z'),
-      validUntil: input.options?.expired
-        ? new Date('2026-08-20T00:00:00.000Z')
-        : new Date('2099-01-11T00:00:00.000Z'),
-      submittedAt: input.options?.expired
-        ? new Date('2026-08-01T00:00:00.000Z')
-        : new Date('2099-01-02T00:00:00.000Z'),
-      commercialTerms: 'Payment in 15 days.',
-      notes: 'Grade A produce.',
-    },
+      requestId: input.requestId,
+      supplierId: supplierIds[index]!,
+      tokenDigest: digestOpaqueToken('supplier-request', token),
+      expiresAt: farFuture,
+      quoteRevision: revisions,
+      quoteRevisions: quoteDocument({
+        supplier,
+        revisions,
+        validUntil: input.expired ? '2026-08-20' : undefined,
+      }) as unknown as Prisma.InputJsonValue,
+    };
   });
-  const quoteATomatoItemId = `${input.requestId}-quote-a-tomato`;
-  const quoteACorianderItemId = `${input.requestId}-quote-a-coriander`;
-  await admin.supplierQuoteItem.createMany({
-    data: [
-      {
-        id: quoteATomatoItemId,
-        tenantId: input.tenantId,
-        quoteId: quoteA.id,
-        requestItemId: tomatoId,
-        noQuote: false,
-        availableQuantity: '100',
-        unit: 'KILOGRAM',
-        unitRatePaise: BigInt(700_00),
-        gstBasisPoints: 500,
-        subtotalPaise: BigInt(7_000_000),
-        gstPaise: BigInt(350_000),
-        totalPaise: BigInt(7_350_000),
-      },
-      {
-        id: quoteACorianderItemId,
-        tenantId: input.tenantId,
-        quoteId: quoteA.id,
-        requestItemId: corianderId,
-        noQuote: false,
-        availableQuantity: '10',
-        unit: 'KILOGRAM',
-        unitRatePaise: BigInt(900_00),
-        gstBasisPoints: 500,
-        subtotalPaise: BigInt(900_000),
-        gstPaise: BigInt(45_000),
-        totalPaise: BigInt(945_000),
-      },
-    ],
-  });
-
-  const quoteB = await admin.supplierQuote.create({
-    data: {
-      id: `${input.requestId}-quote-b-latest`,
-      tenantId: input.tenantId,
-      supplierRequestId: grantBId,
-      revision: 1,
-      subtotalPaise: BigInt(3_670_000),
-      gstPaise: BigInt(183_500),
-      freightPaise: BigInt(25_000),
-      totalPaise: BigInt(3_878_500),
-      deliveryDate: new Date('2099-01-09T00:00:00.000Z'),
-      validUntil: input.options?.expired
-        ? new Date('2026-08-20T00:00:00.000Z')
-        : new Date('2099-01-11T00:00:00.000Z'),
-      submittedAt: input.options?.expired
-        ? new Date('2026-08-01T00:00:00.000Z')
-        : new Date('2099-01-02T00:00:00.000Z'),
-      commercialTerms: 'Payment in 7 days.',
-    },
-  });
-  const quoteBTomatoItemId = `${input.requestId}-quote-b-tomato`;
-  const quoteBCorianderItemId = `${input.requestId}-quote-b-coriander`;
-  await admin.supplierQuoteItem.createMany({
-    data: [
-      {
-        id: quoteBTomatoItemId,
-        tenantId: input.tenantId,
-        quoteId: quoteB.id,
-        requestItemId: tomatoId,
-        noQuote: false,
-        availableQuantity: '40',
-        unit: 'KILOGRAM',
-        unitRatePaise: BigInt(680_00),
-        gstBasisPoints: 500,
-        subtotalPaise: BigInt(2_720_000),
-        gstPaise: BigInt(136_000),
-        totalPaise: BigInt(2_856_000),
-      },
-      {
-        id: quoteBCorianderItemId,
-        tenantId: input.tenantId,
-        quoteId: quoteB.id,
-        requestItemId: corianderId,
-        noQuote: false,
-        availableQuantity: '10',
-        unit: 'KILOGRAM',
-        unitRatePaise: BigInt(950_00),
-        gstBasisPoints: 500,
-        subtotalPaise: BigInt(950_000),
-        gstPaise: BigInt(47_500),
-        totalPaise: BigInt(997_500),
-      },
-    ],
-  });
-
+  await admin.supplierRequest.createMany({ data: grants });
   return {
-    tomatoId,
-    corianderId,
-    quoteAId: quoteA.id,
-    quoteBId: quoteB.id,
-    quoteATomatoItemId,
-    quoteACorianderItemId,
-    quoteBTomatoItemId,
-    quoteBCorianderItemId,
-    staleQuoteId,
-    staleTomatoQuoteItemId,
+    grantAId: `${input.requestId}-grant-a`,
+    grantBId: `${input.requestId}-grant-b`,
   };
 }
 
-describe('restricted PostgreSQL comparison and awards', () => {
+async function waitForDatabaseLock(
+  admin: PrismaClient,
+  applicationName: string,
+) {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const [state] = await admin.$queryRaw<Array<{ waiting: boolean }>>`
+      SELECT EXISTS (
+        SELECT 1
+        FROM pg_catalog.pg_stat_activity
+        WHERE application_name = ${applicationName}
+          AND wait_event_type = 'Lock'
+      ) AS "waiting"
+    `;
+    if (state?.waiting) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`${applicationName} did not reach the expected lock.`);
+}
+
+describe('compact awards with restricted PostgreSQL', () => {
   jest.setTimeout(240_000);
 
-  it('compares latest revisions tenant-safely and commits only exact owner awards', async () => {
+  it('authorizes an active owner and stores one immutable, exactly covered split award', async () => {
     await withMigratedPostgres(async (databaseUrl) => {
       const admin = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
       let app: PrismaClient | undefined;
@@ -375,394 +377,273 @@ describe('restricted PostgreSQL comparison and awards', () => {
         await seedTenant(admin, {
           tenantId: 'tenant-a',
           ownerId: 'owner-a',
-          ownerEmail: 'owner-a@example.test',
-          memberId: 'member-a',
-          memberEmail: 'member-a@example.test',
+          includeMember: true,
         });
-        await seedTenant(admin, {
+        await seedTenant(admin, { tenantId: 'tenant-b', ownerId: 'owner-b' });
+        await seedSuppliers(admin, 'tenant-a', 'owner-a');
+        await seedSuppliers(admin, 'tenant-b', 'owner-b');
+        const split = await seedRequest(admin, {
+          tenantId: 'tenant-a',
+          ownerId: 'owner-a',
+          requestId: 'request-split',
+          revisionsA: 2,
+        });
+        await seedRequest(admin, {
+          tenantId: 'tenant-a',
+          ownerId: 'owner-a',
+          requestId: 'request-expired',
+          supplierKinds: ['A'],
+          expired: true,
+        });
+        await seedRequest(admin, {
+          tenantId: 'tenant-a',
+          ownerId: 'owner-a',
+          requestId: 'request-inactive',
+          supplierKinds: ['INACTIVE'],
+        });
+        await seedRequest(admin, {
           tenantId: 'tenant-b',
           ownerId: 'owner-b',
-          ownerEmail: 'owner-b@example.test',
+          requestId: 'request-private',
+          supplierKinds: ['A'],
         });
-        await admin.supplier.createMany({
-          data: [
+
+        ({ client: app } = await appClient(admin, databaseUrl));
+        const owner = { tenantId: 'tenant-a', userId: 'owner-a' };
+        const splitInput = {
+          mode: 'SPLIT',
+          expectedRequestVersion: 2,
+          rationale: 'Split for confirmed stock coverage and the required delivery.',
+          selections: [
             {
-              id: 'supplier-a',
-              tenantId: 'tenant-a',
-              businessName: 'Shakti Foods',
-              contactName: 'Ravi Kumar',
-              phone: '919900000001',
-              gstin: '29ABCDE1234F1Z5',
+              requestItemId: 'tomato',
+              supplierRequestId: split.grantAId,
+              quoteRevision: 2,
+              quantity: '60',
             },
             {
-              id: 'supplier-b',
-              tenantId: 'tenant-a',
-              businessName: 'GreenLeaf Enterprises',
-              email: 'quotes@greenleaf.example',
+              requestItemId: 'tomato',
+              supplierRequestId: split.grantBId,
+              quoteRevision: 1,
+              quantity: '40',
             },
             {
-              id: 'supplier-private-a',
-              tenantId: 'tenant-b',
-              businessName: 'Private Supplier A',
-            },
-            {
-              id: 'supplier-private-b',
-              tenantId: 'tenant-b',
-              businessName: 'Private Supplier B',
+              requestItemId: 'coriander',
+              supplierRequestId: split.grantBId,
+              quoteRevision: 1,
+              quantity: '10',
             },
           ],
-        });
-        const split = await seedOpenRequest(admin, {
-          requestId: 'request-split',
-          tenantId: 'tenant-a',
-          ownerId: 'owner-a',
-          supplierAId: 'supplier-a',
-          supplierBId: 'supplier-b',
-          options: { includeHistoricalRevision: true },
-        });
-        const concurrent = await seedOpenRequest(admin, {
-          requestId: 'request-concurrent',
-          tenantId: 'tenant-a',
-          ownerId: 'owner-a',
-          supplierAId: 'supplier-a',
-          supplierBId: 'supplier-b',
-        });
-        const expired = await seedOpenRequest(admin, {
-          requestId: 'request-expired',
-          tenantId: 'tenant-a',
-          ownerId: 'owner-a',
-          supplierAId: 'supplier-a',
-          supplierBId: 'supplier-b',
-          options: { expired: true },
-        });
-        const privateRequest = await seedOpenRequest(admin, {
+        } as const;
+
+        for (const userId of [
+          'tenant-a-member',
+          'tenant-a-deactivated-owner',
+        ]) {
+          await expect(createAward({
+            actor: { tenantId: 'tenant-a', userId },
+            requestId: 'request-split',
+            award: splitInput,
+          }, app)).rejects.toBeInstanceOf(AuthorizationError);
+        }
+        await expect(createAward({
+          actor: owner,
           requestId: 'request-private',
-          tenantId: 'tenant-b',
-          ownerId: 'owner-b',
-          supplierAId: 'supplier-private-a',
-          supplierBId: 'supplier-private-b',
-        });
-
-        app = await provisionAppClient(admin, databaseUrl);
-        const owner = { tenantId: 'tenant-a', userId: 'owner-a' };
-        const member = { tenantId: 'tenant-a', userId: 'member-a' };
-
-        const comparison = await getQuoteComparison(
-          { actor: member, requestId: 'request-split' },
-          app,
-        );
-        expect(comparison.quotes).toHaveLength(2);
-        expect(comparison.quotes.find(({ supplierId }) => supplierId === 'supplier-a'))
-          .toMatchObject({ revision: 2, totalPaise: '8345000', fullCoverage: true });
-        expect(comparison.quotes.some(({ quoteId }) => quoteId === split.staleQuoteId))
-          .toBe(false);
+          award: {
+            mode: 'WHOLE',
+            expectedRequestVersion: 2,
+            supplierRequestId: 'request-private-grant-a',
+            quoteRevision: 1,
+            rationale: 'Cross-tenant request must remain hidden.',
+          },
+        }, app)).rejects.toBeInstanceOf(AwardNotFoundError);
         await expect(
           getQuoteComparison({ actor: owner, requestId: 'request-private' }, app),
         ).rejects.toBeInstanceOf(QuoteComparisonNotFoundError);
 
-        await expect(
-          createAward(
-            {
-              actor: member,
-              requestId: 'request-split',
-              award: {
-                mode: 'WHOLE',
-                expectedRequestVersion: 2,
-                supplierQuoteId: split.quoteAId,
-                rationale: 'Member must not award.',
-              },
+        for (const [requestId, supplierRequestId] of [
+          ['request-expired', 'request-expired-grant-a'],
+          ['request-inactive', 'request-inactive-grant-inactive'],
+        ] as const) {
+          await expect(createAward({
+            actor: owner,
+            requestId,
+            award: {
+              mode: 'WHOLE',
+              expectedRequestVersion: 2,
+              supplierRequestId,
+              quoteRevision: 1,
+              rationale: 'Unavailable quotes cannot be awarded.',
             },
-            app,
-          ),
-        ).rejects.toBeInstanceOf(AuthorizationError);
+          }, app)).rejects.toBeInstanceOf(AwardConflictError);
+        }
 
-        await expect(
-          createAward(
-            {
-              actor: owner,
-              requestId: 'request-split',
-              award: {
-                mode: 'SPLIT',
-                expectedRequestVersion: 2,
-                rationale: 'This invalid attempt must roll back.',
-                selections: [
-                  {
-                    requestItemId: split.tomatoId,
-                    supplierQuoteItemId: split.quoteATomatoItemId,
-                    quantity: '60',
-                  },
-                  {
-                    requestItemId: split.corianderId,
-                    supplierQuoteItemId: privateRequest.quoteACorianderItemId,
-                    quantity: '10',
-                  },
-                ],
-              },
-            },
-            app,
-          ),
-        ).rejects.toBeInstanceOf(AwardConflictError);
-        expect(await admin.award.count({ where: { requestId: 'request-split' } })).toBe(0);
-        expect(
-          await admin.awardLine.count({ where: { requestItemId: split.tomatoId } }),
-        ).toBe(0);
+        await expect(createAward({
+          actor: owner,
+          requestId: 'request-split',
+          award: {
+            mode: 'WHOLE',
+            expectedRequestVersion: 2,
+            supplierRequestId: split.grantAId,
+            quoteRevision: 1,
+            rationale: 'A historical embedded revision cannot be awarded.',
+          },
+        }, app)).rejects.toBeInstanceOf(AwardConflictError);
 
-        await expect(
-          createAward(
-            {
-              actor: owner,
-              requestId: 'request-split',
-              award: {
-                mode: 'WHOLE',
-                expectedRequestVersion: 2,
-                supplierQuoteId: split.staleQuoteId,
-                rationale: 'Old revision must be rejected.',
-              },
-            },
-            app,
-          ),
-        ).rejects.toBeInstanceOf(AwardConflictError);
-
-        await expect(
-          createAward(
-            {
-              actor: owner,
-              requestId: 'request-split',
-              award: {
-                mode: 'SPLIT',
-                expectedRequestVersion: 2,
-                rationale: 'This over-award must not commit.',
-                selections: [
-                  {
-                    requestItemId: split.tomatoId,
-                    supplierQuoteItemId: split.quoteATomatoItemId,
-                    quantity: '61',
-                  },
-                  {
-                    requestItemId: split.tomatoId,
-                    supplierQuoteItemId: split.quoteBTomatoItemId,
-                    quantity: '40',
-                  },
-                  {
-                    requestItemId: split.corianderId,
-                    supplierQuoteItemId: split.quoteBCorianderItemId,
-                    quantity: '10',
-                  },
-                ],
-              },
-            },
-            app,
-          ),
-        ).rejects.toBeInstanceOf(AwardConflictError);
-        expect(await admin.award.count({ where: { requestId: 'request-split' } })).toBe(0);
-
-        const splitAward = await createAward(
-          {
+        for (const invalidSelections of [
+          splitInput.selections.slice(0, 2),
+          [
+            { ...splitInput.selections[0], quantity: '61' },
+            splitInput.selections[1],
+            splitInput.selections[2],
+          ],
+        ]) {
+          await expect(createAward({
             actor: owner,
             requestId: 'request-split',
-            award: {
-              mode: 'SPLIT',
-              expectedRequestVersion: 2,
-              rationale: 'Split for exact stock coverage and earlier delivery.',
-              selections: [
-                {
-                  requestItemId: split.tomatoId,
-                  supplierQuoteItemId: split.quoteATomatoItemId,
-                  quantity: '60',
-                },
-                {
-                  requestItemId: split.tomatoId,
-                  supplierQuoteItemId: split.quoteBTomatoItemId,
-                  quantity: '40',
-                },
-                {
-                  requestItemId: split.corianderId,
-                  supplierQuoteItemId: split.quoteBCorianderItemId,
-                  quantity: '10',
-                },
-              ],
-            },
-          },
-          app,
-        );
-        expect(splitAward).toMatchObject({
+            award: { ...splitInput, selections: invalidSelections },
+          }, app)).rejects.toBeInstanceOf(AwardConflictError);
+        }
+
+        const awarded = await createAward({
+          actor: owner,
           requestId: 'request-split',
-          rationale: 'Split for exact stock coverage and earlier delivery.',
+          award: splitInput,
+        }, app);
+        expect(awarded).toMatchObject({
+          requestId: 'request-split',
+          rationale: splitInput.rationale,
           totalPaise: '8338500',
           splitAward: true,
         });
-        expect(splitAward.lines).toHaveLength(3);
-        expect(splitAward.suppliers).toEqual(expect.arrayContaining([
-          expect.objectContaining({
-            supplierId: 'supplier-a',
-            supplierName: 'Shakti Foods',
-            quoteId: split.quoteAId,
-            revision: 2,
-            freightPaise: '50000',
-          }),
-          expect.objectContaining({
-            supplierId: 'supplier-b',
-            supplierName: 'GreenLeaf Enterprises',
-            quoteId: split.quoteBId,
-            revision: 1,
-            freightPaise: '25000',
-          }),
-        ]));
-        expect(await admin.procurementRequest.findUnique({ where: { id: 'request-split' } }))
-          .toMatchObject({ status: 'AWARDED', version: 3 });
-        expect(
-          await admin.auditEvent.count({
-            where: { tenantId: 'tenant-a', action: 'request.awarded', entityId: splitAward.id },
-          }),
-        ).toBe(1);
+        expect(awarded.lines).toHaveLength(3);
+        expect(awarded.suppliers).toHaveLength(2);
 
-        const recorded = await getQuoteComparison(
-          { actor: owner, requestId: 'request-split' },
-          app,
-        );
-        expect(recorded.request.award).toMatchObject({
-          id: splitAward.id,
-          requestId: 'request-split',
-          rationale: 'Split for exact stock coverage and earlier delivery.',
+        const stored = await admin.award.findUniqueOrThrow({
+          where: { requestId: 'request-split' },
+        });
+        const validated = validateAwardDocuments({
+          allocationLines: stored.allocationLines,
+          supplierSnapshots: stored.supplierSnapshots,
+          deliverySnapshot: stored.deliverySnapshot,
+          totalPaise: stored.totalPaise,
+        });
+        expect(validated).toMatchObject({
           totalPaise: '8338500',
           splitAward: true,
-          deliverySnapshot: {
-            requestTitle: 'request-split weekly produce',
-            requestedDeliveryDate: '2099-01-10',
-            deliveryDetails: {
-              addressLine: '12, 100 Feet Road',
-              city: 'Bengaluru',
-              state: 'Karnataka',
-              pin: '560038',
-            },
-            buyer: {
-              name: 'tenant-a Restaurant',
-              addressLine: '12, 100 Feet Road',
-              city: 'Bengaluru',
-              state: 'Karnataka',
-              pin: '560038',
-              phone: '9000000000',
-              gstin: null,
-            },
+          supplierSnapshots: {
+            suppliers: expect.arrayContaining([
+              expect.objectContaining({
+                supplierId: 'tenant-a-supplier-a',
+                supplierRequestId: split.grantAId,
+                quoteRevision: 2,
+                freightPaise: '50000',
+                minimumOrder: 'Minimum invoice INR 5,000',
+                lines: [expect.objectContaining({
+                  requestItemId: 'tomato',
+                  requestedSpecification: expect.objectContaining({
+                    description: 'Tomato requested specification',
+                    preferredBrand: 'Farm Select',
+                    packSize: '5 kg crate',
+                    qualityGrade: 'A',
+                  }),
+                  taxInclusive: false,
+                  suppliedBrand: 'Harvest House',
+                  suppliedPackSize: '5 kg crate',
+                  suppliedQualityGrade: 'Premium',
+                  substitution: 'Vine-ripened equivalent',
+                })],
+              }),
+            ]),
           },
-          suppliers: expect.arrayContaining([
-            expect.objectContaining({
-              supplierId: 'supplier-a',
-              supplierName: 'Shakti Foods',
-              contactName: 'Ravi Kumar',
-              gstin: '29ABCDE1234F1Z5',
-              freightPaise: '50000',
-            }),
-            expect.objectContaining({
-              supplierId: 'supplier-b',
-              supplierName: 'GreenLeaf Enterprises',
-              freightPaise: '25000',
-            }),
-          ]),
+        });
+        const committedRequest = await admin.procurementRequest.findUniqueOrThrow({
+          where: { id: 'request-split' },
+        });
+        expect(committedRequest).toMatchObject({ status: 'AWARDED', version: 3 });
+        expect(committedRequest.awardedAt?.getTime()).toBe(stored.createdAt.getTime());
+        const grants = await admin.supplierRequest.findMany({
+          where: { requestId: 'request-split' },
+          orderBy: { id: 'asc' },
+        });
+        expect(grants.every(({ revokedAt }) =>
+          revokedAt?.getTime() === stored.createdAt.getTime(),
+        )).toBe(true);
+
+        const comparisonAfterAward = await getQuoteComparison({
+          actor: owner,
+          requestId: 'request-split',
+        }, app);
+        expect(comparisonAfterAward.request.award).toMatchObject({
+          id: stored.id,
+          requestId: 'request-split',
+          rationale: splitInput.rationale,
+          totalPaise: '8338500',
+          splitAward: true,
           lines: expect.arrayContaining([
             expect.objectContaining({
-              requestItemId: split.tomatoId,
-              requestItemName: 'Tomato',
-              supplierId: 'supplier-a',
+              requestItemId: 'tomato',
+              supplierRequestId: split.grantAId,
+              quoteRevision: 2,
               quantity: '60',
-              unit: 'KILOGRAM',
-              unitRatePaise: '70000',
-              gstBasisPoints: 500,
-              subtotalPaise: '4200000',
-              gstPaise: '210000',
-              totalPaise: '4410000',
             }),
           ]),
         });
-
-        await admin.supplier.update({
-          where: {
-            tenantId_id: { tenantId: 'tenant-a', id: 'supplier-a' },
-          },
+        const corruptAllocations = structuredClone(
+          stored.allocationLines,
+        ) as { v: number; lines: Array<Record<string, unknown>> };
+        corruptAllocations.lines[0]!.totalPaise = '1';
+        await admin.award.update({
+          where: { id: stored.id },
           data: {
-            businessName: 'Renamed After Award',
-            contactName: 'Changed Contact',
-            gstin: '29ZZZZZ9999Z9Z9',
-            isActive: false,
+            allocationLines: corruptAllocations as Prisma.InputJsonValue,
           },
         });
-        const afterSupplierEdit = await getQuoteComparison(
-          { actor: owner, requestId: 'request-split' },
-          app,
-        );
-        expect(afterSupplierEdit.request.award).toEqual(recorded.request.award);
-        expect(
-          afterSupplierEdit.quotes.find(({ supplierId }) => supplierId === 'supplier-a'),
-        ).toMatchObject({
-          supplierName: 'Renamed After Award',
-          supplierActive: false,
-          awardable: false,
-          awardIssues: ['SUPPLIER_INACTIVE'],
+        await expect(getQuoteComparison({
+          actor: owner,
+          requestId: 'request-split',
+        }, app)).rejects.toBeInstanceOf(AwardDocumentStorageCorruptionError);
+        await admin.award.update({
+          where: { id: stored.id },
+          data: {
+            allocationLines: stored.allocationLines as Prisma.InputJsonValue,
+          },
+        });
+
+        const immutableBytes = JSON.stringify({
+          allocationLines: stored.allocationLines,
+          supplierSnapshots: stored.supplierSnapshots,
+          deliverySnapshot: stored.deliverySnapshot,
+          totalPaise: stored.totalPaise.toString(),
+        });
+        await admin.tenant.update({
+          where: { id: 'tenant-a' },
+          data: { name: 'Renamed Restaurant' },
         });
         await admin.supplier.update({
-          where: {
-            tenantId_id: { tenantId: 'tenant-a', id: 'supplier-a' },
-          },
-          data: {
-            businessName: 'Shakti Foods',
-            contactName: 'Ravi Kumar',
-            gstin: '29ABCDE1234F1Z5',
-            isActive: true,
-          },
+          where: { id: 'tenant-a-supplier-a' },
+          data: { businessName: 'Renamed Supplier', contactName: 'Changed' },
         });
+        await admin.procurementRequest.update({
+          where: { id: 'request-split' },
+          data: { title: 'Renamed request', commercialTerms: 'Changed terms' },
+        });
+        const afterLiveEdits = await admin.award.findUniqueOrThrow({
+          where: { requestId: 'request-split' },
+        });
+        expect(JSON.stringify({
+          allocationLines: afterLiveEdits.allocationLines,
+          supplierSnapshots: afterLiveEdits.supplierSnapshots,
+          deliverySnapshot: afterLiveEdits.deliverySnapshot,
+          totalPaise: afterLiveEdits.totalPaise.toString(),
+        })).toBe(immutableBytes);
 
-        await expect(
-          createAward(
-            {
-              actor: owner,
-              requestId: 'request-expired',
-              award: {
-                mode: 'WHOLE',
-                expectedRequestVersion: 2,
-                supplierQuoteId: expired.quoteAId,
-                rationale: 'Expired quote must not be awardable.',
-              },
-            },
-            app,
-          ),
-        ).rejects.toBeInstanceOf(AwardConflictError);
-
-        const concurrentResults = await Promise.allSettled([
-          createAward(
-            {
-              actor: owner,
-              requestId: 'request-concurrent',
-              award: {
-                mode: 'WHOLE',
-                expectedRequestVersion: 2,
-                supplierQuoteId: concurrent.quoteAId,
-                rationale: 'Complete quote with requested delivery.',
-              },
-            },
-            app,
-          ),
-          createAward(
-            {
-              actor: owner,
-              requestId: 'request-concurrent',
-              award: {
-                mode: 'WHOLE',
-                expectedRequestVersion: 2,
-                supplierQuoteId: concurrent.quoteAId,
-                rationale: 'Concurrent duplicate decision.',
-              },
-            },
-            app,
-          ),
-        ]);
-        expect(concurrentResults.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
-        expect(
-          concurrentResults.filter(
-            (result) =>
-              result.status === 'rejected' && result.reason instanceof AwardConflictError,
-          ),
-        ).toHaveLength(1);
-        expect(await admin.award.count({ where: { requestId: 'request-concurrent' } }))
+        await expect(createAward({
+          actor: owner,
+          requestId: 'request-split',
+          award: splitInput,
+        }, app)).rejects.toMatchObject({ code: 'AWARD_CONFLICT', status: 409 });
+        expect(await admin.award.count({ where: { requestId: 'request-split' } }))
           .toBe(1);
       } finally {
         await app?.$disconnect();
@@ -771,337 +652,164 @@ describe('restricted PostgreSQL comparison and awards', () => {
     });
   });
 
-  it('records a maximum-valid 100-supplier split snapshot above the former 16 KiB ceiling', async () => {
+  it('linearizes quote-first and award-first updates on embedded revisions', async () => {
     await withMigratedPostgres(async (databaseUrl) => {
       const admin = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
-      let app: PrismaClient | undefined;
-      try {
-        await seedTenant(admin, {
-          tenantId: 'tenant-maximum-award',
-          ownerId: 'owner-maximum-award',
-          ownerEmail: 'owner-maximum-award@example.test',
-        });
-        await admin.procurementRequest.create({
-          data: {
-            id: 'request-maximum-award',
-            tenantId: 'tenant-maximum-award',
-            title: 'Maximum supplier split',
-            status: 'OPEN',
-            version: 2,
-            deliveryDetails: {
-              addressLine: '12, 100 Feet Road',
-              city: 'Bengaluru',
-              state: 'Karnataka',
-              pin: '560038',
-            },
-            deliveryDate: new Date('2099-01-10T00:00:00.000Z'),
-            quoteDeadline: new Date('2099-01-09T10:00:00.000Z'),
-            openedAt: new Date('2099-01-01T09:00:00.000Z'),
-            createdByUserId: 'owner-maximum-award',
-            items: {
-              create: {
-                id: 'maximum-award-item',
-                name: 'Tomato',
-                quantity: '100',
-                unit: 'KILOGRAM',
-              },
-            },
-          },
-        });
-
-        const supplierRows = Array.from({ length: 100 }, (_, index) => ({
-          id: `maximum-award-supplier-${String(index).padStart(3, '0')}`,
-          tenantId: 'tenant-maximum-award',
-          businessName: `Supplier ${index} ${'N'.repeat(120)}`,
-          contactName: `Contact ${index} ${'C'.repeat(80)}`,
-          phone: `9198${String(index).padStart(8, '0')}`,
-          email: `supplier-${index}@maximum-award.example.test`,
-          addressLine: `${index}, ${'Market Road '.repeat(18)}`,
-          city: 'Bengaluru',
-          state: 'Karnataka',
-          pin: '560038',
-        }));
-        await admin.supplier.createMany({ data: supplierRows });
-        await admin.supplierRequest.createMany({
-          data: supplierRows.map((supplier, index) => ({
-            id: `maximum-award-grant-${String(index).padStart(3, '0')}`,
-            tenantId: 'tenant-maximum-award',
-            requestId: 'request-maximum-award',
-            supplierId: supplier.id,
-            tokenDigest: createHash('sha256')
-              .update(`maximum-award-grant-${index}`)
-              .digest('hex'),
-            expiresAt: new Date('2099-01-09T10:00:00.000Z'),
-          })),
-        });
-        await admin.supplierQuote.createMany({
-          data: supplierRows.map((_, index) => ({
-            id: `maximum-award-quote-${String(index).padStart(3, '0')}`,
-            tenantId: 'tenant-maximum-award',
-            supplierRequestId: `maximum-award-grant-${String(index).padStart(3, '0')}`,
-            revision: 1,
-            subtotalPaise: BigInt(100),
-            gstPaise: BigInt(0),
-            freightPaise: BigInt(0),
-            totalPaise: BigInt(100),
-            deliveryDate: new Date('2099-01-10T00:00:00.000Z'),
-            validUntil: new Date('2099-01-11T00:00:00.000Z'),
-            commercialTerms: 'T'.repeat(2_000),
-            notes: 'N'.repeat(4_000),
-            submittedAt: new Date('2099-01-02T00:00:00.000Z'),
-          })),
-        });
-        await admin.supplierQuoteItem.createMany({
-          data: supplierRows.map((_, index) => ({
-            id: `maximum-award-quote-item-${String(index).padStart(3, '0')}`,
-            tenantId: 'tenant-maximum-award',
-            quoteId: `maximum-award-quote-${String(index).padStart(3, '0')}`,
-            requestItemId: 'maximum-award-item',
-            noQuote: false,
-            availableQuantity: '1',
-            unit: 'KILOGRAM' as const,
-            unitRatePaise: BigInt(100),
-            gstBasisPoints: 0,
-            subtotalPaise: BigInt(100),
-            gstPaise: BigInt(0),
-            totalPaise: BigInt(100),
-          })),
-        });
-
-        app = await provisionAppClient(admin, databaseUrl);
-        const award = await createAward(
-          {
-            actor: {
-              tenantId: 'tenant-maximum-award',
-              userId: 'owner-maximum-award',
-            },
-            requestId: 'request-maximum-award',
-            award: {
-              mode: 'SPLIT',
-              expectedRequestVersion: 2,
-              rationale: 'Exact coverage across the maximum supported supplier list.',
-              selections: supplierRows.map((_, index) => ({
-                requestItemId: 'maximum-award-item',
-                supplierQuoteItemId:
-                  `maximum-award-quote-item-${String(index).padStart(3, '0')}`,
-                quantity: '1',
-              })),
-            },
-          },
-          app,
-        );
-
-        expect(award.suppliers).toHaveLength(100);
-        expect(award.lines).toHaveLength(100);
-        const [snapshot] = await admin.$queryRaw<Array<{ bytes: number }>>`
-          SELECT octet_length("supplierSnapshots"::TEXT)::INTEGER AS "bytes"
-          FROM "Award"
-          WHERE "tenantId" = 'tenant-maximum-award'
-            AND "requestId" = 'request-maximum-award'
-        `;
-        expect(snapshot?.bytes).toBeGreaterThan(16_384);
-        expect(snapshot?.bytes).toBeLessThanOrEqual(2_097_152);
-      } finally {
-        await app?.$disconnect();
-        await admin.$disconnect();
-      }
-    });
-  });
-
-  it('serializes concurrent supplier submission and owner award without leaking a deadlock error', async () => {
-    await withMigratedPostgres(async (databaseUrl) => {
-      const admin = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
-      const password = randomBytes(24).toString('hex');
-      let awardApp: PrismaClient | undefined;
+      const quoteFirstToken = 'Q'.repeat(43);
+      const awardFirstToken = 'A'.repeat(43);
       let quoteApp: PrismaClient | undefined;
-      let releaseUserLock!: () => void;
-      let reportUserLocked!: () => void;
-      const releaseUser = new Promise<void>((resolve) => {
-        releaseUserLock = resolve;
-      });
-      const userLocked = new Promise<void>((resolve) => {
-        reportUserLocked = resolve;
-      });
+      let awardApp: PrismaClient | undefined;
       try {
-        await seedTenant(admin, {
-          tenantId: 'tenant-submit-award-race',
-          ownerId: 'owner-submit-award-race',
-          ownerEmail: 'owner-submit-award-race@example.test',
+        await seedTenant(admin, { tenantId: 'race-tenant', ownerId: 'race-owner' });
+        await seedSuppliers(admin, 'race-tenant', 'race-owner');
+        await seedRequest(admin, {
+          tenantId: 'race-tenant',
+          ownerId: 'race-owner',
+          requestId: 'quote-first-request',
+          supplierKinds: ['A'],
+          tokenA: quoteFirstToken,
         });
-        await admin.supplier.create({
-          data: {
-            id: 'supplier-submit-award-race',
-            tenantId: 'tenant-submit-award-race',
-            businessName: 'Race-safe Foods',
-          },
+        await seedRequest(admin, {
+          tenantId: 'race-tenant',
+          ownerId: 'race-owner',
+          requestId: 'award-first-request',
+          supplierKinds: ['A'],
+          tokenA: awardFirstToken,
         });
-        await admin.procurementRequest.create({
-          data: {
-            id: 'request-submit-award-race',
-            tenantId: 'tenant-submit-award-race',
-            title: 'Concurrent award request',
-            status: 'OPEN',
-            version: 2,
-            deliveryDetails: { addressLine: '12, 100 Feet Road' },
-            deliveryDate: new Date('2099-01-10T00:00:00.000Z'),
-            quoteDeadline: new Date('2099-01-09T10:00:00.000Z'),
-            openedAt: new Date('2099-01-01T09:00:00.000Z'),
-            createdByUserId: 'owner-submit-award-race',
-            items: {
-              create: {
-                id: 'item-submit-award-race',
-                name: 'Tomato',
-                quantity: '1',
-                unit: 'KILOGRAM',
-              },
-            },
-          },
-        });
-        const raceToken = 'R'.repeat(43);
-        await admin.supplierRequest.create({
-          data: {
-            id: 'grant-submit-award-race',
-            tenantId: 'tenant-submit-award-race',
-            requestId: 'request-submit-award-race',
-            supplierId: 'supplier-submit-award-race',
-            tokenDigest: digestOpaqueToken('supplier-request', raceToken),
-            expiresAt: new Date('2099-01-09T10:00:00.000Z'),
-          },
-        });
-        await admin.supplierQuote.create({
-          data: {
-            id: 'quote-submit-award-race-r1',
-            tenantId: 'tenant-submit-award-race',
-            supplierRequestId: 'grant-submit-award-race',
-            revision: 1,
-            subtotalPaise: BigInt(10_000),
-            gstPaise: BigInt(500),
-            freightPaise: BigInt(0),
-            totalPaise: BigInt(10_500),
-            deliveryDate: new Date('2099-01-10T00:00:00.000Z'),
-            validUntil: new Date('2099-01-11T00:00:00.000Z'),
-            commercialTerms: 'Payment in 15 days.',
-            items: {
-              create: {
-                id: 'quote-item-submit-award-race-r1',
-                requestItemId: 'item-submit-award-race',
-                noQuote: false,
-                availableQuantity: '1',
-                unit: 'KILOGRAM',
-                unitRatePaise: BigInt(10_000),
-                gstBasisPoints: 500,
-                subtotalPaise: BigInt(10_000),
-                gstPaise: BigInt(500),
-                totalPaise: BigInt(10_500),
-              },
-            },
-          },
-        });
-
-        await admin.$executeRawUnsafe(
-          `ALTER ROLE autorfp_app PASSWORD '${password}'`,
+        const credentials = await appClient(
+          admin,
+          databaseUrl,
+          'quote-first',
         );
+        quoteApp = credentials.client;
         awardApp = new PrismaClient({
           datasources: {
             db: {
-              url: namedAppDatabaseUrl(databaseUrl, password, 'award-race'),
+              url: appDatabaseUrl(
+                databaseUrl,
+                credentials.password,
+                'award-after-quote',
+              ),
             },
           },
         });
-        quoteApp = new PrismaClient({
-          datasources: {
-            db: {
-              url: namedAppDatabaseUrl(databaseUrl, password, 'quote-race'),
-            },
-          },
-        });
-        await Promise.all([awardApp.$connect(), quoteApp.$connect()]);
+        await awardApp.$connect();
 
-        const userLockHolder = admin.$transaction(async (transaction) => {
+        let releaseQuoteFirst!: () => void;
+        let reportQuoteFirstLocked!: () => void;
+        const quoteFirstReleased = new Promise<void>((resolve) => {
+          releaseQuoteFirst = resolve;
+        });
+        const quoteFirstLocked = new Promise<void>((resolve) => {
+          reportQuoteFirstLocked = resolve;
+        });
+        const quoteFirstHolder = admin.$transaction(async (transaction) => {
           await transaction.$queryRaw`
             SELECT "id"
-            FROM "User"
-            WHERE "tenantId" = 'tenant-submit-award-race'
-              AND "id" = 'owner-submit-award-race'
+            FROM "SupplierRequest"
+            WHERE "id" = 'quote-first-request-grant-a'
             FOR UPDATE
           `;
-          reportUserLocked();
-          await releaseUser;
+          reportQuoteFirstLocked();
+          await quoteFirstReleased;
         });
-        await userLocked;
+        await quoteFirstLocked;
+        const quoteFirst = submitPublicSupplierQuote({
+          token: quoteFirstToken,
+          quote: {
+            expectedLatestRevision: 1,
+            ...quoteSubmission({ supplier: 'A', tomatoRateInr: '710' }),
+          },
+        }, quoteApp);
+        await waitForDatabaseLock(admin, 'quote-first');
+        const staleAward = createAward({
+          actor: { tenantId: 'race-tenant', userId: 'race-owner' },
+          requestId: 'quote-first-request',
+          award: {
+            mode: 'WHOLE',
+            expectedRequestVersion: 2,
+            supplierRequestId: 'quote-first-request-grant-a',
+            quoteRevision: 1,
+            rationale: 'This revision must become stale while waiting for the grant.',
+          },
+        }, awardApp);
+        await waitForDatabaseLock(admin, 'award-after-quote');
+        releaseQuoteFirst();
+        await quoteFirstHolder;
+        await expect(quoteFirst).resolves.toMatchObject({ revision: 2 });
+        await expect(staleAward).rejects.toBeInstanceOf(AwardConflictError);
+        expect(await admin.award.count({
+          where: { requestId: 'quote-first-request' },
+        })).toBe(0);
 
-        const awardResult = createAward(
-          {
-            actor: {
-              tenantId: 'tenant-submit-award-race',
-              userId: 'owner-submit-award-race',
-            },
-            requestId: 'request-submit-award-race',
-            award: {
-              mode: 'WHOLE',
-              expectedRequestVersion: 2,
-              supplierQuoteId: 'quote-submit-award-race-r1',
-              rationale: 'Complete valid quote at the requested delivery date.',
+        await awardApp.$disconnect();
+        awardApp = new PrismaClient({
+          datasources: {
+            db: {
+              url: appDatabaseUrl(
+                databaseUrl,
+                credentials.password,
+                'award-first',
+              ),
             },
           },
-          awardApp,
-        );
-        await waitForDatabaseLock(admin, 'award-race');
+        });
+        await awardApp.$connect();
 
-        const quoteResult = submitPublicSupplierQuote(
-          {
-            token: raceToken,
-            quote: {
-              expectedLatestRevision: 1,
-              deliveryDate: '2099-01-10',
-              validUntil: '2099-01-11',
-              freightInr: '0',
-              commercialTerms: 'Payment in 15 days.',
-              notes: null,
-              items: [
-                {
-                  requestItemId: 'item-submit-award-race',
-                  noQuote: false,
-                  availableQuantity: '1',
-                  unitRateInr: '99',
-                  gstPercent: '5',
-                  taxInclusive: false,
-                  substitution: null,
-                },
-              ],
-            },
+        let releaseSupplier!: () => void;
+        let reportSupplierLocked!: () => void;
+        const supplierReleased = new Promise<void>((resolve) => {
+          releaseSupplier = resolve;
+        });
+        const supplierLocked = new Promise<void>((resolve) => {
+          reportSupplierLocked = resolve;
+        });
+        const supplierHolder = admin.$transaction(async (transaction) => {
+          await transaction.$queryRaw`
+            SELECT "id"
+            FROM "Supplier"
+            WHERE "id" = 'race-tenant-supplier-a'
+            FOR UPDATE
+          `;
+          reportSupplierLocked();
+          await supplierReleased;
+        });
+        await supplierLocked;
+        const awardFirst = createAward({
+          actor: { tenantId: 'race-tenant', userId: 'race-owner' },
+          requestId: 'award-first-request',
+          award: {
+            mode: 'WHOLE',
+            expectedRequestVersion: 2,
+            supplierRequestId: 'award-first-request-grant-a',
+            quoteRevision: 1,
+            rationale: 'The award owns the grant lock before the quote update.',
           },
-          quoteApp,
+        }, awardApp);
+        await waitForDatabaseLock(admin, 'award-first');
+        const quoteAfterAward = submitPublicSupplierQuote({
+          token: awardFirstToken,
+          quote: {
+            expectedLatestRevision: 1,
+            ...quoteSubmission({ supplier: 'A', tomatoRateInr: '710' }),
+          },
+        }, quoteApp);
+        await waitForDatabaseLock(admin, 'quote-first');
+        releaseSupplier();
+        await supplierHolder;
+        await expect(awardFirst).resolves.toMatchObject({
+          requestId: 'award-first-request',
+          splitAward: false,
+        });
+        await expect(quoteAfterAward).rejects.toBeInstanceOf(
+          PublicQuoteUnavailableError,
         );
-        await waitForDatabaseLock(admin, 'quote-race');
-        releaseUserLock();
-        await userLockHolder;
-
-        const [awardSettled, quoteSettled] = await Promise.allSettled([
-          awardResult,
-          quoteResult,
-        ]);
-        expect(awardSettled.status).toBe('fulfilled');
-        expect(quoteSettled).toEqual(
-          expect.objectContaining({
-            status: 'rejected',
-            reason: expect.any(PublicQuoteUnavailableError),
-          }),
-        );
-        expect(
-          await admin.award.count({
-            where: { requestId: 'request-submit-award-race' },
-          }),
-        ).toBe(1);
-        expect(
-          await admin.supplierQuote.count({
-            where: { supplierRequestId: 'grant-submit-award-race' },
-          }),
-        ).toBe(1);
+        expect(await admin.supplierRequest.findUniqueOrThrow({
+          where: { id: 'award-first-request-grant-a' },
+        })).toMatchObject({ quoteRevision: 1, revokedAt: expect.any(Date) });
       } finally {
-        releaseUserLock?.();
-        await awardApp?.$disconnect();
         await quoteApp?.$disconnect();
+        await awardApp?.$disconnect();
         await admin.$disconnect();
       }
     });

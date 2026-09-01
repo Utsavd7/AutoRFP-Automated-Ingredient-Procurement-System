@@ -22,7 +22,6 @@ const purchaseOrder = {
   requestId: 'request-abcdef12',
   requestTitle: 'Fresh produce · Week 36',
   awardedAt: '2026-08-28T10:00:00.000Z',
-  rationale: 'Complete delivery at the best landed cost.',
   buyer: {
     name: 'Cedar Table Hospitality',
     gstin: '27ABCDE1234F1Z5',
@@ -39,6 +38,7 @@ const purchaseOrder = {
     state: 'Maharashtra',
     pin: '400001',
     instructions: 'Deliver before 8:00 AM.',
+    commercialTerms: 'Rates must include packing.',
   },
   supplier: {
     supplierId: 'supplier-87654321',
@@ -52,17 +52,29 @@ const purchaseOrder = {
     state: 'Maharashtra',
     pin: '400705',
     freightPaise: '50000',
+    minimumOrder: 'Minimum invoice INR 2,500.',
     commercialTerms: 'Payment in 15 days.',
+    notes: 'Use ventilated crates.',
     deliveryDate: '2026-09-05',
+    validUntil: '2026-09-04',
   },
   lines: [
     {
       requestItemId: 'item-1',
       itemName: 'Tomato',
+      requestedDescription: 'Firm red tomato',
+      requestedBrand: 'Farm Select',
+      suppliedBrand: 'Market Fresh',
+      requestedPackSize: '5 kg crate',
+      suppliedPackSize: '10 kg crate',
+      requestedQualityGrade: 'A',
+      suppliedQualityGrade: 'Premium',
+      substitution: 'Roma tomato',
       quantity: '100',
       unit: 'KILOGRAM',
       unitRatePaise: '79680',
       gstBasisPoints: 500,
+      taxInclusive: false,
       subtotalPaise: '7968000',
       gstPaise: '398400',
       totalPaise: '8366400',
@@ -98,6 +110,17 @@ describe('purchase-order PDF', () => {
     expect(Buffer.from(bytes).subarray(0, 5).toString('ascii')).toBe('%PDF-');
     const printable = Buffer.from(bytes).toString('latin1');
     expect(printable).not.toContain('Other Supplier');
+    const renderer = jest.requireMock('@react-pdf/renderer') as {
+      renderToBuffer: jest.Mock;
+    };
+    const document = JSON.stringify(renderer.renderToBuffer.mock.calls.at(-1)?.[0]);
+    expect(document).toContain('Firm red tomato');
+    expect(document).toContain('Farm Select');
+    expect(document).toContain('Market Fresh');
+    expect(document).toContain('Roma tomato');
+    expect(document).toContain('Rates must include packing.');
+    expect(document).not.toContain('Award note');
+    expect(document).not.toContain('Complete delivery at the best landed cost.');
   });
 
   it('reports an oversized rendered PDF as a bounded export error', async () => {

@@ -31,6 +31,13 @@ export const DOCUMENT_LIMITS = {
     jsonBytes: 2 * MEBIBYTE,
     lines: 2000,
   },
+  awardSupplierSnapshots: {
+    jsonBytes: 2 * MEBIBYTE,
+    suppliers: 20,
+  },
+  awardDeliverySnapshot: {
+    jsonBytes: 16 * KIBIBYTE,
+  },
   thumbnails: {
     perDocument: 8,
     decodedBytesPerDocument: 256 * KIBIBYTE,

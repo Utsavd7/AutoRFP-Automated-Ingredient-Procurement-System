@@ -16,7 +16,6 @@ type PreviewRequestItem = {
 
 type PreviewQuoteItem = {
   requestItemId: string;
-  quoteItemId: string | null;
   normalizedAvailableQuantity: string | null;
   normalizedUnitRatePaise: string | null;
   gstBasisPoints: number | null;
@@ -25,8 +24,8 @@ type PreviewQuoteItem = {
 };
 
 type PreviewQuote = {
-  quoteId: string;
-  supplierId: string;
+  supplierRequestId: string;
+  quoteRevision: number;
   supplierName: string;
   freightPaise: string;
   expired: boolean;
@@ -35,7 +34,11 @@ type PreviewQuote = {
   items: PreviewQuoteItem[];
 };
 
-export type SplitAllocation = { quoteItemId: string; quantity: string };
+export type SplitAllocation = {
+  supplierRequestId: string;
+  quoteRevision: number;
+  quantity: string;
+};
 
 export function cappedAllocationQuantity(remaining: string, available: string) {
   const remainingMilli = quantityMilli(remaining);
@@ -71,7 +74,10 @@ export function calculateSplitAwardPreview(input: {
   const quoteItems = new Map<string, { quote: PreviewQuote; item: PreviewQuoteItem }>();
   for (const quote of input.quotes) {
     for (const item of quote.items) {
-      if (item.quoteItemId) quoteItems.set(item.quoteItemId, { quote, item });
+      quoteItems.set(
+        `${item.requestItemId}\u0000${quote.supplierRequestId}\u0000${quote.quoteRevision}`,
+        { quote, item },
+      );
     }
   }
 
@@ -81,7 +87,8 @@ export function calculateSplitAwardPreview(input: {
   const selectedQuotes = new Map<string, PreviewQuote>();
   const selections: Array<{
     requestItemId: string;
-    supplierQuoteItemId: string;
+    supplierRequestId: string;
+    quoteRevision: number;
     quantity: string;
   }> = [];
   const itemCoverage: Record<string, {
@@ -97,12 +104,13 @@ export function calculateSplitAwardPreview(input: {
     const seen = new Set<string>();
     for (const allocation of input.allocations[requestItem.id] ?? []) {
       if (!allocation.quantity) continue;
-      const match = quoteItems.get(allocation.quoteItemId);
-      if (!match || match.item.requestItemId !== requestItem.id || seen.has(allocation.quoteItemId)) {
+      const allocationKey = `${requestItem.id}\u0000${allocation.supplierRequestId}\u0000${allocation.quoteRevision}`;
+      const match = quoteItems.get(allocationKey);
+      if (!match || seen.has(allocationKey)) {
         errors.push(`Choose a valid, unique supplier line for ${requestItem.name}.`);
         continue;
       }
-      seen.add(allocation.quoteItemId);
+      seen.add(allocationKey);
       if (
         match.quote.expired ||
         match.quote.supplierActive === false ||
@@ -150,10 +158,14 @@ export function calculateSplitAwardPreview(input: {
         continue;
       }
       allocated = assertMaximum(allocated + quantity, MAX_DECIMAL_18_3_SCALED, 'Award coverage');
-      selectedQuotes.set(match.quote.quoteId, match.quote);
+      selectedQuotes.set(
+        `${match.quote.supplierRequestId}\u0000${match.quote.quoteRevision}`,
+        match.quote,
+      );
       selections.push({
         requestItemId: requestItem.id,
-        supplierQuoteItemId: allocation.quoteItemId,
+        supplierRequestId: match.quote.supplierRequestId,
+        quoteRevision: match.quote.quoteRevision,
         quantity: formatScaledDecimal(quantity, 3),
       });
     }
@@ -195,7 +207,9 @@ export function calculateSplitAwardPreview(input: {
     errors,
     itemCoverage,
     selections,
-    selectedQuoteIds: [...selectedQuotes.keys()].sort(),
+    selectedSupplierRequestIds: [...selectedQuotes.values()]
+      .map(({ supplierRequestId }) => supplierRequestId)
+      .sort(),
     subtotalPaise: subtotalPaise.toString(),
     gstPaise: gstPaise.toString(),
     freightPaise: freightPaise.toString(),

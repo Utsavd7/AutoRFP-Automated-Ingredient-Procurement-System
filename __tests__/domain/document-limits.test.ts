@@ -15,6 +15,8 @@ describe('bounded PostgreSQL JSON documents', () => {
       selectedSuppliers: 20,
       quoteRevisions: { jsonBytes: 2 * 1024 * 1024, revisions: 10 },
       awardLines: { jsonBytes: 2 * 1024 * 1024, lines: 2000 },
+      awardSupplierSnapshots: { jsonBytes: 2 * 1024 * 1024, suppliers: 20 },
+      awardDeliverySnapshot: { jsonBytes: 16 * 1024 },
       thumbnails: {
         perDocument: 8,
         decodedBytesPerDocument: 256 * 1024,

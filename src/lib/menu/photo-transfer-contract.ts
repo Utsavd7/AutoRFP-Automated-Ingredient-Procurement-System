@@ -34,6 +34,7 @@ export type PhotoTransferManifest = {
 
 const MIME_TYPE_SET = new Set<string>(PHOTO_TRANSFER_MIME_TYPES);
 const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{32}$/;
+const WORKSPACE_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 const IV_PATTERN = /^[A-Za-z0-9_-]{16}$/;
 const CONTROL_OR_PATH_PATTERN = /[\\/\u0000-\u001f\u007f]/g;
 
@@ -57,9 +58,7 @@ export function isPhotoTransferSessionId(value: unknown): value is string {
 
 export function isPhotoTransferWorkspaceId(value: unknown): value is string {
   return typeof value === 'string'
-    && value.length > 0
-    && value.length <= 128
-    && value.trim() === value;
+    && WORKSPACE_ID_PATTERN.test(value);
 }
 
 export function sanitizePhotoTransferFilename(value: string) {

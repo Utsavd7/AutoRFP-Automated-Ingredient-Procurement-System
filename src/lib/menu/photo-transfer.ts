@@ -85,9 +85,13 @@ export function issuePhotoTransferToken({
   const signature = createHmac('sha256', secret)
     .update(encodedPayload)
     .digest('base64url');
+  const token = `${encodedPayload}.${signature}`;
+  if (token.length > MAX_PHOTO_TRANSFER_TOKEN_LENGTH) {
+    throw new Error('Photo transfer token exceeds maximum length.');
+  }
 
   return {
-    token: `${encodedPayload}.${signature}`,
+    token,
     sessionId,
     expiresAt,
   };

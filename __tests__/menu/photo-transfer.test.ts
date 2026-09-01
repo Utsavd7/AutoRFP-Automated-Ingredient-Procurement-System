@@ -5,6 +5,7 @@ import {
   MAX_PHOTO_TRANSFER_ENCRYPTED_OVERHEAD_BYTES,
   MAX_PHOTO_TRANSFER_IMAGE_BYTES,
   MAX_PHOTO_TRANSFER_IMAGES,
+  MAX_PHOTO_TRANSFER_TOKEN_LENGTH,
   PHOTO_TRANSFER_CLOCK_SKEW_MS,
   PHOTO_TRANSFER_TTL_MS,
   parsePhotoTransferManifest,
@@ -71,6 +72,30 @@ describe('photo transfer token', () => {
       workspaceId: 'workspace-123',
       expiresAt: issued.expiresAt,
     });
+  });
+
+  it('rejects escaped workspace IDs and keeps the maximum safe ID token bounded', () => {
+    const pathologicalWorkspaceId = '\u0000\\"'.repeat(42) + '\u0000\\';
+    const maximumSafeWorkspaceId = 'A'.repeat(128);
+    expect(pathologicalWorkspaceId).toHaveLength(128);
+
+    expect(() => issuePhotoTransferToken({
+      workspaceId: pathologicalWorkspaceId,
+      secret: SECRET,
+      now: NOW,
+    })).toThrow('A valid workspace ID is required.');
+
+    const issued = issuePhotoTransferToken({
+      workspaceId: maximumSafeWorkspaceId,
+      secret: SECRET,
+      now: NOW,
+    });
+    expect(issued.token.length).toBeLessThanOrEqual(MAX_PHOTO_TRANSFER_TOKEN_LENGTH);
+    expect(verifyPhotoTransferToken({
+      token: issued.token,
+      secret: SECRET,
+      now: NOW,
+    }).workspaceId).toBe(maximumSafeWorkspaceId);
   });
 
   it('returns the same generic error for tampered, expired, future, and malformed tokens', () => {

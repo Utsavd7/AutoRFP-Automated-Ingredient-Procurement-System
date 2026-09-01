@@ -55,4 +55,26 @@ describe('photo transfer rate limits', () => {
       now,
     });
   });
+
+  it('uses a separate opaque signed-session bucket for thirty download attempts per window', async () => {
+    const consume = jest.fn().mockResolvedValue({
+      allowed: false,
+      retryAfterSeconds: 180,
+    });
+    const sessionId = 'B'.repeat(32);
+
+    await expect(consumePhotoTransferRateLimit({
+      operation: 'download',
+      sessionId,
+      now,
+    }, consume)).resolves.toEqual({ allowed: false, retryAfterSeconds: 180 });
+
+    expect(consume).toHaveBeenCalledWith({
+      scope: 'menu-photo-transfer-download',
+      subjectDigest: digestPhotoTransferRateLimitSubject('download', sessionId),
+      limit: 30,
+      windowMs: 15 * 60 * 1_000,
+      now,
+    });
+  });
 });

@@ -13,6 +13,7 @@ export type RateLimitScope =
   | 'member-invitation-accept'
   | 'member-invitation-accept-client'
   | 'menu-photo-transfer-create'
+  | 'menu-photo-transfer-download'
   | 'menu-photo-transfer-upload'
   | 'supplier-application'
   | 'supplier-application-client'

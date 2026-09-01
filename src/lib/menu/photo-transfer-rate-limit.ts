@@ -28,7 +28,7 @@ export type PhotoTransferRateLimitInput =
     now: Date;
   }
   | {
-    operation: 'upload';
+    operation: 'download' | 'upload';
     sessionId: string;
     now: Date;
   };
@@ -58,7 +58,9 @@ export function consumePhotoTransferRateLimit(
       limit: 10,
     }
     : {
-      scope: 'menu-photo-transfer-upload' as const,
+      scope: input.operation === 'download'
+        ? 'menu-photo-transfer-download' as const
+        : 'menu-photo-transfer-upload' as const,
       subject: input.sessionId,
       limit: 30,
     };

@@ -573,12 +573,22 @@ export function createPhotoTransferRouteHandlers(
       return unavailableResponse();
     }
     const { payload } = verification;
-    const store = storeInstance();
-    if (store === null) return serviceUnavailableResponse();
     if (verification.expired) {
+      const store = storeInstance();
+      if (store === null) return serviceUnavailableResponse();
       await cleanupExpiredSignedSession(store, payload);
       return unavailableResponse();
     }
+    if (command.action === 'download') {
+      const limited = await rateLimit({
+        operation: 'download',
+        sessionId: payload.sessionId,
+        now: new Date(now),
+      });
+      if (limited) return limited;
+    }
+    const store = storeInstance();
+    if (store === null) return serviceUnavailableResponse();
     const loaded = await loadStoredSession(store, payload, now);
     if (loaded.kind === 'failure') return serviceUnavailableResponse();
 

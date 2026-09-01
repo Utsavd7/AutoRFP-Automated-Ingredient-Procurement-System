@@ -456,6 +456,58 @@ describe('menu photo transfer API', () => {
     [upload, complete].forEach(expectPrivate);
   });
 
+  it('rate-limits authenticated downloads by signed session before Blob reads', async () => {
+    const rateLimit = jest.fn().mockResolvedValue({
+      allowed: false,
+      retryAfterSeconds: 63,
+    });
+    const storeFactory = jest.fn(() => new MemoryPhotoTransferStore());
+    const { handlers } = setup({ rateLimit, storeFactory });
+    const issued = issuePhotoTransferToken({
+      workspaceId: 'tenant-a',
+      secret: SECRET,
+      now: NOW,
+    });
+
+    const response = await handlers.laptopPOST(jsonRequest({
+      action: 'download',
+      token: issued.token,
+      index: 0,
+    }));
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get('retry-after')).toBe('63');
+    expect(rateLimit).toHaveBeenCalledWith({
+      operation: 'download',
+      sessionId: issued.sessionId,
+      now: new Date(NOW),
+    });
+    expect(storeFactory).not.toHaveBeenCalled();
+    expectPrivate(response);
+  });
+
+  it('preserves expired-transfer cleanup before applying the download quota', async () => {
+    const rateLimit = jest.fn().mockResolvedValue({
+      allowed: false,
+      retryAfterSeconds: 63,
+    });
+    const { handlers, store } = setup({ rateLimit });
+    const issued = tokenAndManifest(store, {
+      issueNow: NOW - PHOTO_TRANSFER_TTL_MS,
+    });
+
+    const response = await handlers.laptopPOST(jsonRequest({
+      action: 'download',
+      token: issued.token,
+      index: 0,
+    }));
+
+    expect(response.status).toBe(410);
+    expect(rateLimit).not.toHaveBeenCalled();
+    expect(store.deleteSession).toHaveBeenCalledWith(issued.sessionId);
+    expectPrivate(response);
+  });
+
   it.each([
     ['malformed encoding', '***', 400],
     ['wrong type', unsafeMetadataHeader({ ...metadata(0), type: 'image/gif' }), 422],

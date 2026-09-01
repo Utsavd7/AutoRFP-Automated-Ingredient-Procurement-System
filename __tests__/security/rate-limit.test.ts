@@ -12,11 +12,20 @@ describe('database rate-limit keys', () => {
       'supplier-application',
       subjectDigest,
     );
+    const photoCreateKey = digestRateLimitKey(
+      'menu-photo-transfer-create',
+      subjectDigest,
+    );
+    const photoUploadKey = digestRateLimitKey(
+      'menu-photo-transfer-upload',
+      subjectDigest,
+    );
 
     expect(invitationKey).toMatch(/^[a-f0-9]{64}$/);
     expect(invitationKey).not.toBe(subjectDigest);
     expect(invitationKey).not.toBe(supplierKey);
     expect(applicationKey).not.toBe(supplierKey);
+    expect(photoCreateKey).not.toBe(photoUploadKey);
   });
 
   it('rejects malformed subject digests before database access', () => {

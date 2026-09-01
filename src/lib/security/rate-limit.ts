@@ -12,6 +12,8 @@ export type RateLimitScope =
   | 'auth-workspace-create-email'
   | 'member-invitation-accept'
   | 'member-invitation-accept-client'
+  | 'menu-photo-transfer-create'
+  | 'menu-photo-transfer-upload'
   | 'supplier-application'
   | 'supplier-application-client'
   | 'supplier-request'

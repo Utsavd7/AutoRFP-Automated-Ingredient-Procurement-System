@@ -16,6 +16,10 @@ import {
   type PhotoTransferFileMetadata,
 } from '@/lib/menu/photo-transfer-contract';
 import type {
+  PhotoTransferRateLimit,
+  PhotoTransferRateLimitInput,
+} from '@/lib/menu/photo-transfer-rate-limit';
+import type {
   PhotoTransferStore,
   StoredPhotoTransferManifest,
 } from '@/lib/menu/photo-transfer-store';
@@ -32,7 +36,7 @@ import {
 
 const MAX_PHOTO_TRANSFER_JSON_BYTES = 4 * 1_024;
 const MIN_PHOTO_TRANSFER_SECRET_LENGTH = 32;
-const EXPIRED_CLEANUP_LIMIT = 20;
+const EXPIRED_CLEANUP_LIMIT = 1;
 const MAX_ENCRYPTED_IMAGE_BYTES = MAX_PHOTO_TRANSFER_IMAGE_BYTES
   + MAX_PHOTO_TRANSFER_ENCRYPTED_OVERHEAD_BYTES;
 
@@ -43,6 +47,7 @@ export type PhotoTransferRouteDependencies = {
   storeFactory: () => PhotoTransferStore;
   getSecret: () => string | undefined;
   now: () => number;
+  rateLimit: PhotoTransferRateLimit;
 };
 
 type LaptopCommand =
@@ -81,6 +86,16 @@ function serviceUnavailableResponse() {
 
 function conflictResponse(detail: string) {
   return privateProblem(409, 'Photo transfer changed', detail);
+}
+
+function rateLimitedResponse(retryAfterSeconds: number) {
+  const response = privateProblem(
+    429,
+    'Too many photo transfer attempts',
+    'Too many photo transfer attempts were made. Try again later.',
+  );
+  response.headers.set('Retry-After', String(retryAfterSeconds));
+  return response;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -264,6 +279,53 @@ function isStorageConflict(error: unknown) {
   );
 }
 
+function sameFileMetadata(
+  left: PhotoTransferFileMetadata,
+  right: PhotoTransferFileMetadata,
+) {
+  return left.index === right.index
+    && left.name === right.name
+    && left.type === right.type
+    && left.size === right.size
+    && left.encryptedSize === right.encryptedSize
+    && left.iv === right.iv;
+}
+
+async function reconcileManifestWrite(
+  store: PhotoTransferStore,
+  payload: PhotoTransferTokenPayload,
+  previous: StoredPhotoTransferManifest,
+  file: PhotoTransferFileMetadata,
+) {
+  let current: StoredPhotoTransferManifest | null;
+  try {
+    current = await store.getManifest(payload.sessionId);
+  } catch {
+    return 'unknown' as const;
+  }
+  if (current === null) return 'uncommitted' as const;
+  if (!manifestMatchesToken(current, payload)) return 'unknown' as const;
+  const committedFile = current.manifest.files[file.index];
+  if (committedFile && sameFileMetadata(committedFile, file)) {
+    return 'committed' as const;
+  }
+  return current.etag === previous.etag
+    ? 'uncommitted' as const
+    : 'unknown' as const;
+}
+
+async function deleteOwnedCiphertext(
+  store: PhotoTransferStore,
+  sessionId: string,
+  index: number,
+) {
+  try {
+    await store.deleteCiphertext(sessionId, index);
+  } catch {
+    // Bounded session cleanup remains the fallback.
+  }
+}
+
 function bearerToken(request: Request) {
   const authorization = request.headers.get('authorization');
   const match = authorization?.match(/^Bearer ([^\s,]+)$/i);
@@ -339,6 +401,25 @@ export function createPhotoTransferRouteHandlers(
     }
   }
 
+  async function rateLimit(input: PhotoTransferRateLimitInput) {
+    try {
+      const result = await dependencies.rateLimit(input);
+      if (
+        typeof result.allowed !== 'boolean'
+        || !Number.isSafeInteger(result.retryAfterSeconds)
+        || result.retryAfterSeconds < 1
+        || result.retryAfterSeconds > 24 * 60 * 60
+      ) {
+        return serviceUnavailableResponse();
+      }
+      return result.allowed
+        ? null
+        : rateLimitedResponse(result.retryAfterSeconds);
+    } catch {
+      return serviceUnavailableResponse();
+    }
+  }
+
   async function readJsonCommand(request: Request) {
     try {
       return await readBoundedJson(request, MAX_PHOTO_TRANSFER_JSON_BYTES);
@@ -370,12 +451,20 @@ export function createPhotoTransferRouteHandlers(
 
     const verification = verifiedToken(token, secret, now);
     if (verification === null) return unavailableResponse();
-    const store = storeInstance();
-    if (store === null) return serviceUnavailableResponse();
     if (verification.expired) {
+      const store = storeInstance();
+      if (store === null) return serviceUnavailableResponse();
       await cleanupExpiredSignedSession(store, verification.payload);
       return unavailableResponse();
     }
+    const limited = await rateLimit({
+      operation: 'upload',
+      sessionId: verification.payload.sessionId,
+      now: new Date(now),
+    });
+    if (limited) return limited;
+    const store = storeInstance();
+    if (store === null) return serviceUnavailableResponse();
 
     const loaded = await loadStoredSession(store, verification.payload, now);
     if (loaded.kind === 'failure') return serviceUnavailableResponse();
@@ -428,6 +517,13 @@ export function createPhotoTransferRouteHandlers(
     if (secret === null || now === null) return serviceUnavailableResponse();
 
     if (command.action === 'create') {
+      const limited = await rateLimit({
+        operation: 'create',
+        workspaceId: account.tenant.id,
+        userId: account.user.id,
+        now: new Date(now),
+      });
+      if (limited) return limited;
       const store = storeInstance();
       if (store === null) return serviceUnavailableResponse();
       try {
@@ -620,14 +716,25 @@ export function createPhotoTransferRouteHandlers(
         files: [...stored.manifest.files, file],
       }, { onlyIfMatch: stored.etag });
     } catch (error) {
-      try {
-        await store.deleteCiphertext(payload.sessionId, file.index);
-      } catch {
-        // The original failure is the actionable result; cleanup is best effort.
+      if (isStorageConflict(error)) {
+        await deleteOwnedCiphertext(store, payload.sessionId, file.index);
+        return conflictResponse(
+          'This photo transfer changed while uploading. Retry this photo.',
+        );
       }
-      return isStorageConflict(error)
-        ? conflictResponse('This photo transfer changed while uploading. Retry this photo.')
-        : serviceUnavailableResponse();
+      const reconciliation = await reconcileManifestWrite(
+        store,
+        payload,
+        stored,
+        file,
+      );
+      if (reconciliation === 'committed') {
+        return privateJson({ uploaded: true, index: file.index }, { status: 201 });
+      }
+      if (reconciliation === 'uncommitted') {
+        await deleteOwnedCiphertext(store, payload.sessionId, file.index);
+      }
+      return serviceUnavailableResponse();
     }
 
     return privateJson({ uploaded: true, index: file.index }, { status: 201 });

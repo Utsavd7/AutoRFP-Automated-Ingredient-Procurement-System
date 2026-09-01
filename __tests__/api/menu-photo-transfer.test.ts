@@ -185,6 +185,10 @@ function setup(overrides: Partial<{
   storeFactory: () => PhotoTransferStore;
   getSecret: () => string | undefined;
   now: () => number;
+  rateLimit: (input: unknown) => Promise<{
+    allowed: boolean;
+    retryAfterSeconds: number;
+  }>;
 }> = {}) {
   const store = new MemoryPhotoTransferStore();
   const dependencies = {
@@ -192,6 +196,10 @@ function setup(overrides: Partial<{
     storeFactory: jest.fn(() => store),
     getSecret: jest.fn(() => SECRET),
     now: jest.fn(() => NOW),
+    rateLimit: jest.fn().mockResolvedValue({
+      allowed: true,
+      retryAfterSeconds: 15 * 60,
+    }),
     ...overrides,
   };
   return {
@@ -236,6 +244,10 @@ describe('menu photo transfer API', () => {
       storeFactory,
       getSecret: () => SECRET,
       now: () => NOW,
+      rateLimit: jest.fn().mockResolvedValue({
+        allowed: true,
+        retryAfterSeconds: 15 * 60,
+      }),
     });
 
     const unsafe = await handlers.laptopPOST(jsonRequest(
@@ -269,7 +281,7 @@ describe('menu photo transfer API', () => {
     expect(accountContext).not.toHaveBeenCalled();
   });
 
-  it('creates an empty transfer and bounds opportunistic expired cleanup to 20', async () => {
+  it('creates an empty transfer and cleans up at most one expired session', async () => {
     const { handlers, store } = setup();
     for (let index = 0; index < 25; index += 1) {
       const issued = issuePhotoTransferToken({
@@ -294,8 +306,8 @@ describe('menu photo transfer API', () => {
       token: expect.any(String),
       expiresAt: NOW + PHOTO_TRANSFER_TTL_MS,
     });
-    expect(store.listExpiredSessionCandidates).toHaveBeenCalledWith(NOW, 20);
-    expect(store.deleteSession).toHaveBeenCalledTimes(20);
+    expect(store.listExpiredSessionCandidates).toHaveBeenCalledWith(NOW, 1);
+    expect(store.deleteSession).toHaveBeenCalledTimes(1);
     const payload = verifyPhotoTransferToken({ token: body.token, secret: SECRET, now: NOW });
     expect(store.manifests.get(payload.sessionId)?.manifest).toEqual({
       sessionId: payload.sessionId,
@@ -318,6 +330,28 @@ describe('menu photo transfer API', () => {
 
     expect(response.status).toBe(201);
     expectPrivate(response);
+  });
+
+  it('rate-limits authenticated creation before Blob cleanup or creation', async () => {
+    const rateLimit = jest.fn().mockResolvedValue({
+      allowed: false,
+      retryAfterSeconds: 321,
+    });
+    const storeFactory = jest.fn(() => new MemoryPhotoTransferStore());
+    const { handlers } = setup({ rateLimit, storeFactory });
+
+    const response = await handlers.laptopPOST(jsonRequest({ action: 'create' }));
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get('retry-after')).toBe('321');
+    expectPrivate(response);
+    expect(rateLimit).toHaveBeenCalledWith({
+      operation: 'create',
+      workspaceId: 'tenant-a',
+      userId: 'user-a',
+      now: new Date(NOW),
+    });
+    expect(storeFactory).not.toHaveBeenCalled();
   });
 
   it('uses one generic unavailable response for invalid, expired, missing, and wrong-workspace transfers', async () => {
@@ -379,6 +413,47 @@ describe('menu photo transfer API', () => {
     expect([unsafe.status, wrongMedia.status, missingBearer.status]).toEqual([403, 415, 410]);
     expect(storeFactory).not.toHaveBeenCalled();
     [unsafe, wrongMedia, missingBearer].forEach(expectPrivate);
+  });
+
+  it('rate-limits phone upload and completion after token verification but before Blob or body work', async () => {
+    const rateLimit = jest.fn().mockResolvedValue({
+      allowed: false,
+      retryAfterSeconds: 87,
+    });
+    const storeFactory = jest.fn(() => new MemoryPhotoTransferStore());
+    const { handlers } = setup({ rateLimit, storeFactory });
+    const issued = issuePhotoTransferToken({
+      workspaceId: 'tenant-a',
+      secret: SECRET,
+      now: NOW,
+    });
+    const uploadRequest = putRequest(
+      issued.token,
+      metadata(0),
+      new Uint8Array(19),
+    );
+    const bodyReader = jest.spyOn(uploadRequest.body!, 'getReader');
+
+    const upload = await handlers.uploadPUT(uploadRequest);
+    const complete = await handlers.uploadPOST(completeRequest(issued.token));
+
+    expect([upload.status, complete.status]).toEqual([429, 429]);
+    expect(upload.headers.get('retry-after')).toBe('87');
+    expect(complete.headers.get('retry-after')).toBe('87');
+    expect(rateLimit).toHaveBeenCalledTimes(2);
+    expect(rateLimit).toHaveBeenNthCalledWith(1, {
+      operation: 'upload',
+      sessionId: issued.sessionId,
+      now: new Date(NOW),
+    });
+    expect(rateLimit).toHaveBeenNthCalledWith(2, {
+      operation: 'upload',
+      sessionId: issued.sessionId,
+      now: new Date(NOW),
+    });
+    expect(storeFactory).not.toHaveBeenCalled();
+    expect(bodyReader).not.toHaveBeenCalled();
+    [upload, complete].forEach(expectPrivate);
   });
 
   it.each([
@@ -528,6 +603,68 @@ describe('menu photo transfer API', () => {
     });
   });
 
+  it('keeps ciphertext and succeeds when a timed-out manifest write actually committed', async () => {
+    const { handlers, store } = setup();
+    const issued = tokenAndManifest(store);
+    const file = metadata(0);
+    store.setManifest.mockImplementationOnce(async (sessionId, manifest) => {
+      store.seed(manifest, 'committed-etag');
+      throw new Error(`timeout after committing ${sessionId}`);
+    });
+
+    const response = await handlers.uploadPUT(putRequest(
+      issued.token,
+      file,
+      new Uint8Array(file.encryptedSize),
+    ));
+
+    expect(response.status).toBe(201);
+    expect(store.getManifest).toHaveBeenCalledTimes(2);
+    expect(store.deleteCiphertext).not.toHaveBeenCalled();
+    expect(store.ciphertext.has(`${issued.sessionId}:0`)).toBe(true);
+  });
+
+  it('deletes owned ciphertext when a failed manifest write is definitively uncommitted', async () => {
+    const { handlers, store } = setup();
+    const issued = tokenAndManifest(store);
+    store.setManifest.mockRejectedValueOnce(new Error('provider timeout'));
+
+    const response = await handlers.uploadPUT(putRequest(
+      issued.token,
+      metadata(0),
+      new Uint8Array(19),
+    ));
+
+    expect(response.status).toBe(503);
+    expect(store.getManifest).toHaveBeenCalledTimes(2);
+    expect(store.deleteCiphertext).toHaveBeenCalledWith(issued.sessionId, 0);
+    expect(store.ciphertext.has(`${issued.sessionId}:0`)).toBe(false);
+  });
+
+  it('keeps possibly committed ciphertext when manifest reconciliation is unreadable', async () => {
+    const { handlers, store } = setup();
+    const issued = tokenAndManifest(store);
+    const initial = store.manifests.get(issued.sessionId)!;
+    store.getManifest
+      .mockResolvedValueOnce({
+        manifest: cloneManifest(initial.manifest),
+        etag: initial.etag,
+      })
+      .mockRejectedValueOnce(new Error('reconciliation unavailable'));
+    store.setManifest.mockRejectedValueOnce(new Error('provider timeout'));
+
+    const response = await handlers.uploadPUT(putRequest(
+      issued.token,
+      metadata(0),
+      new Uint8Array(19),
+    ));
+
+    expect(response.status).toBe(503);
+    expect(store.getManifest).toHaveBeenCalledTimes(2);
+    expect(store.deleteCiphertext).not.toHaveBeenCalled();
+    expect(store.ciphertext.has(`${issued.sessionId}:0`)).toBe(true);
+  });
+
   it('makes completion and a valid current-tenant missing receipt idempotent', async () => {
     const { handlers, store } = setup();
     const completedAt = NOW - 1;
@@ -585,6 +722,10 @@ describe('menu photo transfer API', () => {
       storeFactory: () => failingStore,
       getSecret: () => 'too-short',
       now: () => NOW,
+      rateLimit: jest.fn().mockResolvedValue({
+        allowed: true,
+        retryAfterSeconds: 15 * 60,
+      }),
     }).laptopPOST(jsonRequest({ action: 'create' }));
 
     expect(storageFailure.status).toBe(503);

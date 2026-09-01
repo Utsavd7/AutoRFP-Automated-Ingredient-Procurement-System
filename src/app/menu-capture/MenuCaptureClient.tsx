@@ -26,26 +26,28 @@ export function MenuCaptureClient() {
   const [photos, setPhotos] = useState<PhonePhoto[]>([]);
   const [error, setError] = useState('');
   const [sending, setSending] = useState(false);
+  const [batchLocked, setBatchLocked] = useState(false);
   const [sent, setSent] = useState(false);
   const [progress, setProgress] = useState('');
   const urls = useRef<string[]>([]);
   const controller = useRef<AbortController | null>(null);
-  const linkRead = useRef(false);
+  const sessionPromise = useRef<Promise<PhoneTransferSession> | null>(null);
+  const batchLockedRef = useRef(false);
 
   useEffect(() => {
-    if (linkRead.current) return;
-    linkRead.current = true;
-    let active = true;
-    void consumeCurrentPhoneTransferFragment()
+    let cancelled = false;
+    const pending = sessionPromise.current ??= consumeCurrentPhoneTransferFragment();
+    void pending
       .then((next) => {
-        if (!active) return;
+        if (cancelled) return;
         setSession(next);
         setLinkState('ready');
       })
       .catch(() => {
-        if (active) setLinkState('invalid');
+        if (cancelled) return;
+        setLinkState('invalid');
       });
-    return () => { active = false; };
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => () => {
@@ -64,13 +66,14 @@ export function MenuCaptureClient() {
   }
 
   async function selectPhotos(files: FileList | null) {
-    if (!files || sending) return;
+    if (!files || sending || batchLockedRef.current) return;
     setError('');
     try {
       const checked = await validateMenuPhotoSelection(
         mergeMenuPhotoFiles(photos.map(({ file }) => file), [...files]),
         readBrowserImageDimensions,
       );
+      if (batchLockedRef.current) return;
       replacePhotos(checked);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'These photos could not be used.');
@@ -78,6 +81,7 @@ export function MenuCaptureClient() {
   }
 
   function removePhoto(index: number) {
+    if (batchLockedRef.current) return;
     replacePhotos(photos.filter((_, current) => current !== index).map(({ file }) => file));
     setError('');
   }
@@ -86,6 +90,8 @@ export function MenuCaptureClient() {
     if (!session || photos.length === 0 || sending) return;
     const nextController = new AbortController();
     controller.current = nextController;
+    batchLockedRef.current = true;
+    setBatchLocked(true);
     setSending(true);
     setError('');
     try {
@@ -162,7 +168,7 @@ export function MenuCaptureClient() {
               accept="image/*"
               capture="environment"
               multiple
-              disabled={sending || photos.length >= 10}
+              disabled={batchLocked || sending || photos.length >= 10}
               onChange={(event) => {
                 void selectPhotos(event.currentTarget.files);
                 event.currentTarget.value = '';
@@ -178,7 +184,7 @@ export function MenuCaptureClient() {
                     <img src={photo.previewUrl} alt={`Menu photo ${index + 1}`} />
                     <button
                       type="button"
-                      disabled={sending}
+                      disabled={batchLocked || sending}
                       aria-label={`Remove photo ${index + 1}`}
                       onClick={() => removePhoto(index)}
                     >
@@ -190,6 +196,11 @@ export function MenuCaptureClient() {
             )}
 
             {error && <p className={styles.error} role="alert">{error}</p>}
+            {batchLocked && !sent && (
+              <p className={styles.locked} role="note">
+                This code is now tied to the selected photos. To change these photos, scan a new code from the laptop.
+              </p>
+            )}
             {sending && (
               <p
                 className={styles.progress}
@@ -208,7 +219,7 @@ export function MenuCaptureClient() {
               disabled={photos.length === 0 || sending}
               onClick={() => void sendPhotos()}
             >
-              {sending ? 'Sending…' : 'Done'}
+              {sending ? 'Sending…' : batchLocked ? 'Try sending again' : 'Done'}
             </button>
 
             <div className={styles.privacy}>

@@ -30,6 +30,37 @@ describe('phone menu photo transfer UI contracts', () => {
     expect(route).toContain('follow: false');
   });
 
+  it('resolves the fragment reliably across the StrictMode effect replay', () => {
+    const capture = readFileSync(
+      path.join(root, 'src/app/menu-capture/MenuCaptureClient.tsx'),
+      'utf8',
+    );
+
+    expect(capture).toContain('sessionPromise.current ??= consumeCurrentPhoneTransferFragment()');
+    expect(capture).toContain('let cancelled = false');
+    expect(capture).toContain('if (cancelled) return');
+    expect(capture).not.toContain('linkRead.current');
+  });
+
+  it('locks the exact selected batch after sending begins and requires a new code to change it', () => {
+    const capture = readFileSync(
+      path.join(root, 'src/app/menu-capture/MenuCaptureClient.tsx'),
+      'utf8',
+    );
+
+    expect(capture).toContain("const [batchLocked, setBatchLocked] = useState(false)");
+    expect(capture).toContain('const batchLockedRef = useRef(false)');
+    expect(capture).toContain('batchLockedRef.current = true');
+    expect(capture).toContain('if (batchLockedRef.current) return');
+    expect(capture.indexOf('setBatchLocked(true)')).toBeLessThan(
+      capture.indexOf('await sendPhonePhotoBatch'),
+    );
+    expect(capture).toContain('disabled={batchLocked || sending || photos.length >= 10}');
+    expect(capture).toContain('disabled={batchLocked || sending}');
+    expect(capture).toContain('To change these photos, scan a new code from the laptop.');
+    expect(capture).toContain("batchLocked ? 'Try sending again' : 'Done'");
+  });
+
   it('promises automatic arrival without asking for sign-in or refresh', () => {
     const html = renderToStaticMarkup(
       <PhonePhotoTransfer

@@ -72,6 +72,8 @@ describe('phone menu photo transfer UI contracts', () => {
 
     expect(menuWorkspace).toContain('never uploaded or saved');
     expect(menuWorkspace).toContain('Choose up to 10');
+    expect(menuWorkspace).toContain('Photos chosen on this laptop stay here');
+    expect(menuWorkspace).toContain('Phone photos travel as encrypted temporary copies');
     expect(phoneTransfer).toMatch(/encrypted/i);
     expect(phoneTransfer).toMatch(/temporar/i);
     expect(phoneTransfer).toMatch(/this (laptop|browser)/i);
@@ -102,6 +104,8 @@ describe('phone menu photo transfer UI contracts', () => {
     expect(localPhotos).toContain("transaction(STORE_NAME, 'readwrite')");
     expect(localPhotos).toContain("index('workspaceId')");
     expect(localPhotos).toContain('record.workspaceId !== workspaceId');
+    expect(localPhotos).toContain('localMenuPhotoRecordIdsToEvict');
+    expect(localPhotos).toContain('store.delete(recordId)');
   });
 
   it('links every participating local batch before navigating to the menu', () => {

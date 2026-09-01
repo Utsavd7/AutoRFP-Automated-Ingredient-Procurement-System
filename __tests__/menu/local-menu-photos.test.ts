@@ -1,5 +1,6 @@
 import {
   groupLocalMenuPhotoRecords,
+  localMenuPhotoRecordIdsToEvict,
   parseLocalMenuPhotoRecord,
 } from '@/lib/menu/local-menu-photos';
 
@@ -76,5 +77,21 @@ describe('local menu photo records', () => {
 
     expect(batches.map(({ batchId }) => batchId)).toEqual(['new']);
     expect(batches[0].photos).toHaveLength(3);
+  });
+
+  it('selects older same-workspace records for deletion to enforce storage bounds', () => {
+    const records = [
+      record({ id: 'other', workspaceId: 'workspace-b', batchId: 'other', createdAt: 1 }),
+      ...Array.from({ length: 13 }, (_, index) => record({
+        id: `photo-${index}`,
+        batchId: `batch-${index}`,
+        createdAt: 1_000 + index,
+      })),
+    ];
+
+    expect(localMenuPhotoRecordIdsToEvict(records, 'workspace-a', {
+      maxBatches: 12,
+      maxPhotos: 120,
+    })).toEqual(['photo-0']);
   });
 });

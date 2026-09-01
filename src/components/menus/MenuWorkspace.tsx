@@ -398,7 +398,7 @@ export function MenuIntakeDialog({
               </button>
               <div className={styles.privacyNote}>
                 <ShieldCheck aria-hidden="true" />
-                <p><strong>Your photos stay on this device.</strong> They are read in your browser and are never uploaded or saved.</p>
+                <p><strong>Photos chosen on this laptop stay here.</strong> They are read in your browser and are never uploaded or saved. Phone photos travel as encrypted temporary copies, then the originals are saved only in this browser after arrival.</p>
               </div>
 
               {!photoReady && !readingPhotos && (

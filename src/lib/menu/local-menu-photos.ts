@@ -141,6 +141,33 @@ export function groupLocalMenuPhotoRecords(
   return bounded;
 }
 
+export function localMenuPhotoRecordIdsToEvict(
+  values: readonly unknown[],
+  workspaceId: string,
+  limits: { maxBatches: number; maxPhotos: number } = {
+    maxBatches: MAX_LOCAL_BATCHES,
+    maxPhotos: MAX_LOCAL_PHOTOS,
+  },
+) {
+  const keptIds = new Set(
+    groupLocalMenuPhotoRecords(values, workspaceId, limits)
+      .flatMap(({ photos }) => photos.map(({ id }) => id)),
+  );
+  const evictedIds: string[] = [];
+  for (const value of values) {
+    let record: LocalMenuPhotoRecord;
+    try {
+      record = parseLocalMenuPhotoRecord(value);
+    } catch {
+      continue;
+    }
+    if (record.workspaceId === workspaceId && !keptIds.has(record.id)) {
+      evictedIds.push(record.id);
+    }
+  }
+  return evictedIds;
+}
+
 function databaseFactory() {
   if (typeof indexedDB === 'undefined') {
     throw new Error('This browser cannot save menu photos on this laptop.');
@@ -193,11 +220,8 @@ export async function saveLocalMenuPhotoBatch(input: LocalPhotoBatchInput) {
   ) {
     throw new Error('This photo batch cannot be saved on this laptop.');
   }
-  const database = await openDatabase();
-  const transaction = database.transaction(STORE_NAME, 'readwrite');
-  const store = transaction.objectStore(STORE_NAME);
-  input.files.forEach((file, index) => {
-    const record = parseLocalMenuPhotoRecord({
+  const newRecords = input.files.map((file, index) =>
+    parseLocalMenuPhotoRecord({
       id: `${input.batchId}:${String(index).padStart(2, '0')}`,
       workspaceId: input.workspaceId,
       batchId: input.batchId,
@@ -206,9 +230,27 @@ export async function saveLocalMenuPhotoBatch(input: LocalPhotoBatchInput) {
       type: file.type,
       size: file.size,
       blob: file,
-    });
-    store.put(record);
-  });
+    }));
+  const database = await openDatabase();
+  const transaction = database.transaction(STORE_NAME, 'readwrite');
+  const store = transaction.objectStore(STORE_NAME);
+  const existingRequest = store.index('workspaceId').getAll(input.workspaceId);
+  existingRequest.onsuccess = () => {
+    const replacedIds = new Set(newRecords.map(({ id }) => id));
+    const combined = [
+      ...existingRequest.result.filter((value) => {
+        try {
+          return !replacedIds.has(parseLocalMenuPhotoRecord(value).id);
+        } catch {
+          return true;
+        }
+      }),
+      ...newRecords,
+    ];
+    newRecords.forEach((record) => store.put(record));
+    localMenuPhotoRecordIdsToEvict(combined, input.workspaceId)
+      .forEach((recordId) => store.delete(recordId));
+  };
   await closeWhenFinished(database, transactionPromise(transaction));
 }
 

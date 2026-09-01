@@ -124,6 +124,58 @@ describe('menu photo transfer browser client', () => {
     expect(progress).toEqual(['Sending photo 1 of 2', 'Sending photo 2 of 2']);
   });
 
+  it('resumes after an ambiguous committed PUT without restarting or weakening order', async () => {
+    const key = await generatePhotoTransferKey();
+    const photos = [imageFile('front.jpg', 'front'), imageFile('back.jpg', 'back')];
+    const seenIndexes: number[] = [];
+    let firstAttempt = true;
+    const fetchImpl = jest.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        return new Response(JSON.stringify({ status: 'complete' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      const index = parsePhotoTransferMetadataHeader(
+        new Headers(init?.headers).get('x-photo-transfer-metadata'),
+      ).index;
+      seenIndexes.push(index);
+      if (index === 0 && firstAttempt) {
+        firstAttempt = false;
+        throw new TypeError('Connection ended after the server committed the photo.');
+      }
+      if (index === 0) {
+        return new Response(JSON.stringify({
+          detail: 'Photos must be uploaded in order. Retry this photo.',
+        }), {
+          status: 409,
+          headers: { 'content-type': 'application/problem+json' },
+        });
+      }
+      return new Response(JSON.stringify({ uploaded: true, index }), {
+        status: 201,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+
+    await sendPhonePhotoBatch({
+      files: photos,
+      token: 'phone-token',
+      key,
+      fetchImpl,
+      readDimensions: async () => ({ width: 1200, height: 1600 }),
+    });
+
+    expect(seenIndexes).toEqual([0, 0, 1]);
+    expect(fetchImpl).toHaveBeenLastCalledWith(
+      '/api/menu-photo-transfer/upload',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ action: 'complete' }),
+      }),
+    );
+  });
+
   it('downloads, decrypts, validates, saves locally, and only then sends a receipt', async () => {
     const key = await generatePhotoTransferKey();
     const originals = [imageFile('one.jpg', 'one'), imageFile('two.jpg', 'two')];

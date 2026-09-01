@@ -18,6 +18,7 @@ import { validateMenuPhotoSelection } from '@/lib/menu/photo-intake';
 
 type FetchImplementation = typeof fetch;
 type ReadDimensions = (file: File) => Promise<{ width: number; height: number }>;
+const ALREADY_COMMITTED_UPLOAD_DETAIL = 'Photos must be uploaded in order. Retry this photo.';
 
 export type PhoneTransferSession = {
   token: string;
@@ -273,19 +274,36 @@ export async function sendPhonePhotoBatch({
       encryptedSize: encrypted.ciphertext.byteLength,
       iv: encrypted.iv,
     };
-    const response = await request('/api/menu-photo-transfer/upload', {
-      method: 'PUT',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/octet-stream',
-        [PHOTO_TRANSFER_METADATA_HEADER]: encodePhotoTransferMetadataHeader(metadata),
-      },
-      body: encrypted.ciphertext,
-      cache: 'no-store',
-      signal,
-    });
-    if (!response.ok) {
-      throw await responseError(response, `Photo ${index + 1} could not be sent.`);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      let response: Response;
+      try {
+        response = await request('/api/menu-photo-transfer/upload', {
+          method: 'PUT',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/octet-stream',
+            [PHOTO_TRANSFER_METADATA_HEADER]: encodePhotoTransferMetadataHeader(metadata),
+          },
+          body: encrypted.ciphertext,
+          cache: 'no-store',
+          signal,
+        });
+      } catch (caught) {
+        if (!(caught instanceof TypeError) || attempt > 0) throw caught;
+        continue;
+      }
+      if (response.ok) break;
+      const error = await responseError(response, `Photo ${index + 1} could not be sent.`);
+      if (
+        error.status === 409
+        && error.message === ALREADY_COMMITTED_UPLOAD_DETAIL
+      ) {
+        // The manifest only advances sequentially. This exact conflict means an
+        // earlier ambiguous PUT committed this index, so resuming at the next
+        // index preserves order without overwriting the stored ciphertext.
+        break;
+      }
+      throw error;
     }
   }
 

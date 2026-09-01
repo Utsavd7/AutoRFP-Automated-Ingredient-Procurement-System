@@ -24,7 +24,7 @@ async function mockAccount(page: Page) {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ account }),
+      body: JSON.stringify({ account, workspaceId: 'tenant-a' }),
     });
   });
 }

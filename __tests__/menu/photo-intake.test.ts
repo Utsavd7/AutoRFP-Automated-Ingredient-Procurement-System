@@ -124,6 +124,45 @@ describe('local menu photo intake', () => {
     ]);
   });
 
+  it('uses multi-word dish evidence before stripping ambiguous bare prices', () => {
+    expect(cleanRecognizedMenuLines([
+      { text: 'Chicken 555', confidence: 0.91 },
+      { text: 'Chicken 777', confidence: 0.9 },
+      { text: 'Chicken 999', confidence: 0.89 },
+      { text: 'Paneer Tikka 999', confidence: 0.88 },
+      { text: 'Paneer Tikka 1000', confidence: 0.87 },
+      { text: 'Paneer Tikka 1999', confidence: 0.86 },
+      { text: 'Paneer Tikka 2000', confidence: 0.85 },
+    ])).toEqual([
+      { text: 'Chicken 555', confidence: 0.91 },
+      { text: 'Chicken 777', confidence: 0.9 },
+      { text: 'Chicken 999', confidence: 0.89 },
+      { text: 'Paneer Tikka', confidence: 0.88 },
+    ]);
+  });
+
+  it('keeps ambiguous singular menu items editable', () => {
+    expect(cleanRecognizedMenuLines([
+      { text: 'Tea', confidence: 0.91 },
+      { text: 'Coffee', confidence: 0.9 },
+      { text: 'Rice', confidence: 0.89 },
+      { text: 'Pizza', confidence: 0.88 },
+      { text: 'Burger', confidence: 0.87 },
+      { text: 'Soup', confidence: 0.86 },
+      { text: 'Salad', confidence: 0.85 },
+      { text: 'Thali', confidence: 0.84 },
+    ])).toEqual([
+      { text: 'Tea', confidence: 0.91 },
+      { text: 'Coffee', confidence: 0.9 },
+      { text: 'Rice', confidence: 0.89 },
+      { text: 'Pizza', confidence: 0.88 },
+      { text: 'Burger', confidence: 0.87 },
+      { text: 'Soup', confidence: 0.86 },
+      { text: 'Salad', confidence: 0.85 },
+      { text: 'Thali', confidence: 0.84 },
+    ]);
+  });
+
   it('removes common menu metadata and returns no results when every line is noise', () => {
     expect(cleanRecognizedMenuLines([
       { text: 'DESSERTS', confidence: 0.99 },

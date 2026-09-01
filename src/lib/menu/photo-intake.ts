@@ -28,8 +28,8 @@ export type RecognizedMenuLine = {
 const LEADING_MENU_MARKER = /^(?:[\u2022\u00b7\u25cf\u25e6\u25aa\u25ab*-]+\s*|\d{1,3}\s*[.)]\s*)/;
 const PRICE = /(?:₹\s*|(?:rs\.?|inr)\s*)\d+(?:\.\d{1,2})?/i;
 const PRICE_AMOUNT = /(?:₹\s*|(?:rs\.?|inr)\s*)?\d+(?:\.\d{1,2})?/i;
-const BARE_PRICE = /\b(?:1\d{2}|[2-9]\d{2,})(?:\.\d{1,2})?\s*$/;
-const CATEGORY_HEADING = /^(?:veg(?:etarian)?\s+)?(?:starters?|appeti[sz]ers?|soups?|salads?|mains?|main\s+course|curr(?:y|ies)|tandoori|breads?|rice|noodles?|pasta|pizza|burgers?|sandwiches|desserts?|beverages?|drinks?|mocktails?|cocktails?|tea|coffee|breakfast|combos?|thalis?|sweets?|non[ -]?veg|specials?|chef'?s\s+specials?|signature\s+dishes|menu)$/i;
+const BARE_PRICE = /\b[1-9]\d{2,3}(?:\.\d{1,2})?\s*$/;
+const CATEGORY_HEADING = /^(?:veg(?:etarian)?\s+)?(?:starters|appeti[sz]ers|soups|salads|mains|main\s+course|curries|breads|noodles|pastas|pizzas|burgers|sandwiches|desserts|beverages|drinks|mocktails|cocktails|teas|coffees|breakfast|combos|thalis|sweets|veg(?:etarian)?|non[ -]?veg|specials|chef'?s\s+specials?|signature\s+dishes|menu)$/i;
 const METADATA = /\b(?:gst|tax(?:es)?|phone|mobile|contact|call|whatsapp|order\s+(?:now|online)|available\s+on|swiggy|zomato|home\s+delivery|dine[ -]?in|takeaway|timings?|hours?|address)\b/i;
 const DESCRIPTION = /^(?:served\s+with|made\s+with|choice\s+of)\b/i;
 
@@ -43,7 +43,11 @@ function stripTrailingPrices(text: string) {
   cleaned = cleaned.replace(new RegExp(`\\s+(?:half|full)\\s+${PRICE_AMOUNT.source}(?:\\s+(?:half|full)\\s+${PRICE_AMOUNT.source})*\\s*$`, 'i'), '');
   cleaned = cleaned.replace(new RegExp(`\\s+${PRICE.source}\\s*(?:\\/-)?\\s*$`, 'i'), '');
   cleaned = cleaned.replace(/\s+\d+(?:\.\d{1,2})?\s*\/-\s*$/, '');
-  return cleaned.replace(BARE_PRICE, '').trim();
+  const barePrice = cleaned.match(BARE_PRICE);
+  if (!barePrice) return cleaned.trim();
+
+  const dishText = cleaned.slice(0, barePrice.index).trim();
+  return dishText.split(/\s+/).length >= 2 ? dishText : cleaned.trim();
 }
 
 /**

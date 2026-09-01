@@ -12,7 +12,7 @@ Built by [Utsav Doshi](https://github.com/Utsavd7).
 
 The current release supports:
 
-- create a menu by typing dish names, uploading up to five photos, taking phone photos, or importing a menu page you have permission to use;
+- create a menu by typing dish names, uploading up to five laptop photos, scanning a QR code to send up to ten original phone photos at a time, or importing a menu page you have permission to use;
 - scan menu photos in the browser, review the detected text, remove unwanted text, and approve the final dishes and ingredients;
 - organise ingredients using categories familiar to Indian restaurants;
 - keep existing suppliers, choose more than one sourcing route, or accept applications from verified new suppliers;
@@ -36,6 +36,7 @@ The product does not introduce suppliers and then disappear from the workflow. I
 - Production startup fails closed when required configuration is missing.
 - Rate limits cover account creation, invitations, supplier access, supplier submissions, and applications.
 - Security headers block framing, content type guessing, browser referrer leakage, and unnecessary device permissions.
+- Phone photos travel as temporary encrypted copies. The decryption key stays in the QR link, and retrieved originals are kept only in that restaurant workspace on the current browser.
 - Backup and restore tools are included for the operator.
 
 ## Run locally

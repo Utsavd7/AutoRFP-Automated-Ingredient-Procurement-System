@@ -21,6 +21,7 @@ import { SignOutButton } from '@/components/auth/SignOutButton';
 import { PageSkeleton } from '@/components/Skeleton';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { TutorialGuide } from '@/components/tutorial/TutorialGuide';
+import { WorkspaceProvider } from '@/components/WorkspaceContext';
 import { createSignInRedirect } from '@/lib/auth/callback-url';
 import {
   prefetchWorkspace,
@@ -105,6 +106,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [account, setAccount] = useState<RestaurantAccount | null>(null);
+  const [workspaceId, setWorkspaceId] = useState('');
   const [tutorial, setTutorial] = useState<TutorialStateDto | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [ready, setReady] = useState(false);
@@ -144,6 +146,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       .then((loaded) => {
         if (!active || !loaded) return;
         setWorkspacePrefetchScope(loaded.workspaceId);
+        setWorkspaceId(loaded.workspaceId);
         setAccount(loaded.account!);
         setTutorial(loaded.tutorial ?? null);
         setAccountUnavailable(false);
@@ -157,6 +160,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
     return () => {
       active = false;
+      setWorkspaceId('');
       setWorkspacePrefetchScope(null);
     };
   }, [accountRetry, router]);
@@ -266,7 +270,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (!ready || !account) {
+  if (!ready || !account || !workspaceId) {
     return <div className={styles.loadingPage}><PageSkeleton /></div>;
   }
 
@@ -306,7 +310,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </header>
 
         <ErrorBoundary>
-          <div className={styles.content}>{children}</div>
+          <div className={styles.content}>
+            <WorkspaceProvider workspaceId={workspaceId}>{children}</WorkspaceProvider>
+          </div>
         </ErrorBoundary>
 
         <TutorialGuide initialTutorial={tutorial ?? undefined} />

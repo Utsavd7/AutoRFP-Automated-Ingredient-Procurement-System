@@ -70,9 +70,9 @@
 .intakeChoices > button:hover { transform: translateY(-1px); border-color: #b18467; box-shadow: 0 .55rem 1.4rem rgba(32,29,24,.06); }
 .intakeChoices > button > svg:first-child { width: 2.8rem; height: 2.8rem; padding: .75rem; color: #8b4824; background: #f3ddcd; }
 .intakeChoices > button > svg:last-child { width: 1rem; color: #9f4e27; }
-.intakeChoices span, .phoneOption button span, .permissionCheck span { display: flex; flex-direction: column; gap: .18rem; }
-.intakeChoices strong, .phoneOption strong { font-family: var(--font-newsreader), Georgia, serif; font-size: 1.18rem; font-weight: 600; }
-.intakeChoices small, .phoneOption small, .permissionCheck small { color: var(--muted); font-size: .74rem; line-height: 1.4; }
+.intakeChoices span, .permissionCheck span { display: flex; flex-direction: column; gap: .18rem; }
+.intakeChoices strong { font-family: var(--font-newsreader), Georgia, serif; font-size: 1.18rem; font-weight: 600; }
+.intakeChoices small, .permissionCheck small { color: var(--muted); font-size: .74rem; line-height: 1.4; }
 .backButton { margin: 0 0 1rem; padding: 0 0 .2rem; display: inline-flex; align-items: center; gap: .35rem; border: 0; border-bottom: 1px solid #b8805d; background: transparent; color: #8b4824; font: inherit; font-size: .72rem; font-weight: 800; cursor: pointer; }
 .backButton svg { width: .85rem; }
 .backButton:disabled { cursor: wait; opacity: .5; }
@@ -99,21 +99,13 @@
 .photoProgress span { color: var(--muted); font-size: .7rem; }
 .photoProgress progress { width: 100%; height: .35rem; accent-color: #9f4e27; }
 .photoProgress button { min-height: 2.35rem; padding: .45rem .7rem; border: 1px solid var(--line); background: var(--paper); color: var(--ink); font: inherit; font-size: .7rem; font-weight: 800; cursor: pointer; }
-.phoneOption { margin-top: 1.1rem; padding-top: 1rem; border-top: 1px solid var(--line); }
-.phoneOption > button { width: 100%; display: grid; grid-template-columns: 2.4rem 1fr; align-items: center; gap: .7rem; padding: .7rem .8rem; border: 1px solid var(--line); background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
-.phoneOption > button > svg { width: 1.4rem; color: #9f4e27; }
-.phoneQr { margin-top: .6rem; padding: 1rem; display: grid; grid-template-columns: 9rem 1fr; align-items: center; gap: 1rem; border: 1px solid var(--line); background: #fffdf8; }
-.phoneQr img { width: 9rem; height: 9rem; display: block; }
-.phoneQr > svg { width: 1.5rem; margin: auto; color: #9f4e27; }
-.phoneQr p { margin: 0; color: var(--muted); font-size: .76rem; line-height: 1.55; }
 .permissionCheck { margin: .85rem 0 0 !important; padding: .8rem; display: grid !important; grid-template-columns: 1.2rem 1fr; align-items: start; gap: .65rem; border: 1px solid var(--line); background: #fffdf8; color: var(--ink) !important; letter-spacing: 0 !important; text-transform: none !important; cursor: pointer; }
 .permissionCheck input { width: 1.05rem; height: 1.05rem; margin: .12rem 0 0; accent-color: #9f4e27; }
 .permissionCheck strong { font-size: .78rem; }
 .importedFrom { margin-bottom: .8rem; padding: .58rem .7rem; display: flex; align-items: center; gap: .45rem; color: #28553a; background: #edf5ef; font-size: .72rem; font-weight: 800; }
 .importedFrom svg { width: .9rem; }
-.spin { animation: spin 1s linear infinite; }
 @keyframes pulse { to { background-position: -220% 0; } }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (max-width: 62rem) { .menuGrid, .loading { grid-template-columns: repeat(2,minmax(0,1fr)); } .explainer small { display: none; } }
-@media (max-width: 44rem) { .page { padding: 1.25rem 1rem 5rem; } .header { align-items: stretch; flex-direction: column; gap: 1.25rem; } .header .primaryButton { width: 100%; } .explainer { align-items: flex-start; flex-direction: column; } .explainer > svg { display: none; } .menuGrid, .loading { grid-template-columns: 1fr; } .dialogBackdrop { align-items: end; padding: 0; } .dialog { max-height: 94vh; border-width: 1px 0 0; } .dialogBody { padding: 1rem; } .dialog footer { flex-direction: column-reverse; } .dialog footer button { width: 100%; } .photoStrip { grid-template-columns: repeat(3,minmax(0,1fr)); } .photoProgress { grid-template-columns: 1.5rem 1fr; } .photoProgress button { grid-column: 1 / -1; } .phoneQr { grid-template-columns: 1fr; justify-items: center; text-align: center; } }
-@media (prefers-reduced-motion: reduce) { .menuCard, .intakeChoices > button { transition: none; } .menuCard:hover, .intakeChoices > button:hover { transform: none; } .loading span, .photoProgress > svg, .spin { animation: none; } }
+@media (max-width: 44rem) { .page { padding: 1.25rem 1rem 5rem; } .header { align-items: stretch; flex-direction: column; gap: 1.25rem; } .header .primaryButton { width: 100%; } .explainer { align-items: flex-start; flex-direction: column; } .explainer > svg { display: none; } .menuGrid, .loading { grid-template-columns: 1fr; } .dialogBackdrop { align-items: end; padding: 0; } .dialog { max-height: 94vh; border-width: 1px 0 0; } .dialogBody { padding: 1rem; } .dialog footer { flex-direction: column-reverse; } .dialog footer button { width: 100%; } .photoStrip { grid-template-columns: repeat(3,minmax(0,1fr)); } .photoProgress { grid-template-columns: 1.5rem 1fr; } .photoProgress button { grid-column: 1 / -1; } }
+@media (prefers-reduced-motion: reduce) { .menuCard, .intakeChoices > button { transition: none; } .menuCard:hover, .intakeChoices > button:hover { transform: none; } .loading span, .photoProgress > svg { animation: none; } }

@@ -10,7 +10,6 @@ import {
   FileText,
   Globe2,
   LoaderCircle,
-  MonitorSmartphone,
   Plus,
   ShieldCheck,
   Upload,
@@ -19,6 +18,7 @@ import {
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { useWorkspaceIdOptional } from '@/components/WorkspaceContext';
 import {
   workspaceFetch,
   workspaceMutationFetch,
@@ -29,6 +29,13 @@ import {
   photoIntakeModeFromSearch,
   validateMenuPhotoSelection,
 } from '@/lib/menu/photo-intake';
+import { associateLocalPhotoBatches } from '@/lib/menu/local-menu-photos';
+import { readBrowserImageDimensions } from '@/lib/menu/photo-transfer-client';
+
+import {
+  LocalMenuPhotoGallery,
+  PhonePhotoTransfer,
+} from './PhonePhotoTransfer';
 
 import styles from './menu-workspace.module.css';
 
@@ -64,42 +71,21 @@ type IntakeMode = 'text' | 'photo' | 'url';
 type PhotoPreview = {
   file: File;
   previewUrl: string;
+  batchId?: string;
 };
-
-async function readImageDimensions(file: File) {
-  if ('createImageBitmap' in window) {
-    const bitmap = await createImageBitmap(file);
-    try {
-      return { width: bitmap.width, height: bitmap.height };
-    } finally {
-      bitmap.close();
-    }
-  }
-
-  const previewUrl = URL.createObjectURL(file);
-  try {
-    return await new Promise<{ width: number; height: number }>((resolve, reject) => {
-      const image = new Image();
-      image.onload = () => resolve({
-        width: image.naturalWidth,
-        height: image.naturalHeight,
-      });
-      image.onerror = () => reject(new Error(`${file.name} could not be read as an image.`));
-      image.src = previewUrl;
-    });
-  } finally {
-    URL.revokeObjectURL(previewUrl);
-  }
-}
 
 export function MenuIntakeDialog({
   initialMode,
   onClose,
   onCreated,
+  onGalleryChanged = () => {},
+  workspaceId = '',
 }: {
   initialMode?: IntakeMode;
   onClose: () => void;
   onCreated: (menuId: string) => void;
+  onGalleryChanged?: () => void;
+  workspaceId?: string;
 }) {
   const [mode, setMode] = useState<IntakeMode | null>(initialMode ?? null);
   const [menuText, setMenuText] = useState('');
@@ -120,9 +106,6 @@ export function MenuIntakeDialog({
   const [websitePermission, setWebsitePermission] = useState(false);
   const [importingWebsite, setImportingWebsite] = useState(false);
   const [canonicalWebsiteUrl, setCanonicalWebsiteUrl] = useState('');
-  const [phoneOpen, setPhoneOpen] = useState(false);
-  const [phoneQr, setPhoneQr] = useState('');
-  const [phoneQrLoading, setPhoneQrLoading] = useState(false);
   const dialog = useRef<HTMLElement>(null);
   const photoController = useRef<AbortController | null>(null);
   const photoUrls = useRef<string[]>([]);
@@ -172,11 +155,11 @@ export function MenuIntakeDialog({
     photoUrls.current.forEach((url) => URL.revokeObjectURL(url));
   }, []);
 
-  function replacePhotos(files: readonly File[]) {
+  function replacePhotos(items: readonly { file: File; batchId?: string }[]) {
     photoUrls.current.forEach((url) => URL.revokeObjectURL(url));
-    const next = files.map((file) => ({
-      file,
-      previewUrl: URL.createObjectURL(file),
+    const next = items.map((item) => ({
+      ...item,
+      previewUrl: URL.createObjectURL(item.file),
     }));
     photoUrls.current = next.map((photo) => photo.previewUrl);
     setPhotos(next);
@@ -197,16 +180,19 @@ export function MenuIntakeDialog({
     try {
       const checked = await validateMenuPhotoSelection(
         mergeMenuPhotoFiles(photos.map(({ file }) => file), [...files]),
-        readImageDimensions,
+        readBrowserImageDimensions,
       );
-      replacePhotos(checked);
+      replacePhotos(checked.map((file) => ({
+        file,
+        batchId: photos.find((photo) => photo.file === file)?.batchId,
+      })));
     } catch (caught) {
       setCreateError(caught instanceof Error ? caught.message : 'These photos could not be used.');
     }
   }
 
   function removePhoto(index: number) {
-    replacePhotos(photos.filter((_, current) => current !== index).map(({ file }) => file));
+    replacePhotos(photos.filter((_, current) => current !== index));
     setPhotoReady(false);
     setMenuText('');
     setConfidences([]);
@@ -287,31 +273,6 @@ export function MenuIntakeDialog({
     }
   }
 
-  async function showPhoneQr() {
-    if (phoneQr || phoneQrLoading) {
-      setPhoneOpen(true);
-      return;
-    }
-    setPhoneOpen(true);
-    setPhoneQrLoading(true);
-    setCreateError('');
-    try {
-      const target = new URL(window.location.href);
-      target.searchParams.set('menuIntake', 'photo');
-      target.hash = '';
-      const QRCode = (await import('qrcode')).default;
-      setPhoneQr(await QRCode.toDataURL(target.toString(), {
-        width: 224,
-        margin: 1,
-        color: { dark: '#101817', light: '#fffdf8' },
-      }));
-    } catch {
-      setCreateError('We could not prepare the phone code. Try again.');
-    } finally {
-      setPhoneQrLoading(false);
-    }
-  }
-
   async function saveMenu(input: unknown) {
     if (saving) return;
     setSaving(true);
@@ -327,6 +288,17 @@ export function MenuIntakeDialog({
       }
       const result = (await response.json()) as { menuId?: string };
       if (!result.menuId) throw new Error('The menu draft was not returned.');
+      const localBatchIds = [...new Set(photos.flatMap(({ batchId }) =>
+        batchId ? [batchId] : []))];
+      if (workspaceId && localBatchIds.length > 0) {
+        try {
+          await associateLocalPhotoBatches(workspaceId, localBatchIds, result.menuId);
+          onGalleryChanged();
+        } catch {
+          // The menu draft is already safely created; local-only link metadata
+          // must never prevent the owner from opening and reviewing it.
+        }
+      }
       onCreated(result.menuId);
     } catch (caught) {
       setCreateError(caught instanceof Error
@@ -434,7 +406,7 @@ export function MenuIntakeDialog({
                   <label className={styles.photoPicker} htmlFor="menu-photos">
                     <Upload aria-hidden="true" />
                     <strong>Take photos or choose images</strong>
-                    <span>Choose up to 5 clear JPG, PNG, or WebP images</span>
+                    <span>Choose up to 10 clear JPG, PNG, or WebP images</span>
                   </label>
                   <input
                     className={styles.hiddenInput}
@@ -521,22 +493,21 @@ export function MenuIntakeDialog({
                 </form>
               )}
 
-              <div className={styles.phoneOption}>
-                <button type="button" onClick={() => void showPhoneQr()}>
-                  <MonitorSmartphone aria-hidden="true" />
-                  <span><strong>Use your phone</strong><small>Open photo mode on a phone</small></span>
-                </button>
-                {phoneOpen && (
-                  <div className={styles.phoneQr}>
-                    {phoneQrLoading ? <LoaderCircle className={styles.spin} aria-hidden="true" /> : phoneQr && (
-                      // The QR contains only this authenticated app URL.
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={phoneQr} alt="Code to open menu photos on your phone" />
-                    )}
-                    <p>Scan this with a phone signed in to the same restaurant account. Refresh this page after the phone saves the menu.</p>
-                  </div>
-                )}
-              </div>
+              <PhonePhotoTransfer
+                workspaceId={workspaceId}
+                currentPhotoCount={photos.length}
+                onGalleryChanged={onGalleryChanged}
+                onReceived={(batchId, files) => {
+                  replacePhotos([
+                    ...photos,
+                    ...files.map((file) => ({ file, batchId })),
+                  ]);
+                  setCreateError('');
+                  setPhotoReady(false);
+                  setMenuText('');
+                  setConfidences([]);
+                }}
+              />
             </div>
           )}
 
@@ -627,6 +598,7 @@ export function MenuWorkspace({
   initialNextCursor?: string | null;
 }) {
   const router = useRouter();
+  const workspaceId = useWorkspaceIdOptional() ?? '';
   const [menus, setMenus] = useState(initialMenus ?? []);
   const [loading, setLoading] = useState(initialMenus === undefined);
   const [error, setError] = useState(initialError ?? '');
@@ -634,6 +606,7 @@ export function MenuWorkspace({
   const [initialCreateMode, setInitialCreateMode] = useState<IntakeMode | undefined>();
   const [nextCursor, setNextCursor] = useState<string | null>(initialNextCursor);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [galleryRefresh, setGalleryRefresh] = useState(0);
   const initialLoadStarted = useRef(false);
 
   const loadMenus = useCallback(async (cursor?: string, usePrefetch = false) => {
@@ -768,11 +741,20 @@ export function MenuWorkspace({
         </button>
       )}
 
+      {workspaceId && (
+        <LocalMenuPhotoGallery
+          workspaceId={workspaceId}
+          refreshKey={galleryRefresh}
+        />
+      )}
+
       {createOpen && (
         <MenuIntakeDialog
           initialMode={initialCreateMode}
+          workspaceId={workspaceId}
           onClose={() => setCreateOpen(false)}
           onCreated={(menuId) => router.push(`/menus/${encodeURIComponent(menuId)}`)}
+          onGalleryChanged={() => setGalleryRefresh((value) => value + 1)}
         />
       )}
     </main>

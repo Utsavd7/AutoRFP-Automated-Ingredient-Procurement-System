@@ -99,6 +99,58 @@ function projectDeviceContext(testInfo: TestInfo): BrowserContextOptions {
   };
 }
 
+test('sends a menu photo from the public mobile capture page without sign-in', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const token = 'network-mocked-phone-token';
+  const encodedKey = Buffer.alloc(32, 7).toString('base64url');
+  const uploadRequests: Array<{ method: string; authorization: string | undefined; url: string }> = [];
+  await page.route('**/api/menu-photo-transfer/upload', async (route) => {
+    const request = route.request();
+    uploadRequests.push({
+      method: request.method(),
+      authorization: request.headers().authorization,
+      url: request.url(),
+    });
+    await route.fulfill({
+      status: request.method() === 'PUT' ? 201 : 200,
+      contentType: 'application/json',
+      body: JSON.stringify(request.method() === 'PUT'
+        ? { uploaded: true, index: 0 }
+        : { status: 'complete', expiresAt: Date.now() + 60_000, files: [] }),
+    });
+  });
+
+  await page.goto(`/menu-capture#token=${token}&key=${encodedKey}`);
+  await expect(page).toHaveURL(/\/menu-capture$/);
+  await expect(page.getByRole('heading', { name: 'Take or choose up to 10 photos' })).toBeVisible();
+  await expect(page.getByText(/sign in/i)).toHaveCount(0);
+
+  await page.getByLabel('Take photos or choose images').setInputFiles({
+    name: 'menu.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      'base64',
+    ),
+  });
+  await expect(page.getByAltText('Menu photo 1')).toBeVisible();
+  await page.getByRole('button', { name: 'Done' }).click();
+  await expect(page.getByRole('heading', { name: 'Photos sent' })).toBeVisible();
+  await expect(page.getByText('You can close this page.')).toBeVisible();
+
+  expect(uploadRequests).toEqual([
+    expect.objectContaining({
+      method: 'PUT',
+      authorization: `Bearer ${token}`,
+    }),
+    expect.objectContaining({
+      method: 'POST',
+      authorization: `Bearer ${token}`,
+    }),
+  ]);
+  expect(uploadRequests.every(({ url }) => !url.includes(token))).toBe(true);
+});
+
 test('uses the approved QuotePlate product shell and exposes every core workspace', async ({
   page,
 }) => {

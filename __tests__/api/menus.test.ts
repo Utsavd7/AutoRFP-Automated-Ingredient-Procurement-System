@@ -1,10 +1,11 @@
 import { POST as approveMenu } from '@/app/api/menus/[id]/approve/route';
-import { GET as getMenu, PUT as updateMenu } from '@/app/api/menus/[id]/route';
+import { DELETE as deleteMenu, GET as getMenu, PUT as updateMenu } from '@/app/api/menus/[id]/route';
 import { GET as listMenus, POST as createMenu } from '@/app/api/menus/route';
 import type { MenuDocumentV1 } from '@/lib/menu/menu-document';
 import {
   approveReviewedMenu,
   createReviewedMenuDraft,
+  deleteReviewedMenu,
   getReviewedMenu,
   listReviewedMenus,
   MenuConflictError,
@@ -21,6 +22,7 @@ jest.mock('@/lib/server-account', () => ({
 jest.mock('@/lib/menu/menu-service', () => ({
   approveReviewedMenu: jest.fn(),
   createReviewedMenuDraft: jest.fn(),
+  deleteReviewedMenu: jest.fn(),
   getReviewedMenu: jest.fn(),
   listReviewedMenus: jest.fn(),
   updateReviewedMenuDraft: jest.fn(),
@@ -85,6 +87,7 @@ describe('document-backed menu API', () => {
     jest.mocked(createReviewedMenuDraft).mockResolvedValue({ id: 'menu-a' } as never);
     jest.mocked(updateReviewedMenuDraft).mockResolvedValue({ id: 'menu-a', version: 2 } as never);
     jest.mocked(approveReviewedMenu).mockResolvedValue({ id: 'menu-a', version: 3 } as never);
+    jest.mocked(deleteReviewedMenu).mockResolvedValue({ id: 'menu-a' } as never);
 
     const created = await createMenu(
       jsonRequest('http://localhost/api/menus', 'POST', draft),
@@ -97,6 +100,10 @@ describe('document-backed menu API', () => {
       jsonRequest('http://localhost/api/menus/menu-a/approve', 'POST', {
         expectedVersion: 2,
       }),
+      routeContext('menu-a') as never,
+    );
+    const deleted = await deleteMenu(
+      jsonRequest('http://localhost/api/menus/menu-a', 'DELETE', { expectedVersion: 2 }),
       routeContext('menu-a') as never,
     );
 
@@ -114,9 +121,16 @@ describe('document-backed menu API', () => {
       menuId: 'menu-a',
       expectedVersion: 2,
     });
+    expect(deleteReviewedMenu).toHaveBeenCalledWith({
+      actor: { tenantId: 'tenant-a', userId: 'member-a' },
+      menuId: 'menu-a',
+      expectedVersion: 2,
+    });
     expect(created.status).toBe(201);
     expect(updated.status).toBe(200);
     expect(approved.status).toBe(200);
+    expect(deleted.status).toBe(200);
+    await expect(deleted.json()).resolves.toEqual({ deletedMenuId: 'menu-a' });
   });
 
   it('lists summary rows and returns detail proposals from tenant-scoped services', async () => {
@@ -161,6 +175,7 @@ describe('document-backed menu API', () => {
     jest.mocked(createReviewedMenuDraft).mockResolvedValue({ id: 'menu-a' } as never);
     jest.mocked(updateReviewedMenuDraft).mockResolvedValue({ id: 'menu-a' } as never);
     jest.mocked(approveReviewedMenu).mockResolvedValue({ id: 'menu-a' } as never);
+    jest.mocked(deleteReviewedMenu).mockResolvedValue({ id: 'menu-a' } as never);
     jest.mocked(listReviewedMenus).mockResolvedValue({ menus: [], nextCursor: null } as never);
     jest.mocked(getReviewedMenu).mockResolvedValue({ id: 'menu-a', document } as never);
 
@@ -170,6 +185,7 @@ describe('document-backed menu API', () => {
       createMenu(jsonRequest('http://localhost/api/menus', 'POST', draft)),
       updateMenu(jsonRequest('http://localhost/api/menus/menu-a', 'PUT', updateBody), routeContext('menu-a') as never),
       approveMenu(jsonRequest('http://localhost/api/menus/menu-a/approve', 'POST', { expectedVersion: 1 }), routeContext('menu-a') as never),
+      deleteMenu(jsonRequest('http://localhost/api/menus/menu-a', 'DELETE', { expectedVersion: 1 }), routeContext('menu-a') as never),
     ]);
 
     for (const response of responses) {
@@ -187,6 +203,7 @@ describe('document-backed menu API', () => {
     jest.mocked(approveReviewedMenu).mockRejectedValue(
       new MenuConflictError('Menu review is incomplete.'),
     );
+    jest.mocked(deleteReviewedMenu).mockRejectedValue(new MenuConflictError('Menu has changed.'));
 
     const invalid = await createMenu(jsonRequest('http://localhost/api/menus', 'POST', draft));
     const missing = await getMenu(new Request('http://localhost/api/menus/menu-b'), routeContext('menu-b') as never);
@@ -194,13 +211,21 @@ describe('document-backed menu API', () => {
       jsonRequest('http://localhost/api/menus/menu-a/approve', 'POST', { expectedVersion: 1 }),
       routeContext('menu-a') as never,
     );
+    const conflict = await deleteMenu(
+      jsonRequest('http://localhost/api/menus/menu-a', 'DELETE', { expectedVersion: 1 }),
+      routeContext('menu-a') as never,
+    );
     jest.mocked(requireAccountContext).mockResolvedValue(null);
     const unauthorized = await listMenus(new Request('http://localhost/api/menus'));
+    const unauthorizedDelete = await deleteMenu(
+      jsonRequest('http://localhost/api/menus/menu-a', 'DELETE', { expectedVersion: 1 }),
+      routeContext('menu-a') as never,
+    );
 
-    expect([invalid.status, missing.status, incomplete.status, unauthorized.status]).toEqual([
-      422, 404, 409, 401,
+    expect([invalid.status, missing.status, incomplete.status, conflict.status, unauthorized.status, unauthorizedDelete.status]).toEqual([
+      422, 404, 409, 409, 401, 401,
     ]);
-    for (const response of [invalid, missing, incomplete, unauthorized]) {
+    for (const response of [invalid, missing, incomplete, conflict, unauthorized, unauthorizedDelete]) {
       expect(response.headers.get('cache-control')).toBe('private, no-store');
     }
     await expect(missing.json()).resolves.not.toHaveProperty('tenantId');
@@ -213,6 +238,7 @@ describe('document-backed menu API', () => {
     jest.mocked(createReviewedMenuDraft).mockRejectedValue(internal);
     jest.mocked(updateReviewedMenuDraft).mockRejectedValue(internal);
     jest.mocked(approveReviewedMenu).mockRejectedValue(internal);
+    jest.mocked(deleteReviewedMenu).mockRejectedValue(internal);
 
     const responses = await Promise.all([
       listMenus(new Request('http://localhost/api/menus')),
@@ -220,6 +246,7 @@ describe('document-backed menu API', () => {
       createMenu(jsonRequest('http://localhost/api/menus', 'POST', draft)),
       updateMenu(jsonRequest('http://localhost/api/menus/menu-a', 'PUT', updateBody), routeContext('menu-a') as never),
       approveMenu(jsonRequest('http://localhost/api/menus/menu-a/approve', 'POST', { expectedVersion: 1 }), routeContext('menu-a') as never),
+      deleteMenu(jsonRequest('http://localhost/api/menus/menu-a', 'DELETE', { expectedVersion: 1 }), routeContext('menu-a') as never),
     ]);
 
     for (const response of responses) {
@@ -239,12 +266,16 @@ describe('document-backed menu API', () => {
     ['approve', () => approveMenu(new Request('http://localhost/api/menus/menu-a/approve', {
       method: 'POST', headers: { Origin: 'https://attacker.example', 'Sec-Fetch-Site': 'cross-site', 'Content-Type': 'application/json' }, body: JSON.stringify({ expectedVersion: 1 }),
     }), routeContext('menu-a') as never)],
+    ['delete', () => deleteMenu(new Request('http://localhost/api/menus/menu-a', {
+      method: 'DELETE', headers: { Origin: 'https://attacker.example', 'Sec-Fetch-Site': 'cross-site', 'Content-Type': 'application/json' }, body: JSON.stringify({ expectedVersion: 1 }),
+    }), routeContext('menu-a') as never)],
   ])('rejects cross-origin %s before authentication or menu work', async (_label, call) => {
     jest.mocked(requireAccountContext).mockClear();
     const response = await call();
     expect(response.status).toBe(403);
     expect(response.headers.get('cache-control')).toBe('private, no-store');
     expect(requireAccountContext).not.toHaveBeenCalled();
+    if (_label === 'delete') expect(deleteReviewedMenu).not.toHaveBeenCalled();
   });
 
   it('rejects oversized ignored JSON before service work', async () => {
@@ -256,5 +287,22 @@ describe('document-backed menu API', () => {
     );
     expect(response.status).toBe(413);
     expect(createReviewedMenuDraft).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['missing content type', new Request('http://localhost/api/menus/menu-a', {
+      method: 'DELETE', headers: { Origin: 'http://localhost', 'Sec-Fetch-Site': 'same-origin' }, body: JSON.stringify({ expectedVersion: 1 }),
+    }), 415],
+    ['invalid JSON', new Request('http://localhost/api/menus/menu-a', {
+      method: 'DELETE', headers: { Origin: 'http://localhost', 'Sec-Fetch-Site': 'same-origin', 'Content-Type': 'application/json' }, body: '{',
+    }), 400],
+    ['oversized JSON', jsonRequest('http://localhost/api/menus/menu-a', 'DELETE', {
+      expectedVersion: 1, ignored: 'x'.repeat(525_000),
+    }), 413],
+  ])('rejects delete requests with %s before menu work', async (_label, request, status) => {
+    const response = await deleteMenu(request, routeContext('menu-a') as never);
+    expect(response.status).toBe(status);
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(deleteReviewedMenu).not.toHaveBeenCalled();
   });
 });

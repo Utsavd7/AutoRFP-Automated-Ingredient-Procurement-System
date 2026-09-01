@@ -10,6 +10,7 @@ import {
 } from '@/lib/api/read-bounded-json';
 import { AuthorizationError } from '@/lib/auth/guards';
 import {
+  deleteReviewedMenu,
   getReviewedMenu,
   MenuConflictError,
   MenuNotFoundError,
@@ -108,6 +109,42 @@ export async function PUT(request: Request, context: MenuRouteContext) {
       draft,
     });
     return privateMutationResponse(NextResponse.json({ menu }));
+  } catch (error) {
+    return privateMutationResponse(menuError(error));
+  }
+}
+
+export async function DELETE(request: Request, context: MenuRouteContext) {
+  const rejected = browserJsonMutationRejection(request);
+  if (rejected) {
+    return privateMutationResponse(rejected === 'CROSS_ORIGIN'
+      ? problemResponse(403, 'Request not allowed', 'Delete menus from the QuotePlate workspace page.')
+      : problemResponse(415, 'Unsupported media type', 'Send this request as application/json.'));
+  }
+  const account = await requireAccountContext();
+  if (!account) {
+    return privateMutationResponse(problemResponse(401, 'Unauthorized', 'Authentication is required.'));
+  }
+
+  let body: unknown;
+  try {
+    body = await readBoundedJson(request, MENU_REQUEST_BODY_BYTES);
+  } catch (error) {
+    if (error instanceof RequestBodyTooLargeError) {
+      return privateMutationResponse(problemResponse(413, 'Request too large', error.message));
+    }
+    if (!(error instanceof InvalidJsonBodyError)) throw error;
+    return privateMutationResponse(problemResponse(400, 'Invalid request', 'Provide a valid JSON body.'));
+  }
+
+  const { id } = await context.params;
+  try {
+    const deleted = await deleteReviewedMenu({
+      actor: actorFrom(account),
+      menuId: id,
+      expectedVersion: expectedVersionFrom(body),
+    });
+    return privateMutationResponse(NextResponse.json({ deletedMenuId: deleted.id }));
   } catch (error) {
     return privateMutationResponse(menuError(error));
   }

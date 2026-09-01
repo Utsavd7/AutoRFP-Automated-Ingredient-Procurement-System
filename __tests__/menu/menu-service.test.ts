@@ -1,3 +1,5 @@
+import { Prisma } from '@prisma/client';
+
 import type { MenuDocumentV1 } from '@/lib/menu/menu-document';
 import {
   approveReviewedMenu,
@@ -276,6 +278,38 @@ describe('document-backed menu service', () => {
       },
     );
     expect(deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('maps a deletion foreign-key race to the procurement-history conflict', async () => {
+    const auditCreate = jest.fn();
+    const transaction = {
+      $queryRaw: jest.fn(),
+      menu: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'menu-a', version: 3 }),
+        deleteMany: jest.fn().mockRejectedValue(
+          new Prisma.PrismaClientKnownRequestError('Foreign key constraint failed.', {
+            code: 'P2003',
+            clientVersion: 'test',
+          }),
+        ),
+      },
+      procurementRequest: { count: jest.fn().mockResolvedValue(0) },
+      auditEvent: { create: auditCreate },
+    };
+
+    await expectMenuServiceError(
+      () => deleteReviewedMenu(
+        { actor, menuId: 'menu-a', expectedVersion: 3 },
+        clientWith(transaction) as never,
+      ),
+      MenuConflictError,
+      {
+        message: 'This menu has procurement history and cannot be deleted.',
+        code: 'MENU_CONFLICT',
+        status: 409,
+      },
+    );
+    expect(auditCreate).not.toHaveBeenCalled();
   });
 
   it('rejects a stale menu version before checking procurement history', async () => {

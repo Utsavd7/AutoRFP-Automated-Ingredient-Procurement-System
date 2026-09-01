@@ -637,13 +637,26 @@ export async function deleteReviewedMenu(
         );
       }
 
-      const deleted = await transaction.menu.deleteMany({
-        where: {
-          tenantId: actor.tenantId,
-          id: menuId,
-          version: expectedVersion,
-        },
-      });
+      let deleted: Prisma.BatchPayload;
+      try {
+        deleted = await transaction.menu.deleteMany({
+          where: {
+            tenantId: actor.tenantId,
+            id: menuId,
+            version: expectedVersion,
+          },
+        });
+      } catch (error) {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2003'
+        ) {
+          throw new MenuConflictError(
+            'This menu has procurement history and cannot be deleted.',
+          );
+        }
+        throw error;
+      }
       if (deleted.count !== 1) {
         throw new MenuConflictError(
           'This menu changed after you opened it. Reload before continuing.',

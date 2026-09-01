@@ -7,6 +7,7 @@ import {
   approveReviewedMenu,
   createDeterministicMenuDraft,
   createReviewedMenuDraft,
+  deleteReviewedMenu,
   getReviewedMenu,
   listReviewedMenus,
   MenuConflictError,
@@ -290,6 +291,87 @@ test('menu optimistic versions serialize edit and approval races', async () => {
       await expect(
         admin.auditEvent.count({ where: { entityId: approveRace.id, action: 'menu.approved' } }),
       ).resolves.toBe(1);
+    } finally {
+      await app?.$disconnect();
+      await admin.$disconnect();
+    }
+  });
+});
+
+test('menu deletion maps an FK history race to a conflict', async () => {
+  await withMigratedPostgres(async (databaseUrl) => {
+    const admin = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
+    let app: PrismaClient | undefined;
+
+    try {
+      await seedTenant(admin, 'tenant-a', 'member-a', 'a@example.test');
+      app = await provisionAppClient(admin, databaseUrl);
+      const actor = { userId: 'member-a', tenantId: 'tenant-a' };
+      const menu = await admin.menu.create({
+        data: {
+          tenantId: actor.tenantId,
+          name: 'Deletion race menu',
+          document: reviewedDocument() as unknown as Prisma.InputJsonValue,
+          createdByUserId: actor.userId,
+        },
+      });
+      let inserted = false;
+      const racingClient = {
+        $queryRaw: app.$queryRaw.bind(app),
+        $transaction: async (callback: (transaction: Prisma.TransactionClient) => Promise<unknown>) =>
+          app!.$transaction(async (transaction) => {
+            const procurementRequest = new Proxy(transaction.procurementRequest, {
+              get(target, property, receiver) {
+                const value = Reflect.get(target, property, receiver);
+                if (property === 'count') {
+                  return async (...args: Parameters<typeof target.count>) => {
+                    const count = await target.count(...args);
+                    if (!inserted) {
+                      inserted = true;
+                      await admin.procurementRequest.create({
+                        data: {
+                          tenantId: actor.tenantId,
+                          title: 'Concurrent history',
+                          menuId: menu.id,
+                          items: [],
+                          sourcing: [],
+                          deliveryDetails: {},
+                          deliveryDate: new Date('2099-09-04T00:00:00.000Z'),
+                          quoteDeadline: new Date('2099-09-02T08:00:00.000Z'),
+                          createdByUserId: actor.userId,
+                        },
+                      });
+                    }
+                    return count;
+                  };
+                }
+                return typeof value === 'function' ? value.bind(target) : value;
+              },
+            });
+            const transactionWithRace = new Proxy(transaction, {
+              get(target, property, receiver) {
+                if (property === 'procurementRequest') return procurementRequest;
+                const value = Reflect.get(target, property, receiver);
+                return typeof value === 'function' ? value.bind(target) : value;
+              },
+            }) as Prisma.TransactionClient;
+            return callback(transactionWithRace);
+          }),
+      };
+
+      await expect(
+        deleteReviewedMenu(
+          { actor, menuId: menu.id, expectedVersion: menu.version },
+          racingClient as never,
+        ),
+      ).rejects.toMatchObject({
+        message: 'This menu has procurement history and cannot be deleted.',
+        code: 'MENU_CONFLICT',
+        status: 409,
+      });
+      await expect(
+        admin.menu.findUniqueOrThrow({ where: { id: menu.id } }),
+      ).resolves.toBeDefined();
     } finally {
       await app?.$disconnect();
       await admin.$disconnect();

@@ -107,7 +107,7 @@ describe('overview service', () => {
       where: {
         tenantId: 'tenant-a',
         request: { tenantId: 'tenant-a', status: 'OPEN' },
-        quotes: { some: { tenantId: 'tenant-a' } },
+        quoteRevision: { gt: 0 },
       },
     });
     expect(transaction.procurementRequest.findMany).toHaveBeenCalledWith({

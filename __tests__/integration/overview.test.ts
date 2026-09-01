@@ -6,6 +6,13 @@ import { AuthorizationError } from '@/lib/auth/guards';
 import { createPrismaOverviewOperations } from '@/lib/overview/overview-service';
 
 import { withMigratedPostgres } from './setup/postgres';
+import {
+  awardDocuments,
+  emptyCapabilities,
+  quoteRevisions,
+  requestItems,
+  requestSourcing,
+} from './setup/compact-reporting-fixtures';
 
 function appDatabaseUrl(databaseUrl: string, password: string) {
   const url = new URL(databaseUrl);
@@ -60,6 +67,7 @@ async function seedTenantWork(
       id: `supplier-${input.suffix}`,
       tenantId: input.tenantId,
       businessName: `${input.suffix} Produce`,
+      capabilities: emptyCapabilities,
     },
   });
   await admin.supplier.create({
@@ -68,6 +76,7 @@ async function seedTenantWork(
       tenantId: input.tenantId,
       businessName: `${input.suffix} Inactive`,
       isActive: false,
+      capabilities: emptyCapabilities,
     },
   });
   await admin.menu.createMany({
@@ -77,6 +86,7 @@ async function seedTenantWork(
         tenantId: input.tenantId,
         name: `${input.suffix} draft menu`,
         status: 'DRAFT',
+        document: { v: 1 },
         createdByUserId: input.userId,
       },
       {
@@ -84,12 +94,15 @@ async function seedTenantWork(
         tenantId: input.tenantId,
         name: `${input.suffix} approved menu`,
         status: 'APPROVED',
+        document: { v: 1 },
         approvedAt: new Date('2026-08-20T08:00:00.000Z'),
         approvedByUserId: input.userId,
         createdByUserId: input.userId,
       },
     ],
   });
+  const items = requestItems({ name: 'Produce' });
+  const sourcing = requestSourcing(supplier.id);
   await admin.procurementRequest.create({
     data: {
       id: `request-draft-${input.suffix}`,
@@ -99,6 +112,8 @@ async function seedTenantWork(
       deliveryDetails: { addressLine: '1 Market Road' },
       deliveryDate: new Date('2026-09-04T00:00:00.000Z'),
       quoteDeadline: new Date('2026-09-02T08:00:00.000Z'),
+      items,
+      sourcing,
       createdAt: new Date('2026-08-28T06:00:00.000Z'),
       createdByUserId: input.userId,
     },
@@ -112,6 +127,8 @@ async function seedTenantWork(
       deliveryDetails: { addressLine: '1 Market Road' },
       deliveryDate: new Date('2026-09-03T00:00:00.000Z'),
       quoteDeadline: new Date('2026-09-01T08:00:00.000Z'),
+      items,
+      sourcing,
       openedAt: new Date('2026-08-28T08:00:00.000Z'),
       createdAt: new Date('2026-08-28T07:00:00.000Z'),
       createdByUserId: input.userId,
@@ -126,19 +143,8 @@ async function seedTenantWork(
           },
           tokenDigest: input.suffix.padEnd(64, input.privateNoise ? 'b' : 'a').slice(0, 64),
           expiresAt: new Date('2026-09-01T08:00:00.000Z'),
-          quotes: {
-            create: {
-              id: `quote-${input.suffix}`,
-              tenant: { connect: { id: input.tenantId } },
-              revision: 1,
-              subtotalPaise: 80_000,
-              gstPaise: 4_000,
-              freightPaise: 500,
-              totalPaise: 84_500,
-              deliveryDate: new Date('2026-09-03T00:00:00.000Z'),
-              validUntil: new Date('2026-09-02T00:00:00.000Z'),
-            },
-          },
+          quoteRevision: 1,
+          quoteRevisions: quoteRevisions({ count: 1 }),
         },
       },
     },
@@ -152,6 +158,8 @@ async function seedTenantWork(
       deliveryDetails: { addressLine: '1 Market Road' },
       deliveryDate: new Date('2026-08-31T00:00:00.000Z'),
       quoteDeadline: new Date('2026-08-29T08:00:00.000Z'),
+      items,
+      sourcing,
       awardedAt: new Date('2026-08-28T10:00:00.000Z'),
       createdAt: new Date('2026-08-28T08:00:00.000Z'),
       createdByUserId: input.userId,
@@ -162,8 +170,13 @@ async function seedTenantWork(
       id: `award-${input.suffix}`,
       tenantId: input.tenantId,
       requestId: awarded.id,
-      supplierSnapshots: [],
-      deliverySnapshot: { requestTitle: awarded.title },
+      ...awardDocuments({
+        supplierId: supplier.id,
+        supplierRequestId: `award-grant-${input.suffix}`,
+        supplierName: supplier.businessName,
+        totalPaise: input.privateNoise ? '99999999' : '9182949',
+        requestTitle: awarded.title,
+      }),
       totalPaise: input.privateNoise ? 99_999_999 : 9_182_949,
       awardedByUserId: input.userId,
       createdAt: new Date('2026-08-28T10:00:00.000Z'),

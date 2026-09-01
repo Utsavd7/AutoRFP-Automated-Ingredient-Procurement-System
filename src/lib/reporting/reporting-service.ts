@@ -1,10 +1,18 @@
-import { type PrismaClient, type ProcurementUnit } from '@prisma/client';
+import { type PrismaClient } from '@prisma/client';
 
+import { validateAwardDocuments } from '@/lib/awards/award-document';
 import { AuthorizationError } from '@/lib/auth/guards';
 import { normalizeQuoteQuantityMilli, normalizeQuoteUnitRatePaise } from '@/lib/comparison/compare-quotes';
 import { type TenantTransactionHost, withTenant } from '@/lib/db/tenant-transaction';
+import type { ProcurementUnit } from '@/lib/domain/quantity';
 import { formatScaledDecimal, MAX_DECIMAL_18_3_SCALED, parseUnsignedFixed } from '@/lib/domain/validation';
 import { prisma } from '@/lib/prisma';
+import { validateRequestItems } from '@/lib/procurement/request-document';
+import { latestQuoteRevision, validateQuoteRevisionsDocument } from '@/lib/quotes/quote-revisions';
+import {
+  buildHistoryGuidance,
+  type ItemHistoryGuidance,
+} from '@/lib/reporting/history-guidance';
 
 export const REPORTING_LIMITS = {
   historyPage: 50,
@@ -27,7 +35,13 @@ type ReportingActor = { tenantId: string; userId: string };
 type ReportingClient = TenantTransactionHost & Pick<PrismaClient, '$queryRaw'>;
 
 type InsightRequest = {
-  items: Array<{ id: string; name: string; quantity: string; unit: ProcurementUnit }>;
+  items: Array<{
+    id: string;
+    itemKey: string;
+    name: string;
+    quantity: string;
+    unit: ProcurementUnit;
+  }>;
   supplierRequests: Array<{
     supplierName: string;
     latestQuote: null | {
@@ -61,6 +75,7 @@ export function buildFactualInsights(input: {
   totalAwardedPaise: string;
   capped: boolean;
   generatedAt: Date;
+  historyGuidance?: ItemHistoryGuidance[];
 }) {
   let supplierRequestsSent = 0;
   let supplierResponses = 0;
@@ -158,6 +173,7 @@ export function buildFactualInsights(input: {
       awardedRequestCount: input.awardedRequestCount,
       totalAwardedPaise: input.totalAwardedPaise,
     },
+    historyGuidance: input.historyGuidance ?? [],
     priceRanges,
     notes: [
       `Response and coverage use the latest submitted quote from up to ${REPORTING_LIMITS.insightRequests} recent open or awarded requests.`,
@@ -236,24 +252,19 @@ export async function getFactualInsights(
   const actor = validateActor(input.actor);
   return withTenant(actor.tenantId, async (transaction) => {
     await requireActor(transaction, actor);
-    const [requests, awards, clock] = await Promise.all([
+    const [requests, awardTotals, historicalAwards, clock] = await Promise.all([
       transaction.procurementRequest.findMany({
         where: { tenantId: actor.tenantId, status: { in: ['OPEN', 'AWARDED'] } },
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         take: REPORTING_LIMITS.insightRequests + 1,
         select: {
-          items: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], select: { id: true, name: true, quantity: true, unit: true } },
+          items: true,
           supplierRequests: {
             orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
             select: {
+              id: true,
               supplier: { select: { businessName: true } },
-              quotes: {
-                orderBy: [{ revision: 'desc' }], take: 1,
-                select: {
-                  id: true,
-                  items: { select: { requestItemId: true, noQuote: true, availableQuantity: true, unit: true, unitRatePaise: true } },
-                },
-              },
+              quoteRevisions: true,
             },
           },
         },
@@ -263,6 +274,19 @@ export async function getFactualInsights(
         _count: { _all: true },
         _sum: { totalPaise: true },
       }),
+      transaction.award.findMany({
+        where: { tenantId: actor.tenantId },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: REPORTING_LIMITS.insightRequests,
+        select: {
+          id: true,
+          createdAt: true,
+          allocationLines: true,
+          supplierSnapshots: true,
+          deliverySnapshot: true,
+          totalPaise: true,
+        },
+      }),
       transaction.$queryRaw<Array<{ now: Date }>>`SELECT clock_timestamp() AS "now"`,
     ]);
     const capped = requests.length > REPORTING_LIMITS.insightRequests;
@@ -271,26 +295,57 @@ export async function getFactualInsights(
     if (!(generatedAt instanceof Date) || Number.isNaN(generatedAt.getTime())) {
       throw new TypeError('PostgreSQL reporting clock is unavailable.');
     }
-    return buildFactualInsights({
-      requests: requests.map((request) => ({
-        ...request,
-        items: request.items.map((item) => ({ ...item, quantity: item.quantity.toString() })),
-        supplierRequests: request.supplierRequests.map((supplierRequest) => ({
-          supplierName: supplierRequest.supplier.businessName,
-          latestQuote: supplierRequest.quotes[0] ? {
-            ...supplierRequest.quotes[0],
-            items: supplierRequest.quotes[0].items.map((item) => ({
-              ...item,
-              availableQuantity: item.availableQuantity?.toString() ?? null,
-              unitRatePaise: item.unitRatePaise?.toString() ?? null,
-            })),
-          } : null,
+    const parsedRequests = requests.map((request) => {
+      const items = validateRequestItems(request.items).items;
+      return {
+        items: items.map((item) => ({
+          id: item.id,
+          itemKey: item.itemKey,
+          name: item.name,
+          quantity: item.quantity,
+          unit: item.unit,
         })),
-      })),
-      awardedRequestCount: awards._count._all,
-      totalAwardedPaise: awards._sum.totalPaise?.toString() ?? '0',
+        supplierRequests: request.supplierRequests.map((supplierRequest) => {
+          const quote = latestQuoteRevision(validateQuoteRevisionsDocument(
+            supplierRequest.quoteRevisions,
+            items,
+          ));
+          return {
+            supplierName: supplierRequest.supplier.businessName,
+            latestQuote: quote ? {
+              id: `${supplierRequest.id}:${quote.revision}`,
+              items: quote.items.map((item) => ({
+                requestItemId: item.requestItemId,
+                noQuote: item.noQuote,
+                availableQuantity: item.availableQuantity,
+                unit: item.unit,
+                unitRatePaise: item.unitRatePaise,
+              })),
+            } : null,
+          };
+        }),
+      };
+    });
+    const parsedAwards = historicalAwards.map((award) => ({
+      id: award.id,
+      createdAt: award.createdAt,
+      ...validateAwardDocuments(award),
+    }));
+    return buildFactualInsights({
+      requests: parsedRequests,
+      awardedRequestCount: awardTotals._count._all,
+      totalAwardedPaise: awardTotals._sum.totalPaise?.toString() ?? '0',
       capped,
       generatedAt,
+      historyGuidance: buildHistoryGuidance({
+        items: parsedRequests.flatMap(({ items }) => items.map((item) => ({
+          itemKey: item.itemKey,
+          itemName: item.name,
+          quantity: item.quantity,
+          unit: item.unit,
+        }))),
+        awards: parsedAwards,
+      }),
     });
   }, client);
 }
@@ -356,28 +411,36 @@ export async function listProcurementHistory(
       select: {
         id: true, title: true, status: true, version: true,
         deliveryDate: true, quoteDeadline: true, createdAt: true, openedAt: true, awardedAt: true,
-        _count: { select: { items: true, supplierRequests: true } },
+        items: true,
+        _count: { select: { supplierRequests: true } },
         supplierRequests: {
-          select: { id: true, _count: { select: { quotes: true } } },
+          select: { id: true, quoteRevision: true },
         },
-        award: { select: { id: true, totalPaise: true, createdAt: true, supplierSnapshots: true } },
+        award: {
+          select: {
+            id: true,
+            totalPaise: true,
+            createdAt: true,
+            allocationLines: true,
+            supplierSnapshots: true,
+            deliverySnapshot: true,
+          },
+        },
       },
       }),
-      decoded ? Promise.resolve([]) : transaction.supplierQuote.findMany({
-        where: { tenantId: actor.tenantId, submittedAt: { lte: snapshot } },
-        orderBy: [{ submittedAt: 'desc' }, { id: 'desc' }],
+      decoded ? Promise.resolve([]) : transaction.supplierRequest.findMany({
+        where: {
+          tenantId: actor.tenantId,
+          quoteRevision: { gt: 0 },
+          updatedAt: { lte: snapshot },
+        },
+        orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
         take: REPORTING_LIMITS.recentHistoryRecords,
         select: {
           id: true,
-          revision: true,
-          submittedAt: true,
-          totalPaise: true,
-          supplierRequest: {
-            select: {
-              request: { select: { id: true, title: true } },
-              supplier: { select: { businessName: true } },
-            },
-          },
+          quoteRevisions: true,
+          request: { select: { id: true, title: true, items: true } },
+          supplier: { select: { businessName: true } },
         },
       }),
       decoded ? Promise.resolve([]) : transaction.auditEvent.findMany({
@@ -401,29 +464,47 @@ export async function listProcurementHistory(
     if (hasMore) requests.pop();
     const last = requests.at(-1);
     return {
-      requests: requests.map(({ supplierRequests, award, ...request }) => ({
-        ...request,
-        respondingSupplierCount: supplierRequests.filter(({ _count }) => _count.quotes > 0).length,
-        quoteRevisionCount: supplierRequests.reduce((sum, supplierRequest) => sum + supplierRequest._count.quotes, 0),
-        award: award ? {
-          id: award.id,
-          totalPaise: award.totalPaise.toString(),
-          createdAt: award.createdAt,
-          supplierCount: Array.isArray(award.supplierSnapshots)
-            ? award.supplierSnapshots.length
-            : 0,
-        } : null,
-      })),
+      requests: requests.map(({ items, supplierRequests, award, ...request }) => {
+        const requestItems = validateRequestItems(items).items;
+        const awardDocuments = award ? validateAwardDocuments(award) : null;
+        return {
+          ...request,
+          _count: {
+            items: requestItems.length,
+            supplierRequests: request._count.supplierRequests,
+          },
+          respondingSupplierCount: supplierRequests.filter(({ quoteRevision }) =>
+            quoteRevision > 0).length,
+          quoteRevisionCount: supplierRequests.reduce((sum, supplierRequest) =>
+            sum + supplierRequest.quoteRevision, 0),
+          award: award && awardDocuments ? {
+            id: award.id,
+            totalPaise: award.totalPaise.toString(),
+            createdAt: award.createdAt,
+            supplierCount: awardDocuments.supplierSnapshots.suppliers.length,
+          } : null,
+        };
+      }),
       nextCursor: hasMore && last ? encodeHistoryCursor({ snapshot, createdAt: last.createdAt, id: last.id }) : null,
-      recentQuoteRevisions: quoteRevisions.map((quote) => ({
-        id: quote.id,
-        requestId: quote.supplierRequest.request.id,
-        requestTitle: quote.supplierRequest.request.title,
-        supplierName: quote.supplierRequest.supplier.businessName,
-        revision: quote.revision,
-        submittedAt: quote.submittedAt.toISOString(),
-        totalPaise: quote.totalPaise.toString(),
-      })),
+      recentQuoteRevisions: quoteRevisions.flatMap((supplierRequest) => {
+        const requestItems = validateRequestItems(supplierRequest.request.items).items;
+        const revisions = validateQuoteRevisionsDocument(
+          supplierRequest.quoteRevisions,
+          requestItems,
+        ).revisions;
+        return revisions.map((quote) => ({
+          id: `${supplierRequest.id}:${quote.revision}`,
+          requestId: supplierRequest.request.id,
+          requestTitle: supplierRequest.request.title,
+          supplierName: supplierRequest.supplier.businessName,
+          revision: quote.revision,
+          submittedAt: quote.submittedAt,
+          totalPaise: quote.totalPaise,
+        }));
+      }).sort((left, right) =>
+        right.submittedAt.localeCompare(left.submittedAt) ||
+        right.id.localeCompare(left.id, 'en-IN'),
+      ).slice(0, REPORTING_LIMITS.recentHistoryRecords),
       recentActivity: buildHistoryActivity(auditRecords),
     };
   }, client);

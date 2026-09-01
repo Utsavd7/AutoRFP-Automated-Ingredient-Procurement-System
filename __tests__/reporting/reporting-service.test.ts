@@ -10,7 +10,7 @@ describe('factual reporting', () => {
   it('calculates response, complete-line coverage, awarded value, and observed price ranges from submitted facts', () => {
     const result = buildFactualInsights({
       requests: [{
-        items: [{ id: 'tomato', name: 'Tomato', quantity: '100', unit: 'KILOGRAM' }],
+        items: [{ id: 'tomato', itemKey: 'tomato', name: 'Tomato', quantity: '100', unit: 'KILOGRAM' }],
         supplierRequests: [
           { supplierName: 'A Produce', latestQuote: { id: 'quote-a', items: [{ requestItemId: 'tomato', noQuote: false, availableQuantity: '100', unit: 'KILOGRAM', unitRatePaise: '5000' }] } },
           { supplierName: 'B Produce', latestQuote: { id: 'quote-b', items: [{ requestItemId: 'tomato', noQuote: false, availableQuantity: '100000', unit: 'GRAM', unitRatePaise: '6' }] } },
@@ -21,6 +21,12 @@ describe('factual reporting', () => {
       totalAwardedPaise: '2500000',
       capped: false,
       generatedAt: new Date('2026-08-28T12:00:00Z'),
+      historyGuidance: [{
+        itemKey: 'tomato', itemName: 'Tomato', unit: 'KILOGRAM',
+        lastOrderedQuantity: '100', lastOrderedAt: '2026-08-20T12:00:00.000Z',
+        lastSupplierNames: ['A Produce'], seasonalNotice: null,
+        unusualQuantityNotice: null,
+      }],
     });
 
     expect(result.summary).toEqual({
@@ -41,6 +47,9 @@ describe('factual reporting', () => {
       observedVariancePercent: '20',
     })]);
     expect(result.notes).toContain('Observed ranges compare submitted quotes; they are not savings claims or automatic recommendations.');
+    expect(result.historyGuidance).toEqual([expect.objectContaining({
+      itemKey: 'tomato', lastOrderedQuantity: '100', lastSupplierNames: ['A Produce'],
+    })]);
   });
 
   it('does not invent percentages or price ranges when there is no submitted evidence', () => {

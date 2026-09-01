@@ -5,6 +5,13 @@ import { PrismaClient } from '@prisma/client';
 import { listProcurementHistory } from '@/lib/reporting/reporting-service';
 
 import { withMigratedPostgres } from './setup/postgres';
+import {
+  awardDocuments,
+  emptyCapabilities,
+  quoteRevisions,
+  requestItems,
+  requestSourcing,
+} from './setup/compact-reporting-fixtures';
 
 function appDatabaseUrl(databaseUrl: string, password: string) {
   const url = new URL(databaseUrl);
@@ -37,14 +44,22 @@ async function seedHistory(admin: PrismaClient, suffix: string) {
     },
   });
   const supplier = await admin.supplier.create({
-    data: { id: `supplier-${suffix}`, tenantId, businessName: `${suffix} Fresh Foods` },
+    data: {
+      id: `supplier-${suffix}`,
+      tenantId,
+      businessName: `${suffix} Fresh Foods`,
+      capabilities: emptyCapabilities,
+    },
   });
+  const items = requestItems({ name: 'Produce' });
   const request = await admin.procurementRequest.create({
     data: {
       id: `request-${suffix}`, tenantId, title: `${suffix} Produce`, status: 'OPEN',
       deliveryDetails: { addressLine: '1 Market Road' },
       deliveryDate: new Date('2026-09-05T00:00:00.000Z'),
       quoteDeadline: new Date('2026-09-03T08:00:00.000Z'),
+      items,
+      sourcing: requestSourcing(supplier.id),
       openedAt: new Date('2026-08-28T08:00:00.000Z'),
       createdAt: new Date('2026-08-28T07:00:00.000Z'),
       createdByUserId: userId,
@@ -55,21 +70,11 @@ async function seedHistory(admin: PrismaClient, suffix: string) {
       id: `grant-${suffix}`, tenantId, requestId: request.id, supplierId: supplier.id,
       tokenDigest: randomBytes(32).toString('hex'),
       expiresAt: new Date('2026-09-03T08:00:00.000Z'),
+      quoteRevision: suffix === 'a' ? 2 : 1,
+      quoteRevisions: quoteRevisions({ count: suffix === 'a' ? 2 : 1 }),
     },
   });
   const quoteCount = suffix === 'a' ? 2 : 1;
-  for (let revision = 1; revision <= quoteCount; revision += 1) {
-    await admin.supplierQuote.create({
-      data: {
-        id: `quote-${suffix}-${revision}`, tenantId, supplierRequestId: grant.id, revision,
-        subtotalPaise: 80_000 + revision, gstPaise: 4_000, freightPaise: 500,
-        totalPaise: 84_500 + revision,
-        deliveryDate: new Date('2026-09-05T00:00:00.000Z'),
-        validUntil: new Date('2026-09-04T00:00:00.000Z'),
-        submittedAt: new Date(Date.UTC(2026, 7, 28, 8 + revision)),
-      },
-    });
-  }
   if (suffix === 'a') {
     await admin.procurementRequest.update({
       where: { id: request.id },
@@ -83,13 +88,13 @@ async function seedHistory(admin: PrismaClient, suffix: string) {
         id: 'award-a',
         tenantId,
         requestId: request.id,
-        supplierSnapshots: [{
+        ...awardDocuments({
           supplierId: supplier.id,
+          supplierRequestId: grant.id,
           supplierName: supplier.businessName,
-          email: 'private-snapshot@example.test',
-          phone: '9999999999',
-        }],
-        deliverySnapshot: { requestTitle: request.title },
+          totalPaise: '84502',
+          requestTitle: request.title,
+        }),
         totalPaise: 84_502,
         awardedByUserId: userId,
         createdAt: new Date('2026-08-28T11:00:00.000Z'),
@@ -101,6 +106,8 @@ async function seedHistory(admin: PrismaClient, suffix: string) {
         deliveryDetails: { addressLine: '1 Market Road' },
         deliveryDate: new Date('2026-09-06T00:00:00.000Z'),
         quoteDeadline: new Date('2026-09-04T08:00:00.000Z'),
+        items,
+        sourcing: requestSourcing(supplier.id),
         openedAt: null,
         createdAt: new Date('2026-08-28T12:00:00.000Z'),
         createdByUserId: userId,

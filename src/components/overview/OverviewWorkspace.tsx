@@ -13,6 +13,7 @@ import {
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { workspaceFetch } from '@/lib/client/workspace-prefetch';
 import type { OverviewData as ServiceOverviewData } from '@/lib/overview/overview-service';
 
 import styles from './overview-workspace.module.css';
@@ -157,11 +158,13 @@ export function OverviewWorkspace({
   const [error, setError] = useState(initialError ?? '');
   const initialLoadStarted = useRef(false);
 
-  const loadOverview = useCallback(async (signal?: AbortSignal) => {
+  const loadOverview = useCallback(async (signal?: AbortSignal, usePrefetch = false) => {
     setLoading(true);
     setError('');
     try {
-      const response = await fetch('/api/overview', { cache: 'no-store', signal });
+      const response = await (usePrefetch
+        ? workspaceFetch('/api/overview', { cache: 'no-store', signal })
+        : fetch('/api/overview', { cache: 'no-store', signal }));
       if (!response.ok) throw new Error(await responseMessage(response));
       const result = (await response.json()) as { overview?: OverviewData };
       if (!result.overview) throw new Error('The overview response was incomplete.');
@@ -178,7 +181,7 @@ export function OverviewWorkspace({
     if (initialData !== undefined || initialError !== undefined || initialLoadStarted.current) return;
     initialLoadStarted.current = true;
     const controller = new AbortController();
-    void loadOverview(controller.signal);
+    void loadOverview(controller.signal, true);
     return () => controller.abort();
   }, [initialData, initialError, loadOverview]);
 

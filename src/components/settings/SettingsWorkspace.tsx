@@ -27,6 +27,10 @@ import {
 
 import { createSignInRedirect } from '@/lib/auth/callback-url';
 import type { WorkspaceSettingsData as SettingsData } from '@/lib/account/workspace-settings';
+import {
+  clearWorkspacePrefetch,
+  workspaceFetch,
+} from '@/lib/client/workspace-prefetch';
 
 import styles from './settings-workspace.module.css';
 
@@ -253,6 +257,7 @@ export function InviteMemberDialog({
       }
       const result = (await response.json()) as { invitation?: { link?: string } };
       if (!result.invitation?.link) throw new Error('The invitation link was not returned.');
+      clearWorkspacePrefetch();
       setLink(result.invitation.link);
       onCreated();
     } catch (caught) {
@@ -387,11 +392,13 @@ export function SettingsWorkspace({ initialData }: { initialData?: WorkspaceSett
   const inviteButton = useRef<HTMLButtonElement>(null);
   const started = useRef(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (usePrefetch = false) => {
     setLoading(!data);
     setError('');
     try {
-      const response = await fetch('/api/settings', { cache: 'no-store' });
+      const response = await (usePrefetch
+        ? workspaceFetch('/api/settings', { cache: 'no-store' })
+        : fetch('/api/settings', { cache: 'no-store' }));
       if (response.status === 401) {
         router.replace(createSignInRedirect('/settings'));
         return;
@@ -413,7 +420,7 @@ export function SettingsWorkspace({ initialData }: { initialData?: WorkspaceSett
   useEffect(() => {
     if (initialData || started.current) return;
     started.current = true;
-    void load();
+    void load(true);
   }, [initialData, load]);
 
   function setField(field: keyof WorkspaceForm, value: string) {
@@ -442,6 +449,7 @@ export function SettingsWorkspace({ initialData }: { initialData?: WorkspaceSett
       }
       const result = (await response.json()) as { workspace?: WorkspaceForm };
       if (!result.workspace) throw new Error('The saved restaurant details were not returned.');
+      clearWorkspacePrefetch();
       setForm(result.workspace);
       setData((current) => current ? { ...current, workspace: result.workspace! } : current);
       setSaved(true);
@@ -472,6 +480,7 @@ export function SettingsWorkspace({ initialData }: { initialData?: WorkspaceSett
         const problem = await responseProblem(response, 'We could not change this access.');
         throw new Error(problem.message);
       }
+      clearWorkspacePrefetch();
       setAction(null);
       await load();
     } catch (caught) {

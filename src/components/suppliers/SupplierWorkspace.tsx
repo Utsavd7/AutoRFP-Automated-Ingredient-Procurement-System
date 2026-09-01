@@ -18,6 +18,10 @@ import {
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 
 import {
+  clearWorkspacePrefetch,
+  workspaceFetch,
+} from '@/lib/client/workspace-prefetch';
+import {
   PROCUREMENT_CATEGORIES,
   type ProcurementCategory,
 } from '@/lib/domain/procurement-categories';
@@ -252,7 +256,7 @@ export function SupplierWorkspace({
 }) {
   const [suppliers, setSuppliers] = useState(initialSuppliers ?? []);
   const [search, setSearch] = useState('');
-  const [activeFilter, setActiveFilter] = useState<'true' | 'false' | 'all'>('all');
+  const [activeFilter, setActiveFilter] = useState<'true' | 'false' | 'all'>('true');
   const [loading, setLoading] = useState(initialSuppliers === undefined);
   const [error, setError] = useState(initialError ?? '');
   const [editorOpen, setEditorOpen] = useState(false);
@@ -276,7 +280,12 @@ export function SupplierWorkspace({
   const savingRef = useRef(false);
   const editorRequest = useRef(0);
 
-  const loadSuppliers = useCallback(async (query = search, filter = activeFilter, cursor?: string) => {
+  const loadSuppliers = useCallback(async (
+    query = search,
+    filter = activeFilter,
+    cursor?: string,
+    usePrefetch = false,
+  ) => {
     if (cursor) setLoadingMore(true);
     else setLoading(true);
     setError('');
@@ -285,7 +294,9 @@ export function SupplierWorkspace({
       if (query.trim()) params.set('search', query.trim());
       if (filter !== 'all') params.set('active', filter);
       if (cursor) params.set('cursor', cursor);
-      const response = await fetch(`/api/suppliers?${params}`, { cache: 'no-store' });
+      const response = await (usePrefetch
+        ? workspaceFetch('/api/suppliers?active=true&limit=50', { cache: 'no-store' })
+        : fetch(`/api/suppliers?${params}`, { cache: 'no-store' }));
       if (!response.ok) {
         const problem = await readProblem(response, 'We could not load suppliers.');
         throw new Error(problem.message);
@@ -307,7 +318,7 @@ export function SupplierWorkspace({
   useEffect(() => {
     if (initialSuppliers !== undefined || initialLoadStarted.current) return;
     initialLoadStarted.current = true;
-    void loadSuppliers('', 'all');
+    void loadSuppliers('', 'true', undefined, true);
   }, [initialSuppliers, loadSuppliers]);
 
   useEffect(() => {
@@ -417,6 +428,7 @@ export function SupplierWorkspace({
         throw new Error(problem.message);
       }
       const result = (await response.json()) as { supplier: SupplierSummary };
+      clearWorkspacePrefetch();
       setSuppliers((current) => {
         const withoutSaved = current.filter(({ id }) => id !== result.supplier.id);
         if (
@@ -448,6 +460,7 @@ export function SupplierWorkspace({
       setError(problem.message);
       return;
     }
+    clearWorkspacePrefetch();
     setSuppliers((current) => current.filter(({ id }) => id !== supplier.id));
     setNotice('Supplier deactivated.');
   }
@@ -477,6 +490,7 @@ export function SupplierWorkspace({
         supplier: SupplierSummary;
         link?: { url: string; expiresAt: string };
       };
+      clearWorkspacePrefetch();
       setSuppliers((current) => {
         const withoutReviewed = current.filter(({ id }) => id !== result.supplier.id);
         if (
@@ -532,6 +546,7 @@ export function SupplierWorkspace({
         throw new Error(problem.message);
       }
       const result = (await response.json()) as { importedCount?: number };
+      clearWorkspacePrefetch();
       setNotice(`${result.importedCount ?? 0} suppliers imported.`);
       await loadSuppliers();
     } catch (caught) {

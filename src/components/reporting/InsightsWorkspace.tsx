@@ -4,6 +4,7 @@ import { ArrowRight, BarChart3, CheckCircle2, IndianRupee, RefreshCw, Users } fr
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 
+import { workspaceFetch } from '@/lib/client/workspace-prefetch';
 import { formatInr } from '@/lib/domain/money';
 import styles from './reporting.module.css';
 
@@ -65,11 +66,13 @@ export function InsightsWorkspace({ initialData }: { initialData?: FactualInsigh
   const [error, setError] = useState('');
   const started = useRef(false);
 
-  async function load() {
+  async function load(usePrefetch = false) {
     setLoading(true);
     setError('');
     try {
-      const response = await fetch('/api/insights', { cache: 'no-store' });
+      const response = await (usePrefetch
+        ? workspaceFetch('/api/insights', { cache: 'no-store' })
+        : fetch('/api/insights', { cache: 'no-store' }));
       if (!response.ok) throw new Error(await problem(response));
       setData((await response.json()) as FactualInsights);
     } catch (caught) {
@@ -82,7 +85,7 @@ export function InsightsWorkspace({ initialData }: { initialData?: FactualInsigh
   useEffect(() => {
     if (initialData || started.current) return;
     started.current = true;
-    void load();
+    void load(true);
   }, [initialData]);
 
   return (

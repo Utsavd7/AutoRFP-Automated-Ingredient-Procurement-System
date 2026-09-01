@@ -4,6 +4,7 @@ import { ArrowRight, CalendarDays, ClipboardList, PackageCheck, Plus, Users } fr
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { workspaceFetch } from '@/lib/client/workspace-prefetch';
 import styles from './procurement-workspace.module.css';
 
 type RequestStatus = 'DRAFT' | 'OPEN' | 'AWARDED' | 'CANCELLED';
@@ -74,7 +75,9 @@ export function ProcurementWorkspace({
     try {
       const params = new URLSearchParams({ limit: '50' });
       if (cursor) params.set('cursor', cursor);
-      const response = await fetch(`/api/requests?${params}`, { cache: 'no-store' });
+      const response = await (cursor
+        ? fetch(`/api/requests?${params}`, { cache: 'no-store' })
+        : workspaceFetch('/api/requests?limit=50', { cache: 'no-store' }));
       if (!response.ok) throw new Error(await responseMessage(response, 'We could not load procurement requests.'));
       const result = (await response.json()) as { requests?: ProcurementRequestSummary[]; nextCursor?: string | null };
       const loaded = result.requests ?? [];

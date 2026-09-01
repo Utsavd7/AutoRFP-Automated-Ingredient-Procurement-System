@@ -4,6 +4,10 @@ import { ArrowRight, CalendarDays, CopyPlus, FileClock, History, ListChecks, X }
 import { useRouter } from 'next/navigation';
 import { FormEvent, useEffect, useRef, useState } from 'react';
 
+import {
+  clearWorkspacePrefetch,
+  workspaceFetch,
+} from '@/lib/client/workspace-prefetch';
 import { formatInr } from '@/lib/domain/money';
 import styles from './reporting.module.css';
 
@@ -111,7 +115,9 @@ export function HistoryWorkspace({ initialPage }: { initialPage?: HistoryPageDat
     try {
       const query = new URLSearchParams({ limit: '25' });
       if (cursor) query.set('cursor', cursor);
-      const response = await fetch(`/api/history?${query}`, { cache: 'no-store' });
+      const response = await (cursor
+        ? fetch(`/api/history?${query}`, { cache: 'no-store' })
+        : workspaceFetch('/api/history?limit=25', { cache: 'no-store' }));
       if (!response.ok) throw new Error(await responseProblem(response, 'We could not load procurement history.'));
       const page = (await response.json()) as HistoryPageData;
       setRequests((current) => cursor ? [...current, ...page.requests] : page.requests);
@@ -195,6 +201,7 @@ export function HistoryWorkspace({ initialPage }: { initialPage?: HistoryPageDat
       if (!response.ok) throw new Error(await responseProblem(response, 'We could not create the repeated request.'));
       const result = (await response.json()) as { request?: { id: string } };
       if (!result.request?.id) throw new Error('The new draft was not returned.');
+      clearWorkspacePrefetch();
       router.push(`/procurement/${encodeURIComponent(result.request.id)}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'We could not create the repeated request.');

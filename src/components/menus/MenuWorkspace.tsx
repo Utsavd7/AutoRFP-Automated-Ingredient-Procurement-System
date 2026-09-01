@@ -20,6 +20,10 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
+  clearWorkspacePrefetch,
+  workspaceFetch,
+} from '@/lib/client/workspace-prefetch';
+import {
   buildReviewedOcrMenuInput,
   mergeMenuPhotoFiles,
   photoIntakeModeFromSearch,
@@ -272,6 +276,7 @@ export function MenuIntakeDialog({
       if (!result.menuText || !result.canonicalUrl) {
         throw new Error('The menu text was not returned.');
       }
+      clearWorkspacePrefetch();
       setMenuText(result.menuText);
       setCanonicalWebsiteUrl(result.canonicalUrl);
     } catch (caught) {
@@ -323,6 +328,7 @@ export function MenuIntakeDialog({
       }
       const result = (await response.json()) as { menuId?: string };
       if (!result.menuId) throw new Error('The menu draft was not returned.');
+      clearWorkspacePrefetch();
       onCreated(result.menuId);
     } catch (caught) {
       setCreateError(caught instanceof Error
@@ -639,7 +645,9 @@ export function MenuWorkspace({
     try {
       const params = new URLSearchParams({ limit: '50' });
       if (cursor) params.set('cursor', cursor);
-      const response = await fetch(`/api/menus?${params}`, { cache: 'no-store' });
+      const response = await (cursor
+        ? fetch(`/api/menus?${params}`, { cache: 'no-store' })
+        : workspaceFetch('/api/menus?limit=50', { cache: 'no-store' }));
       if (!response.ok) throw new Error(await responseMessage(response, 'We could not load menus.'));
       const result = (await response.json()) as { menus?: MenuSummary[]; nextCursor?: string | null };
       const loaded = result.menus ?? [];

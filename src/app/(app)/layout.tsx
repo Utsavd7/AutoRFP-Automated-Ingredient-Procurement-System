@@ -22,6 +22,10 @@ import { PageSkeleton } from '@/components/Skeleton';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { TutorialGuide } from '@/components/tutorial/TutorialGuide';
 import { createSignInRedirect } from '@/lib/auth/callback-url';
+import {
+  prefetchWorkspace,
+  WORKSPACE_FIRST_REQUESTS,
+} from '@/lib/client/workspace-prefetch';
 import type { RestaurantAccount } from '@/lib/tenant';
 import type { TutorialStateDto } from '@/lib/tutorial/tutorial-state';
 
@@ -48,7 +52,14 @@ function SidebarContent({
 }) {
   return (
     <div className={styles.sidebarContent}>
-      <Link className={styles.brand} href="/dashboard" aria-label="QuotePlate home" onClick={onNav}>
+      <Link
+        aria-label="QuotePlate home"
+        className={styles.brand}
+        href="/dashboard"
+        onClick={onNav}
+        onFocus={() => void prefetchWorkspace(WORKSPACE_FIRST_REQUESTS['/dashboard'])}
+        onPointerEnter={() => void prefetchWorkspace(WORKSPACE_FIRST_REQUESTS['/dashboard'])}
+      >
         <Wordmark />
       </Link>
 
@@ -66,6 +77,8 @@ function SidebarContent({
               href={item.href}
               key={item.href}
               onClick={onNav}
+              onFocus={() => void prefetchWorkspace(WORKSPACE_FIRST_REQUESTS[item.href])}
+              onPointerEnter={() => void prefetchWorkspace(WORKSPACE_FIRST_REQUESTS[item.href])}
             >
               <item.icon aria-hidden="true" />
               <span>{item.label}</span>
@@ -137,6 +150,23 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       active = false;
     };
   }, [accountRetry, router]);
+
+  useEffect(() => {
+    if (!ready || !account || document.visibilityState !== 'visible') return;
+    const warmWorkspaceRoutes = () => {
+      void Promise.all(
+        Object.values(WORKSPACE_FIRST_REQUESTS).map((url) => prefetchWorkspace(url)),
+      );
+    };
+
+    if ('requestIdleCallback' in window) {
+      const idleId = window.requestIdleCallback(warmWorkspaceRoutes, { timeout: 1_500 });
+      return () => window.cancelIdleCallback(idleId);
+    }
+
+    const timeoutId = setTimeout(warmWorkspaceRoutes, 150);
+    return () => clearTimeout(timeoutId);
+  }, [account, ready]);
 
   useEffect(() => {
     if (!mobileOpen) return;

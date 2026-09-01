@@ -1,5 +1,6 @@
 import {
   buildReviewedOcrMenuInput,
+  cleanRecognizedMenuLines,
   MAX_MENU_IMAGE_BYTES,
   MAX_MENU_IMAGE_PIXELS,
   mergeMenuPhotoFiles,
@@ -89,5 +90,48 @@ describe('local menu photo intake', () => {
     expect(photoIntakeModeFromSearch('?menuIntake=photo')).toBe('photo');
     expect(photoIntakeModeFromSearch('?menuIntake=text')).toBeUndefined();
     expect(photoIntakeModeFromSearch('?other=photo')).toBeUndefined();
+  });
+
+  it('keeps probable dishes, removes prices and service noise, and de-duplicates OCR lines', () => {
+    expect(cleanRecognizedMenuLines([
+      { text: '1. Paneer Tikka ₹260', confidence: 0.94 },
+      { text: 'VEG STARTERS', confidence: 0.98 },
+      { text: 'Chicken 65', confidence: 0.9 },
+      { text: '2 in 1 Dosa 180/-', confidence: 0.84 },
+      { text: 'Dal Makhani Half 180 Full 320', confidence: 0.8 },
+      { text: 'Served with mint chutney', confidence: 0.7 },
+      { text: 'Call 9876543210', confidence: 0.99 },
+      { text: 'paneer tikka 260', confidence: 0.88 },
+    ])).toEqual([
+      { text: 'Paneer Tikka', confidence: 0.94 },
+      { text: 'Chicken 65', confidence: 0.9 },
+      { text: '2 in 1 Dosa', confidence: 0.84 },
+      { text: 'Dal Makhani', confidence: 0.8 },
+    ]);
+  });
+
+  it('strips common price notations and leading menu markers without changing meaningful dish numbers', () => {
+    expect(cleanRecognizedMenuLines([
+      { text: '• Gobi 65 Rs 180', confidence: 0.91 },
+      { text: '03) Veg Pulao INR 180.00', confidence: 0.83 },
+      { text: '- Masala Papad ₹180', confidence: 0.76 },
+      { text: '7. Chole Bhature 180/-', confidence: 0.87 },
+    ])).toEqual([
+      { text: 'Gobi 65', confidence: 0.91 },
+      { text: 'Veg Pulao', confidence: 0.83 },
+      { text: 'Masala Papad', confidence: 0.76 },
+      { text: 'Chole Bhature', confidence: 0.87 },
+    ]);
+  });
+
+  it('removes common menu metadata and returns no results when every line is noise', () => {
+    expect(cleanRecognizedMenuLines([
+      { text: 'DESSERTS', confidence: 0.99 },
+      { text: 'GST & taxes extra', confidence: 0.93 },
+      { text: '12 MG Road, Pune 411001', confidence: 0.92 },
+      { text: 'Phone: +91 98765 43210', confidence: 0.95 },
+      { text: 'Open 11 AM to 11 PM', confidence: 0.88 },
+      { text: 'Order now on Swiggy', confidence: 0.9 },
+    ])).toEqual([]);
   });
 });

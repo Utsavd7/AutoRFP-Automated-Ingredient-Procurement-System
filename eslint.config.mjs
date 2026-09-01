@@ -11,6 +11,7 @@ const eslintConfig = defineConfig([
     ".next/**",
     ".next-auth-e2e/**",
     ".auth-e2e-support/**",
+    ".netlify/**",
     ".worktrees/**",
     "out/**",
     "build/**",

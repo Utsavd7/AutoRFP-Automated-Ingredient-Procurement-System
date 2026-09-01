@@ -57,14 +57,17 @@ async function seedWorkspace(
       },
     },
   });
-  await admin.invitation.create({
+  await admin.user.create({
     data: {
       id: `invitation-${input.suffix}`,
       tenantId: input.tenantId,
+      name: `Invited ${input.suffix}`,
       email: `invite-${input.suffix}@example.test`,
       role: 'MEMBER',
-      tokenDigest: input.suffix.repeat(64),
-      expiresAt: new Date('2026-09-04T00:00:00.000Z'),
+      accountState: 'INVITED',
+      isActive: false,
+      invitationTokenDigest: input.suffix.repeat(64),
+      invitationExpiresAt: new Date('2099-09-04T00:00:00.000Z'),
       invitedByUserId: ownerId,
     },
   });

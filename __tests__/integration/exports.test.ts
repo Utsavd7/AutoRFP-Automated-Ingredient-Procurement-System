@@ -502,7 +502,14 @@ test('exports stay tenant-scoped, preserve compact awards, and audit only output
         where: { tenantId, action: 'audit.export' },
         orderBy: { createdAt: 'asc' },
       });
-      expect(audits).toHaveLength(11);
+      expect(audits).toHaveLength(1);
+      expect(audits[0]).toEqual(expect.objectContaining({
+        entityId: qrRequestId,
+        metadata: expect.objectContaining({
+          kind: 'supplier-link',
+          format: 'png',
+        }),
+      }));
       for (const audit of audits) {
         expect(Object.keys(audit.metadata as object).sort()).toEqual([
           'byteCount',

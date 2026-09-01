@@ -691,13 +691,6 @@ export function createExportOperations(
       );
 
       const bytes = encodeCsv(renderPreparedCsv(prepared));
-      await auditOutput(dependencies, {
-        actor,
-        requestId,
-        kind,
-        format: 'csv',
-        byteCount: bytes.byteLength,
-      });
       return {
         bytes,
         filename: safeCsvFilename(prepared.title, kind),
@@ -786,13 +779,6 @@ export function createExportOperations(
         await dependencies.renderPdf(prepared.data),
         'PDF',
       );
-      await auditOutput(dependencies, {
-        actor,
-        requestId: prepared.requestId,
-        kind: 'purchase-order',
-        format: 'pdf',
-        byteCount: bytes.byteLength,
-      });
       return {
         bytes,
         filename: safeExportFilename(

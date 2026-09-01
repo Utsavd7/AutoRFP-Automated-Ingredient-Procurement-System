@@ -277,9 +277,10 @@ describe('compact on-demand export service', () => {
     expect(JSON.stringify(
       transaction.procurementRequest.findFirst.mock.calls,
     )).not.toMatch(/SupplierQuote|RequestItem|quotes/);
+    expect(transaction.auditEvent.create).not.toHaveBeenCalled();
   });
 
-  it('prepares award/accounting CSV from Award documents only and audits output metadata', async () => {
+  it('prepares award/accounting CSV from Award documents in one read-only transaction', async () => {
     const transaction = fakeTransaction();
     let transactionDepth = 0;
     const transact = jest.fn(async (
@@ -329,23 +330,11 @@ describe('compact on-demand export service', () => {
         createdAt: true,
       },
     });
-    expect(transact).toHaveBeenCalledTimes(4);
-    const auditCalls = transaction.auditEvent.create.mock.calls;
-    expect(auditCalls).toHaveLength(2);
-    expect(auditCalls[0]![0]).toEqual({
-      data: expect.objectContaining({
-        tenantId: 'tenant-a',
-        actorUserId: 'member-a',
-        action: 'audit.export',
-        entityType: 'ProcurementRequest',
-        entityId: 'request-a',
-        metadata: expect.objectContaining({ kind: 'award', format: 'csv' }),
-      }),
-    });
-    expect(JSON.stringify(auditCalls)).not.toMatch(/rationale|token|Market Fresh/);
+    expect(transact).toHaveBeenCalledTimes(2);
+    expect(transaction.auditEvent.create).not.toHaveBeenCalled();
   });
 
-  it('renders one selected-supplier PO outside transactions from Award documents only', async () => {
+  it('renders one selected-supplier PO with one read-only transaction', async () => {
     const transaction = fakeTransaction();
     let depth = 0;
     const transact = jest.fn(async (
@@ -411,7 +400,8 @@ describe('compact on-demand export service', () => {
         deliverySnapshot: true,
       }),
     });
-    expect(transact).toHaveBeenCalledTimes(2);
+    expect(transact).toHaveBeenCalledTimes(1);
+    expect(transaction.auditEvent.create).not.toHaveBeenCalled();
   });
 
   it('fails closed for missing/corrupt awards and inactive users', async () => {

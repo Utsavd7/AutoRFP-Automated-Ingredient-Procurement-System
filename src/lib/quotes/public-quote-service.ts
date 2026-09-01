@@ -50,16 +50,6 @@ export class PublicQuoteUnavailableError extends Error {
   }
 }
 
-export class PublicQuoteReadLimitError extends Error {
-  readonly code = 'QUOTE_READ_RATE_LIMIT';
-  readonly status = 429;
-
-  constructor(readonly retryAfterSeconds: number) {
-    super('Wait before refreshing this supplier quote again.');
-    this.name = 'PublicQuoteReadLimitError';
-  }
-}
-
 export class PublicQuoteSubmissionLimitError extends Error {
   readonly code = 'QUOTE_SUBMISSION_RATE_LIMIT';
   readonly status = 429;
@@ -163,62 +153,68 @@ async function resolveGrant(
   return { ...grant, tokenDigest };
 }
 
+async function lockedLiveGrantRow(
+  transaction: Prisma.TransactionClient,
+  input: ResolvedGrant,
+) {
+  const [row] = await transaction.$queryRaw<LiveGrantRow[]>(Prisma.sql`
+    WITH locked_supplier_request AS MATERIALIZED (
+      SELECT supplier_request.*
+      FROM "SupplierRequest" AS supplier_request
+      WHERE supplier_request."tenantId" = ${input.tenantId}
+        AND supplier_request."id" = ${input.supplierRequestId}
+        AND supplier_request."tokenDigest" = ${input.tokenDigest}
+      FOR UPDATE OF supplier_request
+    ),
+    quote_clock AS MATERIALIZED (
+      SELECT pg_catalog.clock_timestamp() AS "databaseNow"
+      FROM locked_supplier_request
+      LIMIT 1
+    )
+    SELECT
+      supplier_request."id" AS "supplierRequestId",
+      request."id" AS "requestId",
+      supplier."id" AS "supplierId",
+      supplier."applicationRequestId",
+      tenant."name" AS "restaurantName",
+      supplier."businessName" AS "supplierName",
+      request."title",
+      request."deliveryDetails",
+      request."items" AS "requestItems",
+      request."sourcing" AS "requestSourcing",
+      request."deliveryDate",
+      request."quoteDeadline",
+      request."commercialTerms",
+      supplier_request."viewedAt",
+      supplier_request."quoteRevision",
+      supplier_request."quoteRevisions",
+      quote_clock."databaseNow"
+    FROM locked_supplier_request AS supplier_request
+    JOIN quote_clock ON true
+    JOIN "ProcurementRequest" AS request
+      ON request."tenantId" = supplier_request."tenantId"
+     AND request."id" = supplier_request."requestId"
+    JOIN "Supplier" AS supplier
+      ON supplier."tenantId" = supplier_request."tenantId"
+     AND supplier."id" = supplier_request."supplierId"
+    JOIN "Tenant" AS tenant
+      ON tenant."id" = supplier_request."tenantId"
+    WHERE supplier_request."revokedAt" IS NULL
+      AND supplier_request."expiresAt" > quote_clock."databaseNow"
+      AND request."status"::TEXT = 'OPEN'
+      AND request."quoteDeadline" > quote_clock."databaseNow"
+      AND supplier."isActive" = true
+      AND tenant."isActive" = true
+  `);
+  if (!row) unavailable();
+  return row;
+}
+
 async function liveGrantRow(
   transaction: Prisma.TransactionClient,
   input: ResolvedGrant,
-  lockSupplierRequest: boolean,
 ) {
-  const query = lockSupplierRequest
-    ? Prisma.sql`
-        WITH locked_supplier_request AS MATERIALIZED (
-          SELECT supplier_request.*
-          FROM "SupplierRequest" AS supplier_request
-          WHERE supplier_request."tenantId" = ${input.tenantId}
-            AND supplier_request."id" = ${input.supplierRequestId}
-            AND supplier_request."tokenDigest" = ${input.tokenDigest}
-          FOR UPDATE OF supplier_request
-        ),
-        quote_clock AS MATERIALIZED (
-          SELECT pg_catalog.clock_timestamp() AS "databaseNow"
-          FROM locked_supplier_request
-          LIMIT 1
-        )
-        SELECT
-          supplier_request."id" AS "supplierRequestId",
-          request."id" AS "requestId",
-          supplier."id" AS "supplierId",
-          supplier."applicationRequestId",
-          tenant."name" AS "restaurantName",
-          supplier."businessName" AS "supplierName",
-          request."title",
-          request."deliveryDetails",
-          request."items" AS "requestItems",
-          request."sourcing" AS "requestSourcing",
-          request."deliveryDate",
-          request."quoteDeadline",
-          request."commercialTerms",
-          supplier_request."viewedAt",
-          supplier_request."quoteRevision",
-          supplier_request."quoteRevisions",
-          quote_clock."databaseNow"
-        FROM locked_supplier_request AS supplier_request
-        JOIN quote_clock ON true
-        JOIN "ProcurementRequest" AS request
-          ON request."tenantId" = supplier_request."tenantId"
-         AND request."id" = supplier_request."requestId"
-        JOIN "Supplier" AS supplier
-          ON supplier."tenantId" = supplier_request."tenantId"
-         AND supplier."id" = supplier_request."supplierId"
-        JOIN "Tenant" AS tenant
-          ON tenant."id" = supplier_request."tenantId"
-        WHERE supplier_request."revokedAt" IS NULL
-          AND supplier_request."expiresAt" > quote_clock."databaseNow"
-          AND request."status"::TEXT = 'OPEN'
-          AND request."quoteDeadline" > quote_clock."databaseNow"
-          AND supplier."isActive" = true
-          AND tenant."isActive" = true
-      `
-    : Prisma.sql`
+  const [row] = await transaction.$queryRaw<LiveGrantRow[]>(Prisma.sql`
     WITH quote_clock AS MATERIALIZED (
       SELECT pg_catalog.clock_timestamp() AS "databaseNow"
     )
@@ -259,8 +255,7 @@ async function liveGrantRow(
       AND request."quoteDeadline" > quote_clock."databaseNow"
       AND supplier."isActive" = true
       AND tenant."isActive" = true
-  `;
-  const [row] = await transaction.$queryRaw<LiveGrantRow[]>(query);
+  `);
   if (!row) unavailable();
   return row;
 }
@@ -397,34 +392,11 @@ export async function getPublicQuoteRequest(
   client: PublicQuoteClient = prisma,
 ) {
   const resolved = await resolveGrant(input.token, client);
-  const readAttempt = await consumeDigestRateLimit(
-    {
-      scope: 'supplier-quote-read-token',
-      subjectDigest: resolved.tokenDigest,
-      limit: 120,
-      windowMs: 15 * 60 * 1_000,
-      now: new Date(),
-    },
-    client,
-  );
-  if (!readAttempt.allowed) {
-    throw new PublicQuoteReadLimitError(readAttempt.retryAfterSeconds);
-  }
   return withTenant(
     resolved.tenantId,
     async (transaction) => {
-      const row = await liveGrantRow(transaction, resolved, false);
+      const row = await liveGrantRow(transaction, resolved);
       const documents = liveDocuments(row);
-      if (!row.viewedAt) {
-        await transaction.supplierRequest.updateMany({
-          where: {
-            tenantId: resolved.tenantId,
-            id: resolved.supplierRequestId,
-            viewedAt: null,
-          },
-          data: { viewedAt: row.databaseNow },
-        });
-      }
       return publicRequestDto(
         row,
         documents.items,
@@ -458,7 +430,7 @@ export async function submitPublicSupplierQuote(
   return withTenant(
     resolved.tenantId,
     async (transaction) => {
-      const row = await liveGrantRow(transaction, resolved, true);
+      const row = await lockedLiveGrantRow(transaction, resolved);
       const documents = liveDocuments(row);
       const envelope = quoteEnvelope(input.quote);
       const quoteRevisions = appendQuoteRevision(

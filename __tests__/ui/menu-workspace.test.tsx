@@ -1,6 +1,9 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { MenuWorkspace } from '@/components/menus/MenuWorkspace';
+import {
+  MenuIntakeDialog,
+  MenuWorkspace,
+} from '@/components/menus/MenuWorkspace';
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
@@ -50,5 +53,46 @@ describe('menu workspace', () => {
     );
 
     expect(html).toContain('Load more menus');
+  });
+
+  it('offers three plainly labelled ways to add a menu', () => {
+    const html = renderToStaticMarkup(
+      <MenuIntakeDialog onClose={jest.fn()} onCreated={jest.fn()} />,
+    );
+
+    expect(html).toContain('Type or paste');
+    expect(html).toContain('Photos');
+    expect(html).toContain('Permitted website link');
+    expect(html).not.toContain('AI');
+  });
+
+  it('uses a camera friendly private photo input and clear privacy copy', () => {
+    const html = renderToStaticMarkup(
+      <MenuIntakeDialog
+        initialMode="photo"
+        onClose={jest.fn()}
+        onCreated={jest.fn()}
+      />,
+    );
+
+    expect(html).toContain('accept="image/*"');
+    expect(html).toContain('capture="environment"');
+    expect(html).toContain('multiple=""');
+    expect(html).toContain('never uploaded or saved');
+    expect(html).toContain('Use your phone');
+  });
+
+  it('requires website permission before importing editable menu text', () => {
+    const html = renderToStaticMarkup(
+      <MenuIntakeDialog
+        initialMode="url"
+        onClose={jest.fn()}
+        onCreated={jest.fn()}
+      />,
+    );
+
+    expect(html).toContain('I have permission to use this menu');
+    expect(html).toContain('Import menu text');
+    expect(html).toContain('type="checkbox"');
   });
 });

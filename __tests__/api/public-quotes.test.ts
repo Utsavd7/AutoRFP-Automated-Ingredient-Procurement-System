@@ -41,10 +41,6 @@ describe('public supplier quote API', () => {
     const handlers = createPublicQuoteHandlers({
       load,
       submit: jest.fn(),
-      readRateLimit: jest.fn().mockResolvedValue({
-        allowed: true,
-        retryAfterSeconds: 900,
-      }),
     });
 
     const response = await handlers.GET(request('GET'));
@@ -117,10 +113,6 @@ describe('public supplier quote API', () => {
     const handlers = createPublicQuoteHandlers({
       load,
       submit: jest.fn(),
-      readRateLimit: jest.fn().mockResolvedValue({
-        allowed: true,
-        retryAfterSeconds: 900,
-      }),
     });
 
     for (const candidate of ['', 'bad-token', token]) {
@@ -240,31 +232,6 @@ describe('public supplier quote API', () => {
     );
     expect(siblingOrigin.status).toBe(403);
     expect(submit).not.toHaveBeenCalled();
-  });
-
-  it('rate-limits repeated reads before loading supplier request data', async () => {
-    const load = jest.fn();
-    const readRateLimit = jest.fn().mockResolvedValue({
-      allowed: false,
-      retryAfterSeconds: 90,
-    });
-    const handlers = createPublicQuoteHandlers({
-      load,
-      submit: jest.fn(),
-      readRateLimit,
-      now: () => new Date('2026-08-28T10:00:00.000Z'),
-    });
-    const quoteRequest = request('GET');
-
-    const response = await handlers.GET(quoteRequest);
-
-    expect(response.status).toBe(429);
-    expect(response.headers.get('retry-after')).toBe('90');
-    expect(readRateLimit).toHaveBeenCalledWith({
-      request: quoteRequest,
-      now: new Date('2026-08-28T10:00:00.000Z'),
-    });
-    expect(load).not.toHaveBeenCalled();
   });
 
   it('limits a submitting client before consuming token buckets or resolving grants', async () => {

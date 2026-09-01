@@ -15,7 +15,6 @@ export type PublicClientRateLimit = (input: {
 export type PublicClientOperation =
   | 'invitation-accept'
   | 'quote-access'
-  | 'quote-read'
   | 'quote-submit'
   | 'supplier-application';
 
@@ -27,10 +26,6 @@ const limits = {
   'quote-access': {
     scope: 'supplier-quote-access-client',
     limit: 60,
-  },
-  'quote-read': {
-    scope: 'supplier-quote-read-client',
-    limit: 240,
   },
   'quote-submit': {
     scope: 'supplier-quote-submit-client',

@@ -245,7 +245,7 @@ test('embedded public quotes preserve privacy, exact revisions, corruption bound
       }
       expect((await admin.supplierRequest.findUniqueOrThrow({
         where: { id: 'supplier-request-a' },
-      })).viewedAt).toEqual(expect.any(Date));
+      })).viewedAt).toBeNull();
 
       const submitStartedAt = Date.now();
       const raced = await Promise.allSettled([
@@ -285,6 +285,7 @@ test('embedded public quotes preserve privacy, exact revisions, corruption bound
         where: { id: 'supplier-request-a' },
       });
       expect(storedAfterFirst.quoteRevision).toBe(1);
+      expect(storedAfterFirst.viewedAt).toEqual(expect.any(Date));
       const firstDocument = storedAfterFirst.quoteRevisions as {
         v: number;
         revisions: QuoteRevisionV1[];

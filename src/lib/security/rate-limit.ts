@@ -16,8 +16,6 @@ export type RateLimitScope =
   | 'supplier-application-client'
   | 'supplier-request'
   | 'supplier-quote-access-client'
-  | 'supplier-quote-read-client'
-  | 'supplier-quote-read-token'
   | 'supplier-quote-submit-client'
   | 'supplier-quote-submit';
 

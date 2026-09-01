@@ -137,6 +137,23 @@ export function applyMenuCleanupProposal(
   };
 }
 
+export function removeSelectedDishes(
+  dishes: Readonly<MenuDocumentV1['dishes']>,
+  selectedIds: ReadonlySet<string>,
+): MenuDocumentV1['dishes'] {
+  return dishes
+    .filter(({ id }) => !selectedIds.has(id))
+    .map((dish, position) => ({ ...dish, position }));
+}
+
+export function pruneSelectedDishIds(
+  selectedIds: ReadonlySet<string>,
+  dishes: Readonly<MenuDocumentV1['dishes']>,
+) {
+  const dishIds = new Set(dishes.map(({ id }) => id));
+  return new Set([...selectedIds].filter((id) => dishIds.has(id)));
+}
+
 async function problemMessage(response: Response, fallback: string) {
   const problem = (await response.json().catch(() => ({}))) as {
     detail?: string;
@@ -147,6 +164,39 @@ async function problemMessage(response: Response, fallback: string) {
     message: problem.detail || problem.error || fallback,
     fields: problem.errors ?? {},
   };
+}
+
+const deleteMenuConfirmation = 'Delete this menu permanently? Menus used in procurement history cannot be deleted.';
+
+export async function deleteMenuAndNavigate(
+  menu: Pick<ReviewedMenu, 'id' | 'version'>,
+  router: { replace: (href: string) => void; refresh: () => void },
+  confirm: (message: string) => boolean = window.confirm,
+  onConfirmed: () => void = () => {},
+): Promise<
+  | { status: 'cancelled'; error: null; keepLocked: false }
+  | { status: 'deleted'; error: null; keepLocked: true }
+  | { status: 'failed'; error: string; keepLocked: false }
+> {
+  if (!confirm(deleteMenuConfirmation)) {
+    return { status: 'cancelled', error: null, keepLocked: false };
+  }
+  onConfirmed();
+  try {
+    const response = await workspaceMutationFetch(`/api/menus/${encodeURIComponent(menu.id)}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expectedVersion: menu.version }),
+    });
+    if (!response.ok) {
+      return { status: 'failed', error: (await problemMessage(response, 'We could not delete this menu.')).message, keepLocked: false };
+    }
+    router.replace('/menus');
+    router.refresh();
+    return { status: 'deleted', error: null, keepLocked: true };
+  } catch (caught) {
+    return { status: 'failed', error: caught instanceof Error ? caught.message : 'We could not delete this menu.', keepLocked: false };
+  }
 }
 
 export function MenuEditor({
@@ -163,6 +213,8 @@ export function MenuEditor({
   const [loading, setLoading] = useState(!initialMenu);
   const [saving, setSaving] = useState(false);
   const [approving, setApproving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [selectedDishIds, setSelectedDishIds] = useState<Set<string>>(new Set());
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
@@ -179,6 +231,7 @@ export function MenuEditor({
       setMenu(loaded);
       setName(loaded.name);
       setDishes(loaded.document.dishes);
+      setSelectedDishIds(new Set());
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'We could not load this menu.');
     } finally {
@@ -213,13 +266,36 @@ export function MenuEditor({
       : dish));
   }
 
-  function removeDish(dishIndex: number) {
+  function removeDish(dishId: string) {
+    if (deleting) return;
     if (!window.confirm('Remove this dish from the draft?')) return;
-    setDishes((current) => current.filter((_, index) => index !== dishIndex));
+    setDishes((current) => removeSelectedDishes(current, new Set([dishId])));
+    setSelectedDishIds((current) => {
+      const next = new Set(current);
+      next.delete(dishId);
+      return next;
+    });
+  }
+
+  function toggleDishSelection(dishId: string) {
+    if (deleting) return;
+    setSelectedDishIds((current) => {
+      const next = new Set(current);
+      if (next.has(dishId)) next.delete(dishId);
+      else next.add(dishId);
+      return next;
+    });
+  }
+
+  function removeSelectedDishDrafts() {
+    if (deleting || selectedDishIds.size === 0) return;
+    if (!window.confirm('Remove selected dishes from the draft?')) return;
+    setDishes((current) => removeSelectedDishes(current, selectedDishIds));
+    setSelectedDishIds(new Set());
   }
 
   function addSuggestedIngredient(dishIndex: number, suggestion: IngredientSuggestionDto) {
-    if (suggestion.kind !== 'INGREDIENT') return;
+    if (deleting || suggestion.kind !== 'INGREDIENT') return;
     setDishes((current) => current.map((dish, currentDishIndex) => {
       if (currentDishIndex !== dishIndex) return dish;
       if (dish.ingredients.some(({ itemKey }) => itemKey === suggestion.itemKey)) return dish;
@@ -241,10 +317,9 @@ export function MenuEditor({
   }
 
   function applyCleanupProposal(proposal: MenuCleanupProposal) {
-    setDishes((current) => applyMenuCleanupProposal(
-      { ...menu!.document, dishes: current },
-      proposal,
-    ).dishes);
+    const cleanedDocument = applyMenuCleanupProposal({ ...menu!.document, dishes }, proposal);
+    setDishes(cleanedDocument.dishes);
+    setSelectedDishIds((current) => pruneSelectedDishIds(current, cleanedDocument.dishes));
     setMenu((current) => current ? {
       ...current,
       cleanupProposals: (current.cleanupProposals ?? []).filter(({ id }) => id !== proposal.id),
@@ -262,7 +337,7 @@ export function MenuEditor({
   );
 
   async function saveDraft() {
-    if (!menu || saving || !complete) return null;
+    if (!menu || saving || deleting || !complete) return null;
     setSaving(true);
     setError('');
     setNotice('');
@@ -314,7 +389,7 @@ export function MenuEditor({
   }
 
   async function approve() {
-    if (!menu || approving || !complete) return;
+    if (!menu || approving || deleting || !complete) return;
     if (!window.confirm('Approve this menu? Use only quantities your team has checked.')) return;
     setApproving(true);
     setError('');
@@ -341,6 +416,18 @@ export function MenuEditor({
     } finally {
       setApproving(false);
     }
+  }
+
+  async function deleteMenu() {
+    if (!menu || deleting) return;
+    const result = await deleteMenuAndNavigate(menu, router, window.confirm, () => {
+      setDeleting(true);
+      setError('');
+      setNotice('');
+      setFieldErrors({});
+    });
+    if (result.error) setError(result.error);
+    if (!result.keepLocked) setDeleting(false);
   }
 
   if (loading) {
@@ -375,11 +462,14 @@ export function MenuEditor({
             {menu.status === 'APPROVED' ? <CheckCircle2 aria-hidden="true" /> : null}
             {menu.status === 'APPROVED' ? 'Approved' : 'Draft'} · v{menu.version}
           </span>
-          <button className={styles.secondaryButton} type="button" disabled={!complete || saving || approving} onClick={() => void saveDraft()}>
+          <button className={styles.secondaryButton} type="button" disabled={!complete || saving || approving || deleting} onClick={() => void saveDraft()}>
             <Save aria-hidden="true" /> {saving ? 'Saving…' : 'Save draft'}
           </button>
-          <button className={styles.primaryButton} type="button" disabled={!complete || saving || approving} onClick={() => void approve()}>
+          <button className={styles.primaryButton} type="button" disabled={!complete || saving || approving || deleting} onClick={() => void approve()}>
             <CheckCircle2 aria-hidden="true" /> {approving ? 'Approving…' : 'Approve menu'}
+          </button>
+          <button className={styles.deleteButton} type="button" disabled={deleting || saving || approving} onClick={() => void deleteMenu()}>
+            <Trash2 aria-hidden="true" /> {deleting ? 'Deleting…' : 'Delete menu'}
           </button>
         </div>
       </header>
@@ -403,7 +493,7 @@ export function MenuEditor({
             {menu.cleanupProposals!.map((proposal) => (
               <article key={proposal.id}>
                 <span><strong>{proposal.before}</strong><small>Change to {proposal.after}</small></span>
-                <button type="button" onClick={() => applyCleanupProposal(proposal)}>Use change</button>
+                <button type="button" disabled={deleting} onClick={() => applyCleanupProposal(proposal)}>Use change</button>
               </article>
             ))}
           </div>
@@ -411,10 +501,28 @@ export function MenuEditor({
       )}
 
       <section className={styles.dishes} aria-label="Menu dishes">
+        <div className={styles.dishToolbar} aria-label="Dish selection actions">
+          <span>{selectedDishIds.size} selected</span>
+          <button type="button" disabled={deleting || dishes.length === 0} onClick={() => setSelectedDishIds(new Set(dishes.map(({ id }) => id)))}>Select all</button>
+          <button type="button" disabled={deleting || selectedDishIds.size === 0} onClick={() => setSelectedDishIds(new Set())}>Clear selection</button>
+          <button type="button" className={styles.removeSelected} disabled={deleting || selectedDishIds.size === 0} onClick={removeSelectedDishDrafts}>
+            <Trash2 aria-hidden="true" /> Remove selected
+          </button>
+        </div>
         {dishes.map((dish, dishIndex) => (
           <article className={styles.dish} key={dish.id ?? `new-dish-${dishIndex}`}>
             <header>
               <span>{String(dishIndex + 1).padStart(2, '0')}</span>
+              <label className={styles.dishSelection}>
+                <input
+                  className={styles.dishCheckbox}
+                  type="checkbox"
+                  checked={selectedDishIds.has(dish.id)}
+                  disabled={deleting}
+                  onChange={() => toggleDishSelection(dish.id)}
+                />
+                <span className={styles.selectionLabel}>Select {dish.name || `dish ${dishIndex + 1}`}</span>
+              </label>
               <label>
                 <span>Dish name</span>
                 <input
@@ -425,7 +533,7 @@ export function MenuEditor({
                   onChange={(event) => changeDish(dishIndex, { name: event.target.value })}
                 />
               </label>
-              <button type="button" aria-label={`Remove ${dish.name || `dish ${dishIndex + 1}`}`} onClick={() => removeDish(dishIndex)}>
+              <button type="button" disabled={deleting} aria-label={`Remove ${dish.name || `dish ${dishIndex + 1}`}`} onClick={() => removeDish(dish.id)}>
                 <Trash2 aria-hidden="true" />
               </button>
             </header>
@@ -500,7 +608,7 @@ export function MenuEditor({
                       })}
                     />
                   </label>
-                  <button type="button" aria-label={`Remove ${ingredient.name || 'ingredient'}`} onClick={() => removeIngredient(dishIndex, ingredientIndex)}>
+                  <button type="button" disabled={deleting} aria-label={`Remove ${ingredient.name || 'ingredient'}`} onClick={() => removeIngredient(dishIndex, ingredientIndex)}>
                     <Trash2 aria-hidden="true" />
                   </button>
                 </div>
@@ -513,7 +621,7 @@ export function MenuEditor({
                   .filter((suggestion) => suggestion.kind === 'INGREDIENT')
                   .filter((suggestion) => !dish.ingredients.some(({ itemKey }) => itemKey === suggestion.itemKey))
                   .map((suggestion) => (
-                    <button type="button" key={suggestion.id} onClick={() => addSuggestedIngredient(dishIndex, suggestion)}>
+                    <button type="button" key={suggestion.id} disabled={deleting} onClick={() => addSuggestedIngredient(dishIndex, suggestion)}>
                       <Plus aria-hidden="true" />
                       <span><strong>{suggestion.name}</strong><small>{suggestion.quantity} {unitOptions.find(({ value }) => value === suggestion.unit)?.label ?? suggestion.unit} · {suggestion.sourceLabel}</small></span>
                     </button>
@@ -523,23 +631,24 @@ export function MenuEditor({
             <button
               className={styles.addRow}
               type="button"
+              disabled={deleting}
               onClick={() => changeDish(dishIndex, { ingredients: [...dish.ingredients, newIngredient()] })}
             >
               <Plus aria-hidden="true" /> Add ingredient
             </button>
           </article>
         ))}
-        <button className={styles.addDish} type="button" onClick={() => setDishes((current) => [...current, newDish()])}>
+        <button className={styles.addDish} type="button" disabled={deleting} onClick={() => setDishes((current) => [...current, newDish()])}>
           <Plus aria-hidden="true" /> Add dish
         </button>
       </section>
 
       <footer className={styles.stickyActions}>
         <span>{dishes.length} {dishes.length === 1 ? 'dish' : 'dishes'} · {dishes.reduce((sum, dish) => sum + dish.ingredients.length, 0)} {dishes.reduce((sum, dish) => sum + dish.ingredients.length, 0) === 1 ? 'ingredient' : 'ingredients'}</span>
-        <button className={styles.secondaryButton} type="button" disabled={!complete || saving || approving} onClick={() => void saveDraft()}>
+        <button className={styles.secondaryButton} type="button" disabled={!complete || saving || approving || deleting} onClick={() => void saveDraft()}>
           {saving ? 'Saving…' : 'Save draft'}
         </button>
-        <button className={styles.primaryButton} type="button" disabled={!complete || saving || approving} onClick={() => void approve()}>
+        <button className={styles.primaryButton} type="button" disabled={!complete || saving || approving || deleting} onClick={() => void approve()}>
           {approving ? 'Approving…' : 'Approve menu'}
         </button>
       </footer>

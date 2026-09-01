@@ -51,13 +51,14 @@ export async function POST(req: Request) {
     ));
   }
 
-  const { menuText } = input.value;
+  const { menuText, source } = input.value;
 
   try {
     const menu = await createDeterministicMenuDraft({
       actor: { tenantId: account.tenant.id, userId: account.user.id },
       name: 'Menu draft',
       menuText,
+      ...(source ? { source } : {}),
     });
 
     return privateMutationResponse(NextResponse.json({ menuId: menu.id }));

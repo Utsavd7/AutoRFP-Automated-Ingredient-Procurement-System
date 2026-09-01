@@ -1,31 +1,46 @@
+import type { ItemSpecificationV1 } from '@/lib/domain/item-specification';
+import type { ProcurementUnit } from '@/lib/domain/quantity';
 import { formatScaledDecimal } from '@/lib/domain/validation';
 import { serializeCsv, type CsvValue } from '@/lib/exports/csv';
 
-type RequestExport = {
+export type RequestExport = {
   id: string;
   title: string;
   status: string;
   deliveryDate: string;
   quoteDeadline: string;
   deliveryDetails: {
-    addressLine?: string;
-    city?: string;
-    state?: string;
-    pin?: string;
-    instructions?: string;
+    addressLine: string;
+    city: string;
+    state: string;
+    pin: string;
+    instructions: string | null;
   };
   commercialTerms: string | null;
-  items: Array<{ id: string; name: string; quantity: string; unit: string }>;
+  items: Array<{
+    id: string;
+    itemKey: string;
+    name: string;
+    quantity: string;
+    unit: ProcurementUnit;
+    specification: ItemSpecificationV1;
+  }>;
 };
 
 type QuoteItemExport = {
   requestItemId: string;
+  requestItemKey: string;
   requestItemName: string;
-  quoteItemId: string | null;
   requestedQuantity: string;
-  requestUnit: string;
+  requestUnit: ProcurementUnit;
+  requestedSpecification: ItemSpecificationV1;
+  suppliedSpecification: {
+    brand: string | null;
+    packSize: string | null;
+    qualityGrade: string | null;
+  };
   quotedAvailableQuantity: string | null;
-  quotedUnit: string | null;
+  quotedUnit: ProcurementUnit | null;
   normalizedUnitRatePaise: string | null;
   gstBasisPoints: number | null;
   taxInclusive: boolean;
@@ -37,21 +52,20 @@ type QuoteItemExport = {
 };
 
 type QuoteExport = {
-  quoteId: string;
+  supplierRequestId: string;
   supplierName: string;
+  supplierActive: boolean;
   revision: number;
   submittedAt: string;
   deliveryDate: string;
   validUntil: string;
+  minimumOrder: string | null;
   subtotalPaise: string;
   gstPaise: string;
   freightPaise: string;
   totalPaise: string;
   coveredItemCount: number;
   totalItemCount: number;
-  supplierActive: boolean;
-  awardable: boolean;
-  awardIssues: string[];
   deliveryFit: 'ON_OR_BEFORE' | 'AFTER_REQUESTED_DATE';
   expired: boolean;
   missingTerms: boolean;
@@ -71,17 +85,26 @@ export type AwardExport = {
   suppliers: Array<{
     supplierId: string;
     supplierName: string;
-    gstin?: string | null;
+    gstin: string | null;
     freightPaise: string;
   }>;
   lines: Array<{
     requestItemId: string;
+    itemKey: string;
     itemName: string;
+    requestedQuantity: string;
+    requestedUnit: ProcurementUnit;
+    requestedSpecification: ItemSpecificationV1;
     supplierId: string;
     quantity: string;
-    unit: string;
+    unit: ProcurementUnit;
     unitRatePaise: string;
     gstBasisPoints: number;
+    taxInclusive: boolean;
+    suppliedBrand: string | null;
+    suppliedPackSize: string | null;
+    suppliedQualityGrade: string | null;
+    substitution: string | null;
     subtotalPaise: string;
     gstPaise: string;
     totalPaise: string;
@@ -99,16 +122,27 @@ function gstPercent(basisPoints: number | null) {
 }
 
 function deliveryAddress(details: RequestExport['deliveryDetails']) {
-  return [details.addressLine, details.city, details.state, details.pin]
-    .filter((value): value is string => Boolean(value))
-    .join(', ');
+  return [details.addressLine, details.city, details.state, details.pin].join(', ');
+}
+
+function requestedSpecificationCells(specification: ItemSpecificationV1): CsvValue[] {
+  return [
+    specification.description,
+    specification.preferredBrand,
+    specification.packSize,
+    specification.qualityGrade,
+    specification.notes,
+    specification.referenceUrl,
+  ];
 }
 
 export function requestCsv(request: RequestExport) {
   const header: CsvValue[] = [
     'Request ID', 'Request title', 'Status', 'Delivery date', 'Quote deadline',
     'Delivery address', 'Delivery instructions', 'Commercial terms',
-    'Item ID', 'Item name', 'Quantity', 'Unit',
+    'Item ID', 'Item key', 'Item name', 'Quantity', 'Unit', 'Category',
+    'Requested description', 'Requested brand', 'Requested pack size',
+    'Requested quality grade', 'Requested notes', 'Reference URL',
   ];
   const rows = request.items.map<CsvValue[]>((item) => [
     request.id,
@@ -117,12 +151,15 @@ export function requestCsv(request: RequestExport) {
     request.deliveryDate,
     request.quoteDeadline,
     deliveryAddress(request.deliveryDetails),
-    request.deliveryDetails.instructions ?? '',
-    request.commercialTerms ?? '',
+    request.deliveryDetails.instructions,
+    request.commercialTerms,
     item.id,
+    item.itemKey,
     item.name,
     item.quantity,
     item.unit,
+    item.specification.category,
+    ...requestedSpecificationCells(item.specification),
   ]);
   return serializeCsv([header, ...rows]);
 }
@@ -132,28 +169,40 @@ export function quoteComparisonCsv(input: {
   quotes: QuoteExport[];
 }) {
   const header: CsvValue[] = [
-    'Supplier', 'Quote revision', 'Submitted at', 'Quote ID', 'Item ID',
-    'Item name', 'Requested quantity', 'Requested unit', 'Available quantity',
-    'Quoted unit', 'Unit rate INR', 'GST percent', 'Tax inclusive', 'Coverage',
-    'Substitution', 'Line subtotal INR', 'Line GST INR', 'Line total INR',
-    'Quote freight INR', 'Quote total INR', 'Supplier active', 'Awardable',
-    'Award issues', 'Delivery fit', 'Quote expired', 'Terms present',
-    'Full coverage', 'Delivery date', 'Valid until',
-    'Covered items', 'Total items', 'Commercial terms', 'Notes',
+    'Supplier', 'Supplier request ID', 'Quote revision', 'Submitted at',
+    'Item ID', 'Item key', 'Item name', 'Requested quantity', 'Requested unit',
+    'Requested description', 'Requested brand', 'Supplied brand',
+    'Requested pack size', 'Supplied pack size', 'Requested quality grade',
+    'Supplied quality grade', 'Available quantity', 'Quoted unit',
+    'Unit rate INR', 'GST percent', 'Tax inclusive', 'Coverage', 'Substitution',
+    'Line subtotal INR', 'Line GST INR', 'Line total INR', 'Quote freight INR',
+    'Quote total INR', 'Supplier active', 'Delivery fit', 'Quote expired',
+    'Terms present', 'Full coverage', 'Delivery date', 'Valid until',
+    'Covered items', 'Total items', 'Minimum order', 'Commercial terms', 'Notes',
   ];
   const rows = input.quotes.flatMap<CsvValue[]>((quote) =>
     quote.items.map((item) => [
       quote.supplierName,
+      quote.supplierRequestId,
       quote.revision,
       quote.submittedAt,
-      quote.quoteId,
       item.requestItemId,
+      item.requestItemKey,
       item.requestItemName,
       item.requestedQuantity,
       item.requestUnit,
+      item.requestedSpecification.description,
+      item.requestedSpecification.preferredBrand,
+      item.suppliedSpecification.brand,
+      item.requestedSpecification.packSize,
+      item.suppliedSpecification.packSize,
+      item.requestedSpecification.qualityGrade,
+      item.suppliedSpecification.qualityGrade,
       item.quotedAvailableQuantity,
       item.quotedUnit,
-      item.normalizedUnitRatePaise === null ? '' : rupees(item.normalizedUnitRatePaise),
+      item.normalizedUnitRatePaise === null
+        ? ''
+        : rupees(item.normalizedUnitRatePaise),
       gstPercent(item.gstBasisPoints),
       item.taxInclusive ? 'Yes' : 'No',
       item.coverage,
@@ -164,8 +213,6 @@ export function quoteComparisonCsv(input: {
       rupees(quote.freightPaise),
       rupees(quote.totalPaise),
       quote.supplierActive ? 'Yes' : 'No',
-      quote.awardable ? 'Yes' : 'No',
-      quote.awardIssues.join('; '),
       quote.deliveryFit === 'ON_OR_BEFORE'
         ? 'On or before requested date'
         : 'After requested date',
@@ -176,6 +223,7 @@ export function quoteComparisonCsv(input: {
       quote.validUntil,
       quote.coveredItemCount,
       quote.totalItemCount,
+      quote.minimumOrder,
       quote.commercialTerms,
       quote.notes,
     ]),
@@ -184,12 +232,18 @@ export function quoteComparisonCsv(input: {
 }
 
 export function awardCsv(award: AwardExport) {
-  const suppliers = new Map(award.suppliers.map((supplier) => [supplier.supplierId, supplier]));
+  const suppliers = new Map(
+    award.suppliers.map((supplier) => [supplier.supplierId, supplier]),
+  );
   const header: CsvValue[] = [
     'Award ID', 'Request ID', 'Request title', 'Awarded at', 'Decision reason',
-    'Supplier', 'Supplier GSTIN', 'Item ID', 'Item name', 'Quantity', 'Unit',
-    'Unit rate INR', 'GST percent', 'Line subtotal INR', 'Line GST INR',
-    'Line total INR', 'Supplier freight INR', 'Award total INR',
+    'Supplier', 'Supplier GSTIN', 'Item ID', 'Item key', 'Item name',
+    'Requested quantity', 'Requested unit', 'Awarded quantity', 'Awarded unit',
+    'Requested description', 'Requested brand', 'Supplied brand',
+    'Requested pack size', 'Supplied pack size', 'Requested quality grade',
+    'Supplied quality grade', 'Substitution', 'Unit rate INR', 'GST percent',
+    'Tax inclusive', 'Line subtotal INR', 'Line GST INR', 'Line total INR',
+    'Supplier freight INR', 'Award total INR',
   ];
   const rows = award.lines.map<CsvValue[]>((line) => {
     const supplier = suppliers.get(line.supplierId);
@@ -201,13 +255,25 @@ export function awardCsv(award: AwardExport) {
       award.createdAt,
       award.rationale,
       supplier.supplierName,
-      supplier.gstin ?? '',
+      supplier.gstin,
       line.requestItemId,
+      line.itemKey,
       line.itemName,
+      line.requestedQuantity,
+      line.requestedUnit,
       line.quantity,
       line.unit,
+      line.requestedSpecification.description,
+      line.requestedSpecification.preferredBrand,
+      line.suppliedBrand,
+      line.requestedSpecification.packSize,
+      line.suppliedPackSize,
+      line.requestedSpecification.qualityGrade,
+      line.suppliedQualityGrade,
+      line.substitution,
       rupees(line.unitRatePaise),
       gstPercent(line.gstBasisPoints),
+      line.taxInclusive ? 'Yes' : 'No',
       rupees(line.subtotalPaise),
       rupees(line.gstPaise),
       rupees(line.totalPaise),
@@ -242,9 +308,7 @@ export function accountingCsv(award: AwardExport) {
   ];
   const rows = award.suppliers.map<CsvValue[]>((supplier) => {
     const supplierTotals = totals.get(supplier.supplierId);
-    if (!supplierTotals) {
-      throw new TypeError('Award supplier has no committed lines.');
-    }
+    if (!supplierTotals) throw new TypeError('Award supplier has no committed lines.');
     const payable = supplierTotals.lineTotalPaise + BigInt(supplier.freightPaise);
     return [
       award.id,
@@ -253,7 +317,7 @@ export function accountingCsv(award: AwardExport) {
       award.createdAt,
       supplier.supplierId,
       supplier.supplierName,
-      supplier.gstin ?? '',
+      supplier.gstin,
       rupees(supplierTotals.subtotalPaise.toString()),
       rupees(supplierTotals.gstPaise.toString()),
       rupees(supplierTotals.lineTotalPaise.toString()),

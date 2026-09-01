@@ -258,6 +258,7 @@ test('owner guards deny members and preserve one active workspace owner', async 
                 id: 'rolled-back-supplier',
                 tenantId: 'single-owner-tenant',
                 businessName: 'Rollback Foods',
+                capabilities: { v: 1, categories: [], items: [] },
               },
             });
             await writeAuditEvent(tx, {

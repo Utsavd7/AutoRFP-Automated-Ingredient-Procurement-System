@@ -6,6 +6,8 @@ type PilotEnvironment = {
   QUOTEPLATE_PILOT_EMAILS?: string;
 };
 
+const MAXIMUM_PILOT_OWNERS = 20;
+
 function hasLoopbackUrl(value: string | undefined, protocols: string[]) {
   if (!value?.trim()) return false;
   try {
@@ -35,7 +37,7 @@ export function configuredPilotEmails(environment: PilotEnvironment) {
     .filter(Boolean);
   if (
     entries.length === 0 ||
-    entries.length > 4 ||
+    entries.length > MAXIMUM_PILOT_OWNERS ||
     new Set(entries).size !== entries.length ||
     entries.some((entry) => entry.length > 320 || !/^\S+@\S+\.\S+$/.test(entry))
   ) {

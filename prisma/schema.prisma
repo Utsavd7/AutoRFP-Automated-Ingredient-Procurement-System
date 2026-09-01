@@ -13,6 +13,12 @@ enum UserRole {
   MEMBER
 }
 
+enum UserAccountState {
+  INVITED
+  ACTIVE
+  DEACTIVATED
+}
+
 enum MenuStatus {
   DRAFT
   APPROVED
@@ -25,15 +31,17 @@ enum ProcurementRequestStatus {
   CANCELLED
 }
 
-enum ProcurementUnit {
-  KILOGRAM
-  GRAM
-  LITRE
-  MILLILITRE
-  PIECE
-  PACK
-  CASE
-  CRATE
+enum SupplierRelationshipType {
+  CURRENT
+  SELECTED_NEW
+  APPLICANT
+}
+
+enum SupplierVerificationStatus {
+  UNVERIFIED
+  PENDING
+  VERIFIED
+  REJECTED
 }
 
 model Tenant {
@@ -50,74 +58,48 @@ model Tenant {
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
   users               User[]
-  invitations         Invitation[]
   menus               Menu[]
-  recipes             Recipe[]
-  ingredients         Ingredient[]
   suppliers           Supplier[]
   procurementRequests ProcurementRequest[]
-  requestItems        RequestItem[]
   supplierRequests    SupplierRequest[]
-  supplierQuotes      SupplierQuote[]
-  supplierQuoteItems  SupplierQuoteItem[]
   awards              Award[]
-  awardLines          AwardLine[]
   auditEvents         AuditEvent[]
-  externalIdentities  ExternalIdentity[]
 }
 
 model User {
-  id                         String               @id @default(uuid())
-  tenantId                   String
-  name                       String
-  email                      String               @unique @db.VarChar(320)
-  passwordHash               String?
-  role                       UserRole             @default(MEMBER)
-  isActive                   Boolean              @default(true)
-  lastLoginAt                DateTime?
-  createdAt                  DateTime             @default(now())
-  updatedAt                  DateTime             @updatedAt
-  tenant                     Tenant               @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  invitationsSent            Invitation[]         @relation("InvitationInviter")
-  menusApproved              Menu[]               @relation("MenuApprover")
-  menusCreated               Menu[]               @relation("MenuCreator")
-  procurementRequestsCreated ProcurementRequest[] @relation("ProcurementRequestCreator")
-  awardsGranted              Award[]              @relation("AwardGrantor")
-  auditEvents                AuditEvent[]         @relation("AuditActor")
-  externalIdentities         ExternalIdentity[]
+  id                    String               @id @default(uuid())
+  tenantId              String
+  name                  String
+  email                 String               @unique @db.VarChar(320)
+  passwordHash          String?
+  googleSubject         String?              @unique
+  role                  UserRole             @default(MEMBER)
+  accountState          UserAccountState     @default(ACTIVE)
+  invitationTokenDigest String?              @unique @db.Char(64)
+  invitationExpiresAt   DateTime?
+  invitationAcceptedAt  DateTime?
+  invitationRevokedAt   DateTime?
+  invitedByUserId       String?
+  tutorialVersion       Int                  @default(1)
+  tutorialStep          Int                  @default(0)
+  tutorialSkippedAt     DateTime?
+  tutorialCompletedAt   DateTime?
+  isActive              Boolean              @default(true)
+  lastLoginAt           DateTime?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  tenant                Tenant               @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  invitedBy             User?                @relation("UserInvitations", fields: [tenantId, invitedByUserId], references: [tenantId, id], onDelete: Restrict)
+  invitedUsers          User[]               @relation("UserInvitations")
+  menusApproved         Menu[]               @relation("MenuApprover")
+  menusCreated          Menu[]               @relation("MenuCreator")
+  suppliersVerified     Supplier[]           @relation("SupplierVerifier")
+  requestsCreated       ProcurementRequest[] @relation("ProcurementRequestCreator")
+  awardsGranted         Award[]              @relation("AwardGrantor")
+  auditEvents           AuditEvent[]         @relation("AuditActor")
 
   @@unique([tenantId, id])
   @@index([tenantId, isActive])
-}
-
-model ExternalIdentity {
-  tenantId          String
-  userId            String
-  provider          String
-  providerAccountId String
-  createdAt         DateTime @default(now())
-  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  user              User     @relation(fields: [tenantId, userId], references: [tenantId, id], onDelete: Restrict)
-
-  @@id([provider, providerAccountId])
-  @@unique([tenantId, userId, provider])
-}
-
-model Invitation {
-  id              String    @id @default(uuid())
-  tenantId        String
-  email           String    @db.VarChar(320)
-  role            UserRole  @default(MEMBER)
-  tokenDigest     String    @unique @db.Char(64)
-  expiresAt       DateTime
-  acceptedAt      DateTime?
-  revokedAt       DateTime?
-  invitedByUserId String
-  createdAt       DateTime  @default(now())
-  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  invitedBy       User      @relation("InvitationInviter", fields: [tenantId, invitedByUserId], references: [tenantId, id], onDelete: Restrict)
-
-  @@index([tenantId, email, acceptedAt, revokedAt, expiresAt])
   @@index([tenantId, invitedByUserId])
 }
 
@@ -125,9 +107,10 @@ model Menu {
   id               String               @id @default(uuid())
   tenantId         String
   name             String
-  sourceText       String?
   status           MenuStatus           @default(DRAFT)
   version          Int                  @default(1)
+  document         Json
+  sourceText       String?
   approvedAt       DateTime?
   approvedByUserId String?
   createdByUserId  String?
@@ -136,7 +119,6 @@ model Menu {
   tenant           Tenant               @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   approvedBy       User?                @relation("MenuApprover", fields: [tenantId, approvedByUserId], references: [tenantId, id], onDelete: Restrict)
   createdBy        User?                @relation("MenuCreator", fields: [tenantId, createdByUserId], references: [tenantId, id], onDelete: Restrict)
-  recipes          Recipe[]
   requests         ProcurementRequest[]
 
   @@unique([tenantId, id])
@@ -145,177 +127,100 @@ model Menu {
   @@index([tenantId, createdByUserId])
 }
 
-model Recipe {
-  id          String       @id @default(uuid())
-  tenantId    String
-  menuId      String
-  name        String
-  position    Int
-  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  menu        Menu         @relation(fields: [tenantId, menuId], references: [tenantId, id], onDelete: Cascade)
-  ingredients Ingredient[]
-
-  @@unique([tenantId, id])
-  @@index([tenantId, menuId, position])
-}
-
-model Ingredient {
-  id       String          @id @default(uuid())
-  tenantId String
-  recipeId String
-  name     String
-  quantity Decimal         @db.Decimal(18, 3)
-  unit     ProcurementUnit
-  position Int
-  tenant   Tenant          @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  recipe   Recipe          @relation(fields: [tenantId, recipeId], references: [tenantId, id], onDelete: Cascade)
-
-  @@unique([tenantId, id])
-  @@index([tenantId, recipeId, position])
-}
-
 model Supplier {
-  id               String            @id @default(uuid())
-  tenantId         String
-  businessName     String
-  contactName      String?
-  phone            String?
-  whatsappNumber   String?
-  email            String?           @db.VarChar(320)
-  addressLine      String?
-  city             String?
-  state            String?
-  pin              String?
-  gstin            String?
-  notes            String?
-  isActive         Boolean           @default(true)
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  supplierRequests SupplierRequest[]
-  awardLines       AwardLine[]
+  id                   String                     @id @default(uuid())
+  tenantId             String
+  businessName         String
+  contactName          String?
+  phone                String?
+  whatsappNumber       String?
+  email                String?                    @db.VarChar(320)
+  addressLine          String?
+  city                 String?
+  state                String?
+  pin                  String?
+  gstin                String?
+  notes                String?
+  relationshipType     SupplierRelationshipType   @default(CURRENT)
+  verificationStatus   SupplierVerificationStatus @default(UNVERIFIED)
+  applicationRequestId String?
+  capabilities         Json
+  verifiedAt           DateTime?
+  verifiedByUserId     String?
+  isActive             Boolean                    @default(true)
+  createdAt            DateTime                   @default(now())
+  updatedAt            DateTime                   @updatedAt
+  tenant               Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  applicationRequest   ProcurementRequest?        @relation("SupplierApplicationRequest", fields: [tenantId, applicationRequestId], references: [tenantId, id], onDelete: Restrict)
+  verifiedBy           User?                      @relation("SupplierVerifier", fields: [tenantId, verifiedByUserId], references: [tenantId, id], onDelete: Restrict)
+  supplierRequests     SupplierRequest[]
 
   @@unique([tenantId, id])
   @@index([tenantId, isActive, businessName])
+  @@index([tenantId, applicationRequestId])
+  @@index([tenantId, verifiedByUserId])
 }
 
 model ProcurementRequest {
-  id               String                   @id @default(uuid())
-  tenantId         String
-  title            String
-  status           ProcurementRequestStatus @default(DRAFT)
-  version          Int                      @default(1)
-  menuId           String?
-  sourceRequestId  String?
-  deliveryDetails  Json
-  deliveryDate     DateTime                 @db.Date
-  quoteDeadline    DateTime
-  commercialTerms  String?
-  openedAt         DateTime?
-  awardedAt        DateTime?
-  cancelledAt      DateTime?
-  createdByUserId  String
-  createdAt        DateTime                 @default(now())
-  updatedAt        DateTime                 @updatedAt
-  tenant           Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  menu             Menu?                    @relation(fields: [tenantId, menuId], references: [tenantId, id], onDelete: Restrict)
-  sourceRequest    ProcurementRequest?      @relation("RequestVersions", fields: [tenantId, sourceRequestId], references: [tenantId, id], onDelete: Restrict)
-  revisions        ProcurementRequest[]     @relation("RequestVersions")
-  createdBy        User                     @relation("ProcurementRequestCreator", fields: [tenantId, createdByUserId], references: [tenantId, id], onDelete: Restrict)
-  items            RequestItem[]
-  supplierRequests SupplierRequest[]
-  award            Award?
+  id                     String                   @id @default(uuid())
+  tenantId               String
+  title                  String
+  status                 ProcurementRequestStatus @default(DRAFT)
+  version                Int                      @default(1)
+  menuId                 String?
+  sourceRequestId        String?
+  items                  Json
+  sourcing               Json
+  deliveryDetails        Json
+  deliveryDate           DateTime                 @db.Date
+  quoteDeadline          DateTime
+  commercialTerms        String?
+  applicationTokenDigest String?                  @unique @db.Char(64)
+  applicationExpiresAt   DateTime?
+  applicationRevokedAt   DateTime?
+  openedAt               DateTime?
+  awardedAt              DateTime?
+  cancelledAt            DateTime?
+  createdByUserId        String
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
+  tenant                 Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  menu                   Menu?                    @relation(fields: [tenantId, menuId], references: [tenantId, id], onDelete: Restrict)
+  sourceRequest          ProcurementRequest?      @relation("RequestVersions", fields: [tenantId, sourceRequestId], references: [tenantId, id], onDelete: Restrict)
+  revisions              ProcurementRequest[]     @relation("RequestVersions")
+  createdBy              User                     @relation("ProcurementRequestCreator", fields: [tenantId, createdByUserId], references: [tenantId, id], onDelete: Restrict)
+  applicantSuppliers     Supplier[]               @relation("SupplierApplicationRequest")
+  supplierRequests       SupplierRequest[]
+  award                  Award?
 
   @@unique([tenantId, id])
-  @@index([tenantId, status, quoteDeadline])
+  @@index([tenantId, status, updatedAt])
   @@index([tenantId, createdAt])
   @@index([tenantId, menuId])
   @@index([tenantId, sourceRequestId])
   @@index([tenantId, createdByUserId])
 }
 
-model RequestItem {
-  id         String              @id @default(uuid())
-  tenantId   String
-  requestId  String
-  name       String
-  quantity   Decimal             @db.Decimal(18, 3)
-  unit       ProcurementUnit
-  createdAt  DateTime            @default(now())
-  tenant     Tenant              @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  request    ProcurementRequest  @relation(fields: [tenantId, requestId], references: [tenantId, id], onDelete: Restrict)
-  quoteItems SupplierQuoteItem[]
-  awardLines AwardLine[]
-
-  @@unique([tenantId, id])
-  @@index([tenantId, requestId])
-}
-
 model SupplierRequest {
-  id          String             @id @default(uuid())
-  tenantId    String
-  requestId   String
-  supplierId  String
-  tokenDigest String             @unique @db.Char(64)
-  expiresAt   DateTime
-  revokedAt   DateTime?
-  viewedAt    DateTime?
-  createdAt   DateTime           @default(now())
-  tenant      Tenant             @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  request     ProcurementRequest @relation(fields: [tenantId, requestId], references: [tenantId, id], onDelete: Restrict)
-  supplier    Supplier           @relation(fields: [tenantId, supplierId], references: [tenantId, id], onDelete: Restrict)
-  quotes      SupplierQuote[]
+  id             String             @id @default(uuid())
+  tenantId       String
+  requestId      String
+  supplierId     String
+  tokenDigest    String             @unique @db.Char(64)
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  viewedAt       DateTime?
+  quoteRevision  Int                @default(0)
+  quoteRevisions Json
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  tenant         Tenant             @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  request        ProcurementRequest @relation(fields: [tenantId, requestId], references: [tenantId, id], onDelete: Restrict)
+  supplier       Supplier           @relation(fields: [tenantId, supplierId], references: [tenantId, id], onDelete: Restrict)
 
   @@unique([tenantId, id])
   @@unique([tenantId, requestId, supplierId])
   @@index([tenantId, supplierId])
-}
-
-model SupplierQuote {
-  id                String              @id @default(uuid())
-  tenantId          String
-  supplierRequestId String
-  revision          Int
-  subtotalPaise     BigInt
-  gstPaise          BigInt
-  freightPaise      BigInt
-  totalPaise        BigInt
-  deliveryDate      DateTime            @db.Date
-  validUntil        DateTime            @db.Date
-  commercialTerms   String?
-  notes             String?
-  submittedAt       DateTime            @default(now())
-  tenant            Tenant              @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  supplierRequest   SupplierRequest     @relation(fields: [tenantId, supplierRequestId], references: [tenantId, id], onDelete: Restrict)
-  items             SupplierQuoteItem[]
-
-  @@unique([tenantId, id])
-  @@unique([tenantId, supplierRequestId, revision])
-}
-
-model SupplierQuoteItem {
-  id                String           @id @default(uuid())
-  tenantId          String
-  quoteId           String
-  requestItemId     String
-  noQuote           Boolean
-  availableQuantity Decimal?         @db.Decimal(18, 3)
-  unit              ProcurementUnit?
-  unitRatePaise     BigInt?
-  gstBasisPoints    Int?
-  taxInclusive      Boolean          @default(false)
-  substitution      String?
-  subtotalPaise     BigInt
-  gstPaise          BigInt
-  totalPaise        BigInt
-  tenant            Tenant           @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  quote             SupplierQuote    @relation(fields: [tenantId, quoteId], references: [tenantId, id], onDelete: Restrict)
-  requestItem       RequestItem      @relation(fields: [tenantId, requestItemId], references: [tenantId, id], onDelete: Restrict)
-  awardLines        AwardLine[]
-
-  @@unique([tenantId, id])
-  @@unique([tenantId, quoteId, requestItemId])
-  @@index([tenantId, requestItemId])
 }
 
 model Award {
@@ -323,6 +228,7 @@ model Award {
   tenantId          String
   requestId         String             @unique
   rationale         String?
+  allocationLines   Json
   supplierSnapshots Json
   deliverySnapshot  Json
   totalPaise        BigInt
@@ -331,38 +237,11 @@ model Award {
   tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   request           ProcurementRequest @relation(fields: [tenantId, requestId], references: [tenantId, id], onDelete: Restrict)
   awardedBy         User               @relation("AwardGrantor", fields: [tenantId, awardedByUserId], references: [tenantId, id], onDelete: Restrict)
-  lines             AwardLine[]
 
   @@unique([tenantId, id])
   @@unique([tenantId, requestId])
   @@index([tenantId, createdAt])
   @@index([tenantId, awardedByUserId])
-}
-
-model AwardLine {
-  id                  String            @id @default(uuid())
-  tenantId            String
-  awardId             String
-  requestItemId       String
-  supplierQuoteItemId String
-  supplierId          String
-  quantity            Decimal           @db.Decimal(18, 3)
-  unit                ProcurementUnit
-  unitRatePaise       BigInt
-  gstBasisPoints      Int
-  subtotalPaise       BigInt
-  gstPaise            BigInt
-  totalPaise          BigInt
-  tenant              Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  award               Award             @relation(fields: [tenantId, awardId], references: [tenantId, id], onDelete: Restrict)
-  requestItem         RequestItem       @relation(fields: [tenantId, requestItemId], references: [tenantId, id], onDelete: Restrict)
-  supplierQuoteItem   SupplierQuoteItem @relation(fields: [tenantId, supplierQuoteItemId], references: [tenantId, id], onDelete: Restrict)
-  supplier            Supplier          @relation(fields: [tenantId, supplierId], references: [tenantId, id], onDelete: Restrict)
-
-  @@unique([tenantId, awardId, requestItemId, supplierQuoteItemId])
-  @@index([tenantId, awardId, supplierId])
-  @@index([tenantId, requestItemId])
-  @@index([tenantId, supplierQuoteItemId])
 }
 
 model AuditEvent {
@@ -377,6 +256,7 @@ model AuditEvent {
   tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   actor       User?    @relation("AuditActor", fields: [tenantId, actorUserId], references: [tenantId, id], onDelete: Restrict)
 
+  @@unique([tenantId, id])
   @@index([tenantId, createdAt])
   @@index([tenantId, entityType, entityId])
   @@index([tenantId, actorUserId])

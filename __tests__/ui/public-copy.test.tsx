@@ -88,7 +88,7 @@ describe('public website contract', () => {
     expect(markup).toContain(`${restaurantSampleRequest.items.length} items requested`);
     expect(markup).toContain('Labelled sample replies, not customer activity.');
     expect(markup).toContain(`Requested in sample ${restaurantSampleRequest.id}; coverage stays visible supplier by supplier.`);
-    expect(markup).toContain('One sample decision is waiting; no auto-choice is made.');
+    expect(markup).toContain('One sample decision is waiting; the product never chooses automatically.');
     expect(markup).toContain('Product rule: the restaurant records the final choice.');
 
     expect(landing).toContain('<ProductDecisionPreview');
@@ -166,12 +166,26 @@ describe('public website contract', () => {
     );
 
     expect(markup).toContain('aria-label="Controlled pilot terms"');
-    expect(markup).toContain('Up to four approved restaurant workspaces');
+    expect(markup).toContain('Up to twenty approved restaurant workspaces');
     expect(markup).toContain('Use the Google account approved for your workspace');
     expect(markup).toContain('No payment card. No billing.');
     expect(markup.indexOf('Controlled pilot terms')).toBeLessThan(
       markup.indexOf('Create your workspace'),
     );
+  });
+
+  test('keeps sign in focused on account access and states browser session storage accurately', () => {
+    const markup = renderToStaticMarkup(
+      <AuthPageShell
+        callbackUrl="/dashboard"
+        googleAvailable
+        mode="signin"
+      />,
+    );
+
+    expect(markup).not.toContain('Controlled pilot terms');
+    expect(markup).toContain('your browser stores only the session needed to keep you signed in');
+    expect(markup).not.toContain('No supplier, quote, or workspace data is stored in this browser.');
   });
 
   test('shows a factual product decision in the hero without inventing market data', () => {
@@ -203,7 +217,7 @@ describe('public website contract', () => {
     const markup = renderToStaticMarkup(<PublicLandingPage />);
     const allPublicSource = publicFiles.map(source).join('\n');
 
-    expect(markup).toMatch(/INR/);
+    expect(markup).toContain('₹');
     expect(markup).toMatch(/GST/);
     expect(markup).toMatch(/no supplier account/i);
     expect(markup).toMatch(/human (?:decision|approval)/i);

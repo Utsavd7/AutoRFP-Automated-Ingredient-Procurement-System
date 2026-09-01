@@ -4,6 +4,9 @@ import { ArrowLeft, CalendarDays, Check, ChevronDown, MapPin, Store, Users } fro
 import { useRouter } from 'next/navigation';
 import { FormEvent, useEffect, useRef, useState } from 'react';
 
+import type { MenuDocumentV1 } from '@/lib/menu/menu-document';
+import { buildDefaultSourcingSelection } from '@/lib/procurement/request-document';
+
 import styles from './new-request-form.module.css';
 
 type MenuSummary = {
@@ -11,11 +14,9 @@ type MenuSummary = {
   name: string;
   status: 'DRAFT' | 'APPROVED';
   version: number;
-  _count: { recipes: number; requests: number };
 };
 
-type Ingredient = { id: string; name: string; quantity: string; unit: string };
-type ReviewedMenu = MenuSummary & { recipes: Array<{ id: string; name: string; ingredients: Ingredient[] }> };
+type ReviewedMenu = MenuSummary & { document: MenuDocumentV1 };
 
 type SupplierChoice = {
   id: string;
@@ -25,6 +26,7 @@ type SupplierChoice = {
   email: string | null;
   city: string | null;
   isActive: boolean;
+  relationshipType: 'CURRENT' | 'SELECTED_NEW';
 };
 
 type AccountDelivery = { addressLine: string; city: string; state: string; pin: string };
@@ -71,6 +73,7 @@ export function NewRequestForm({ initialData }: { initialData?: InitialData }) {
   const [selectedMenu, setSelectedMenu] = useState<ReviewedMenu | null>(null);
   const [menuId, setMenuId] = useState('');
   const [supplierIds, setSupplierIds] = useState<string[]>([]);
+  const [openToNewSuppliers, setOpenToNewSuppliers] = useState(false);
   const [selectionMode, setSelectionMode] = useState<'ALL' | 'SELECTED'>('ALL');
   const [ingredientIds, setIngredientIds] = useState<string[]>([]);
   const [title, setTitle] = useState('');
@@ -206,7 +209,7 @@ export function NewRequestForm({ initialData }: { initialData?: InitialData }) {
   }
 
   const valid = Boolean(
-    title.trim() && menuId && supplierIds.length > 0 && addressLine.trim() && city.trim() &&
+    title.trim() && menuId && (supplierIds.length > 0 || openToNewSuppliers) && addressLine.trim() && city.trim() &&
     state.trim() && /^[1-9]\d{5}$/.test(pin) && deliveryDate && deadlineBeforeDelivery(quoteDeadline, deliveryDate) &&
     (selectionMode === 'ALL' || ingredientIds.length > 0),
   );
@@ -218,14 +221,25 @@ export function NewRequestForm({ initialData }: { initialData?: InitialData }) {
     setError('');
     setFieldErrors({});
     try {
+      if (!selectedMenu) throw new Error('Choose an approved menu before saving.');
+      const selectedItemIds = selectionMode === 'ALL'
+        ? selectedMenu.document.dishes.flatMap(({ ingredients }) =>
+            ingredients.map(({ id }) => id))
+        : ingredientIds;
+      const defaultSourcing = buildDefaultSourcingSelection(
+        suppliers,
+        supplierIds,
+        openToNewSuppliers,
+      );
       const response = await fetch('/api/requests', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: title.trim(),
           menuId,
-          ingredientSelection: selectionMode === 'ALL' ? { mode: 'ALL' } : { mode: 'SELECTED', ingredientIds },
-          supplierIds,
+          selectedItemIds,
+          defaultSourcing,
+          sourcingOverrides: {},
           deliveryDetails: {
             addressLine: addressLine.trim(), city: city.trim(), state: state.trim(), pin,
             ...(instructions.trim() ? { instructions: instructions.trim() } : {}),
@@ -256,7 +270,7 @@ export function NewRequestForm({ initialData }: { initialData?: InitialData }) {
       <header className={styles.header}>
         <button type="button" onClick={() => router.push('/procurement')}><ArrowLeft aria-hidden="true" /> Procurement</button>
         <p className={styles.eyebrow}>Draft</p>
-        <h1>New procurement request</h1>
+        <h1>New supplier price request</h1>
         <p>Choose what you need, who should quote, and when the order must arrive.</p>
       </header>
 
@@ -265,7 +279,7 @@ export function NewRequestForm({ initialData }: { initialData?: InitialData }) {
         <section className={styles.section}>
           <div className={styles.sectionNumber}>01</div>
           <div className={styles.sectionBody}>
-            <div className={styles.sectionTitle}><div><h2>Request details</h2><p>Name this buying round and choose approved demand.</p></div><Store aria-hidden="true" /></div>
+            <div className={styles.sectionTitle}><div><h2>Request details</h2><p>Choose an approved menu and the ingredients you need.</p></div><Store aria-hidden="true" /></div>
             <label className={styles.field}>
               <span>Request title *</span>
               <input value={title} maxLength={160} placeholder="Fresh produce · Week 36" onChange={(event) => setTitle(event.target.value)} />
@@ -275,7 +289,7 @@ export function NewRequestForm({ initialData }: { initialData?: InitialData }) {
               <span>Approved menu *</span>
               <select value={menuId} disabled={loadingMenu} onChange={(event) => void chooseMenu(event.target.value)}>
                 <option value="">Choose an approved menu</option>
-                {menus.map((menu) => <option value={menu.id} key={menu.id}>{menu.name} · {menu._count.recipes} {menu._count.recipes === 1 ? 'dish' : 'dishes'}</option>)}
+                {menus.map((menu) => <option value={menu.id} key={menu.id}>{menu.name}</option>)}
               </select><ChevronDown aria-hidden="true" />
             </label>
             {loadingMenu && <p className={styles.choiceStatus} role="status">Loading the checked ingredient list…</p>}
@@ -289,7 +303,7 @@ export function NewRequestForm({ initialData }: { initialData?: InitialData }) {
                   <button type="button" className={selectionMode === 'ALL' ? styles.selected : ''} onClick={() => setSelectionMode('ALL')}>All ingredients</button>
                   <button type="button" className={selectionMode === 'SELECTED' ? styles.selected : ''} onClick={() => setSelectionMode('SELECTED')}>Choose ingredients</button>
                 </div>
-                {selectionMode === 'SELECTED' && selectedMenu.recipes.map((dish) => (
+                {selectionMode === 'SELECTED' && selectedMenu.document.dishes.map((dish) => (
                   <fieldset key={dish.id}>
                     <legend>{dish.name}</legend>
                     {dish.ingredients.map((ingredient) => (
@@ -311,15 +325,27 @@ export function NewRequestForm({ initialData }: { initialData?: InitialData }) {
           <div className={styles.sectionNumber}>02</div>
           <div className={styles.sectionBody}>
             <div className={styles.sectionTitle}><div><h2>Suppliers</h2><p>Choose the suppliers who should receive their own secure link.</p></div><Users aria-hidden="true" /></div>
+            <label className={openToNewSuppliers ? styles.selectedOpenSupplier : styles.openSupplier}>
+              <input
+                type="checkbox"
+                checked={openToNewSuppliers}
+                onChange={(event) => setOpenToNewSuppliers(event.target.checked)}
+              />
+              <span>
+                <strong>Also invite new verified suppliers</strong>
+                <small>You will get one public application link after opening this request. You approve every supplier before they can quote.</small>
+              </span>
+              {openToNewSuppliers && <Check aria-hidden="true" />}
+            </label>
             {suppliers.length === 0 ? (
-              <div className={styles.inlineEmpty}>No active supplier yet. <button type="button" onClick={() => router.push('/suppliers')}>Add a supplier first</button>.</div>
+              <div className={styles.inlineEmpty}>No saved supplier yet. You can invite new suppliers above or <button type="button" onClick={() => router.push('/suppliers')}>add a supplier</button>.</div>
             ) : (
               <div className={styles.supplierGrid}>
                 {suppliers.map((supplier) => (
                   <label className={supplierIds.includes(supplier.id) ? styles.selectedSupplier : styles.supplier} key={supplier.id}>
                     <input type="checkbox" checked={supplierIds.includes(supplier.id)} onChange={() => toggleSupplier(supplier.id)} />
                     <span className={styles.supplierInitial}>{supplier.businessName.charAt(0).toUpperCase()}</span>
-                    <span><strong>{supplier.businessName}</strong><small>{supplier.contactName || supplier.city || supplier.phone || 'Contact details not added'}</small></span>
+                    <span><strong>{supplier.businessName}</strong><small>{supplier.relationshipType === 'CURRENT' ? 'Regular supplier' : 'New supplier'} · {supplier.contactName || supplier.city || supplier.phone || 'Contact details not added'}</small></span>
                     {supplierIds.includes(supplier.id) && <Check aria-hidden="true" />}
                   </label>
                 ))}

@@ -510,7 +510,7 @@ export function SettingsWorkspace({ initialData }: { initialData?: WorkspaceSett
           <span>
             <small>Your access</small>
             <strong>{data.currentUser.role === 'OWNER' ? 'Workspace owner' : 'Workspace member'}</strong>
-            <em>Your sign-in email belongs to your personal account, not the shared restaurant profile.</em>
+            <em>Your account email belongs to you, not the shared restaurant profile.</em>
           </span>
         </div>
       </header>
@@ -518,7 +518,7 @@ export function SettingsWorkspace({ initialData }: { initialData?: WorkspaceSett
       {!owner && (
         <section className={styles.viewOnly} role="status">
           <ShieldCheck aria-hidden="true" />
-          <div><strong>View-only access</strong><span>Only workspace owners can change restaurant details or manage access.</span></div>
+          <div><strong>View access only</strong><span>Only workspace owners can change restaurant details or manage access.</span></div>
         </section>
       )}
       {error && data && <section className={styles.inlineError} role="alert"><span>{error}</span><button onClick={() => setError('')} type="button">Dismiss</button></section>}

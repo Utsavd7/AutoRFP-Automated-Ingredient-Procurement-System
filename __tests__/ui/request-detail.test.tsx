@@ -9,6 +9,41 @@ jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
 }));
 
+function requestItem(
+  id: string,
+  name: string,
+  quantity: string,
+  unit: 'KILOGRAM' | 'LITRE',
+  referenceUrl: string | null = null,
+) {
+  return {
+    id,
+    itemKey: name.toLocaleLowerCase('en-IN'),
+    name,
+    quantity,
+    unit,
+    specification: { v: 1 as const, category: unit === 'LITRE' ? 'DAIRY' as const : 'VEGETABLES' as const, referenceUrl },
+    sourcingOverride: null,
+  };
+}
+
+function requestItemsDocument(item: ReturnType<typeof requestItem>) {
+  return { v: 1 as const, items: [item] };
+}
+
+function requestSourcingDocument(supplierId: string) {
+  return {
+    v: 1 as const,
+    default: {
+      v: 1 as const,
+      modes: ['CURRENT' as const],
+      currentSupplierIds: [supplierId],
+      selectedNewSupplierIds: [],
+      acceptVerifiedApplications: false,
+    },
+  };
+}
+
 describe('procurement request detail', () => {
   it('shows request facts, supplier progress, and deterministic quote comparison', () => {
     const html = renderToStaticMarkup(
@@ -18,18 +53,21 @@ describe('procurement request detail', () => {
           id: 'request-1', title: 'Fresh produce · Week 36', status: 'OPEN', version: 2,
           deliveryDetails: { addressLine: '18 Market Road', city: 'Mumbai', state: 'Maharashtra', pin: '400001' },
           deliveryDate: '2026-09-05T00:00:00.000Z', quoteDeadline: '2026-09-03T10:00:00.000Z', commercialTerms: 'Payment in 15 days',
-          items: [{ id: 'item-1', name: 'Tomato', quantity: '100', unit: 'KILOGRAM' }],
+          items: requestItemsDocument(requestItem('item-1', 'Tomato', '100', 'KILOGRAM', 'https://example.com/tomato-grade-a')),
+          sourcing: requestSourcingDocument('supplier-1'),
           supplierRequests: [{ id: 'grant-1', supplierId: 'supplier-1', expiresAt: '2026-09-03T10:00:00.000Z', revokedAt: null, viewedAt: '2026-08-28T09:00:00.000Z', supplier: { id: 'supplier-1', businessName: 'GreenLeaf Fresh Foods', contactName: 'Meera Shah', phone: '+919876543210', whatsappNumber: '+919876543210', email: null, isActive: true } }],
         }}
         initialComparison={{
-          request: { id: 'request-1', title: 'Fresh produce · Week 36', deliveryDate: '2026-09-05', quoteDeadline: '2026-09-03T10:00:00.000Z', commercialTerms: 'Payment in 15 days', itemCount: 1, items: [{ id: 'item-1', name: 'Tomato', quantity: '100', unit: 'KILOGRAM' }] },
-          quotes: [{ quoteId: 'quote-1', supplierRequestId: 'grant-1', supplierId: 'supplier-1', supplierName: 'GreenLeaf Fresh Foods', revision: 1, subtotalPaise: '7968000', gstPaise: '398400', freightPaise: '0', totalPaise: '8366400', deliveryDate: '2026-09-05', validUntil: '2026-09-04', submittedAt: '2026-08-28T09:30:00.000Z', commercialTerms: '15 days', notes: null, coveredItemCount: 1, totalItemCount: 1, fullCoverage: true, comparable: true, deliveryFit: 'ON_OR_BEFORE', expired: false, missingTerms: false, missingRequestItemIds: [], partialRequestItemIds: [], substitutions: [], items: [{ requestItemId: 'item-1', requestItemName: 'Tomato', quoteItemId: 'quote-item-1', requestedQuantity: '100', requestUnit: 'KILOGRAM', quotedAvailableQuantity: '100', quotedUnit: 'KILOGRAM', normalizedAvailableQuantity: '100', normalizedUnitRatePaise: '79680', unitComparable: true, coverage: 'FULL', gstBasisPoints: 500, taxInclusive: false, substitution: null, subtotalPaise: '7968000', gstPaise: '398400', totalPaise: '8366400' }] }],
+          request: { id: 'request-1', title: 'Fresh produce · Week 36', deliveryDate: '2026-09-05', quoteDeadline: '2026-09-03T10:00:00.000Z', commercialTerms: 'Payment in 15 days', itemCount: 1, items: [requestItem('item-1', 'Tomato', '100', 'KILOGRAM')] },
+          quotes: [{ supplierRequestId: 'grant-1', supplierName: 'GreenLeaf Fresh Foods', supplierActive: true, revision: 1, subtotalPaise: '7968000', gstPaise: '398400', freightPaise: '0', totalPaise: '8366400', deliveryDate: '2026-09-05', validUntil: '2026-09-04', submittedAt: '2026-08-28T09:30:00.000Z', minimumOrder: null, commercialTerms: '15 days', notes: null, coveredItemCount: 1, totalItemCount: 1, fullCoverage: true, deliveryFit: 'ON_OR_BEFORE', expired: false, missingTerms: false, missingRequestItemIds: [], partialRequestItemIds: [], unitMismatchRequestItemIds: [], substitutions: [], items: [{ requestItemId: 'item-1', requestItemKey: 'tomato', requestItemName: 'Tomato', requestedQuantity: '100', requestUnit: 'KILOGRAM', requestedSpecification: { v: 1, category: 'VEGETABLES', description: null, preferredBrand: null, packSize: null, qualityGrade: null, notes: null, referenceUrl: null, thumbnailWebpBase64: null }, suppliedSpecification: { brand: null, packSize: null, qualityGrade: null }, quotedAvailableQuantity: '100', quotedUnit: 'KILOGRAM', normalizedAvailableQuantity: '100', normalizedUnitRatePaise: '79680', unitComparable: true, coverage: 'FULL', gstBasisPoints: 500, taxInclusive: false, substitution: null, subtotalPaise: '7968000', gstPaise: '398400', totalPaise: '8366400' }] }],
         }}
       />,
     );
 
     expect(html).toContain('Fresh produce · Week 36');
     expect(html).toContain('Tomato');
+    expect(html).toContain('View food reference');
+    expect(html).toContain('https://example.com/tomato-grade-a');
     expect(html).toContain('GreenLeaf Fresh Foods');
     expect(html).toContain('₹83,664.00');
     expect(html).toContain('Viewed');
@@ -53,7 +91,8 @@ describe('procurement request detail', () => {
           id: 'request-draft', title: 'Dairy · Monday', status: 'DRAFT', version: 1,
           deliveryDetails: { addressLine: '18 Market Road', city: 'Mumbai', state: 'Maharashtra', pin: '400001' },
           deliveryDate: '2026-09-05T00:00:00.000Z', quoteDeadline: '2026-09-03T10:00:00.000Z', commercialTerms: null,
-          items: [{ id: 'milk', name: 'Milk', quantity: '40', unit: 'LITRE' }],
+          items: requestItemsDocument(requestItem('milk', 'Milk', '40', 'LITRE')),
+          sourcing: requestSourcingDocument('supplier-1'),
           supplierRequests: [{ id: 'grant-draft', supplierId: 'supplier-1', expiresAt: '2026-09-03T10:00:00.000Z', revokedAt: null, viewedAt: null, supplier: { id: 'supplier-1', businessName: 'Shakti Dairy', contactName: null, phone: '+919876543210', whatsappNumber: null, email: null, isActive: true } }],
         }}
       />,
@@ -68,7 +107,8 @@ describe('procurement request detail', () => {
       id: 'request-1', title: 'Fresh produce · Week 36', status: 'AWARDED' as const, version: 3,
       deliveryDetails: { addressLine: '18 Market Road', city: 'Mumbai', state: 'Maharashtra', pin: '400001' },
       deliveryDate: '2026-09-05T00:00:00.000Z', quoteDeadline: '2026-09-03T10:00:00.000Z', commercialTerms: 'Payment in 15 days',
-      items: [{ id: 'item-1', name: 'Tomato', quantity: '100', unit: 'KILOGRAM' }],
+      items: requestItemsDocument(requestItem('item-1', 'Tomato', '100', 'KILOGRAM')),
+      sourcing: requestSourcingDocument('supplier-1'),
       supplierRequests: [{ id: 'grant-1', supplierId: 'supplier-1', expiresAt: '2026-09-03T10:00:00.000Z', revokedAt: null, viewedAt: '2026-08-28T09:00:00.000Z', supplier: { id: 'supplier-1', businessName: 'Renamed Supplier', contactName: null, phone: null, whatsappNumber: null, email: null, isActive: true } }],
     };
     const html = renderToStaticMarkup(
@@ -78,16 +118,16 @@ describe('procurement request detail', () => {
         initialComparison={{
           request: {
             id: request.id, title: request.title, deliveryDate: '2026-09-05', quoteDeadline: request.quoteDeadline,
-            commercialTerms: request.commercialTerms, itemCount: 1, items: request.items,
+            commercialTerms: request.commercialTerms, itemCount: 1, items: request.items.items,
             status: 'AWARDED', version: 3,
             award: {
               id: 'award-1', requestId: request.id, rationale: 'Best complete landed price and on-time delivery.',
               totalPaise: '8366400', createdAt: '2026-08-28T10:00:00.000Z', splitAward: false,
-              suppliers: [{ supplierId: 'supplier-1', supplierName: 'GreenLeaf Fresh Foods', quoteId: 'quote-1', revision: 2, freightPaise: '0', deliveryDate: '2026-09-05', gstin: '27ABCDE1234F1Z5', commercialTerms: '15 days' }],
-              lines: [{ id: 'line-1', requestItemId: 'item-1', requestItemName: 'Tomato', supplierQuoteItemId: 'quote-item-1', supplierId: 'supplier-1', quantity: '100', unit: 'KILOGRAM', unitRatePaise: '79680', gstBasisPoints: 500, subtotalPaise: '7968000', gstPaise: '398400', totalPaise: '8366400' }],
+              suppliers: [{ supplierId: 'supplier-1', supplierRequestId: 'grant-1', quoteRevision: 2, supplierName: 'GreenLeaf Fresh Foods', freightPaise: '0', deliveryDate: '2026-09-05', gstin: '27ABCDE1234F1Z5', commercialTerms: '15 days', lines: [{ requestItemId: 'item-1', itemName: 'Tomato' }] }],
+              lines: [{ requestItemId: 'item-1', supplierRequestId: 'grant-1', supplierId: 'supplier-1', quoteRevision: 2, quantity: '100', unit: 'KILOGRAM', unitRatePaise: '79680', gstBasisPoints: 500, subtotalPaise: '7968000', gstPaise: '398400', totalPaise: '8366400' }],
             },
           },
-          quotes: [{ quoteId: 'quote-1', supplierRequestId: 'grant-1', supplierId: 'supplier-1', supplierName: 'GreenLeaf Fresh Foods', revision: 2, subtotalPaise: '7968000', gstPaise: '398400', freightPaise: '0', totalPaise: '8366400', deliveryDate: '2026-09-05', validUntil: '2026-09-04', submittedAt: '2026-08-28T09:30:00.000Z', commercialTerms: '15 days', notes: null, coveredItemCount: 1, totalItemCount: 1, fullCoverage: true, comparable: true, deliveryFit: 'ON_OR_BEFORE', expired: false, missingTerms: false, missingRequestItemIds: [], partialRequestItemIds: [], substitutions: [], supplierActive: true, awardable: true, awardIssues: [], items: [{ requestItemId: 'item-1', requestItemName: 'Tomato', quoteItemId: 'quote-item-1', requestedQuantity: '100', requestUnit: 'KILOGRAM', quotedAvailableQuantity: '100', quotedUnit: 'KILOGRAM', normalizedAvailableQuantity: '100', normalizedUnitRatePaise: '79680', unitComparable: true, coverage: 'FULL', gstBasisPoints: 500, taxInclusive: false, substitution: null, subtotalPaise: '7968000', gstPaise: '398400', totalPaise: '8366400' }] }],
+          quotes: [{ supplierRequestId: 'grant-1', supplierName: 'GreenLeaf Fresh Foods', supplierActive: true, revision: 2, subtotalPaise: '7968000', gstPaise: '398400', freightPaise: '0', totalPaise: '8366400', deliveryDate: '2026-09-05', validUntil: '2026-09-04', submittedAt: '2026-08-28T09:30:00.000Z', minimumOrder: null, commercialTerms: '15 days', notes: null, coveredItemCount: 1, totalItemCount: 1, fullCoverage: true, deliveryFit: 'ON_OR_BEFORE', expired: false, missingTerms: false, missingRequestItemIds: [], partialRequestItemIds: [], unitMismatchRequestItemIds: [], substitutions: [], items: [{ requestItemId: 'item-1', requestItemKey: 'tomato', requestItemName: 'Tomato', requestedQuantity: '100', requestUnit: 'KILOGRAM', requestedSpecification: { v: 1, category: 'VEGETABLES', description: null, preferredBrand: null, packSize: null, qualityGrade: null, notes: null, referenceUrl: null, thumbnailWebpBase64: null }, suppliedSpecification: { brand: null, packSize: null, qualityGrade: null }, quotedAvailableQuantity: '100', quotedUnit: 'KILOGRAM', normalizedAvailableQuantity: '100', normalizedUnitRatePaise: '79680', unitComparable: true, coverage: 'FULL', gstBasisPoints: 500, taxInclusive: false, substitution: null, subtotalPaise: '7968000', gstPaise: '398400', totalPaise: '8366400' }] }],
         }}
       />,
     );

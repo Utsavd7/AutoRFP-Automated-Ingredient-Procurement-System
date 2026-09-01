@@ -12,6 +12,7 @@ import {
 } from '@/lib/suppliers/supplier-service';
 import {
   isProblemResponse,
+  privateSupplierResponse,
   readSupplierJson,
   supplierActor,
   supplierError,
@@ -20,7 +21,7 @@ import {
 export async function GET(request: Request) {
   const account = await requireAccountContext();
   if (!account) {
-    return problemResponse(401, 'Unauthorized', 'Authentication is required.');
+    return privateSupplierResponse(problemResponse(401, 'Unauthorized', 'Authentication is required.'));
   }
   const url = new URL(request.url);
   try {
@@ -31,9 +32,9 @@ export async function GET(request: Request) {
       limit: url.searchParams.get('limit') ?? undefined,
       cursor: url.searchParams.get('cursor') ?? undefined,
     });
-    return NextResponse.json(result, {
+    return privateSupplierResponse(NextResponse.json(result, {
       headers: { 'Cache-Control': 'private, no-store' },
-    });
+    }));
   } catch (error) {
     return supplierError(error);
   }

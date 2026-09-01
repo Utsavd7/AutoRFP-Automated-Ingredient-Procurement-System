@@ -181,7 +181,7 @@ test('restricted route services scope account and menu writes to the current ten
         },
         app,
       );
-      expect(menu.recipes.map(({ name }) => name)).toEqual([
+      expect(menu.document.dishes.map(({ name }) => name)).toEqual([
         'Paneer Tikka',
         'Masala Dosa',
       ]);
@@ -198,6 +198,15 @@ test('restricted route services scope account and menu writes to the current ten
             tenantId: 'tenant-a',
             name: 'Unscoped menu',
             status: 'DRAFT',
+            document: {
+              v: 1,
+              source: {
+                kind: 'MANUAL',
+                canonicalUrl: null,
+                permissionConfirmed: false,
+              },
+              dishes: [],
+            },
           },
         }),
       ).rejects.toThrow(/row-level security/i);

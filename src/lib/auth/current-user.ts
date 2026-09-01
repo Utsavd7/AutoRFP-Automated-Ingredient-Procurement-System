@@ -32,6 +32,7 @@ export function createPrismaCurrentUserStore(
             where: {
               id: userId,
               tenantId,
+              accountState: 'ACTIVE',
               isActive: true,
               tenant: { isActive: true },
             },

@@ -8,7 +8,7 @@ import styles from './procurement-workspace.module.css';
 
 type RequestStatus = 'DRAFT' | 'OPEN' | 'AWARDED' | 'CANCELLED';
 
-export type ProcurementRequestSummary = {
+type ProcurementRequestSummary = {
   id: string;
   title: string;
   status: RequestStatus;
@@ -19,7 +19,8 @@ export type ProcurementRequestSummary = {
   awardedAt: string | null;
   createdAt: string;
   updatedAt: string;
-  _count: { items: number; supplierRequests: number };
+  itemCount: number;
+  supplierCount: number;
 };
 
 const statusLabel: Record<RequestStatus, string> = {
@@ -156,11 +157,11 @@ export function ProcurementWorkspace({
                 <small>Created {shortDate(request.createdAt)}</small>
               </span>
               <span className={styles.coverage}>
-                <span>{request._count.items} {request._count.items === 1 ? 'item' : 'items'}</span>
-                <span>{request._count.supplierRequests} {request._count.supplierRequests === 1 ? 'supplier' : 'suppliers'}</span>
+                <span>{request.itemCount} {request.itemCount === 1 ? 'item' : 'items'}</span>
+                <span>{request.supplierCount} {request.supplierCount === 1 ? 'supplier' : 'suppliers'}</span>
               </span>
-              <span className={styles.date}><CalendarDays aria-hidden="true" />{deadlineText(request.quoteDeadline)}</span>
-              <span className={styles.date}>{shortDate(request.deliveryDate)}</span>
+              <span className={styles.date}><small className={styles.mobileLabel}>Quote by</small><CalendarDays aria-hidden="true" />{deadlineText(request.quoteDeadline)}</span>
+              <span className={styles.date}><small className={styles.mobileLabel}>Delivery</small>{shortDate(request.deliveryDate)}</span>
               <span><i className={styles[`status${request.status}`]}>{statusLabel[request.status]}</i></span>
               <ArrowRight className={styles.arrow} aria-hidden="true" />
             </button>

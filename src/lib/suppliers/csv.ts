@@ -1,6 +1,11 @@
 import { parse } from 'csv-parse/sync';
 
 import {
+  type SupplierCapabilitiesV1,
+  SupplierCapabilitiesValidationError,
+  validateSupplierCapabilities,
+} from '@/lib/suppliers/supplier-capabilities';
+import {
   type SupplierCreateInput,
   SupplierValidationError,
   validateSupplierCreateInput,
@@ -19,6 +24,12 @@ export const SUPPLIER_CSV_HEADERS = [
   'gstin',
   'notes',
   'active',
+  'relationship_type',
+  'categories',
+  'preferred_categories',
+  'backup_categories',
+  'preferred_items',
+  'backup_items',
 ] as const;
 
 const SUPPLIER_CSV_ROWS = 500;
@@ -91,6 +102,77 @@ function parseActive(value: string) {
   if (['true', 'yes', '1', 'active'].includes(normalized)) return true;
   if (['false', 'no', '0', 'inactive'].includes(normalized)) return false;
   return null;
+}
+
+function parseRelationshipType(value: string) {
+  const normalized = value.trim().toUpperCase();
+  if (!normalized) return 'CURRENT' as const;
+  if (normalized === 'CURRENT' || normalized === 'SELECTED_NEW') return normalized;
+  throw new SupplierValidationError({
+    relationshipType: ['Relationship type must be CURRENT or SELECTED_NEW.'],
+  });
+}
+
+function parseList(value: string, field: string, maximum: number) {
+  if (!value.trim()) return [];
+  const entries = value.split('|').map((entry) => entry.trim());
+  if (entries.length > maximum || entries.some((entry) => !entry)) {
+    throw new SupplierValidationError({
+      [field]: [`${field} must contain at most ${maximum} non-empty pipe-separated entries.`],
+    });
+  }
+  return entries;
+}
+
+function parseItemPreferences(
+  value: string,
+  field: string,
+  tier: 'PREFERRED' | 'BACKUP',
+) {
+  return parseList(value, field, 250).map((entry, index) => {
+    const separator = entry.indexOf('::');
+    if (separator <= 0 || separator === entry.length - 2) {
+      throw new SupplierValidationError({
+        [field]: ['Item preferences must use item-key::Item%20name syntax.'],
+      });
+    }
+    const itemKey = entry.slice(0, separator).trim();
+    let itemName: string;
+    try {
+      itemName = decodeURIComponent(entry.slice(separator + 2).trim());
+    } catch {
+      throw new SupplierValidationError({
+        [field]: ['Item preference names contain invalid percent encoding.'],
+      });
+    }
+    return { itemKey, itemName, tier, rank: index + 1 };
+  });
+}
+
+function parseCapabilities(raw: Record<string, string>): SupplierCapabilitiesV1 {
+  const categories = [
+    ...parseList(raw.categories ?? '', 'categories', 22).map((category, index) => ({
+      category, tier: 'CAPABLE' as const, rank: index + 1,
+    })),
+    ...parseList(raw.preferred_categories ?? '', 'preferredCategories', 22)
+      .map((category, index) => ({
+        category, tier: 'PREFERRED' as const, rank: index + 1,
+      })),
+    ...parseList(raw.backup_categories ?? '', 'backupCategories', 22)
+      .map((category, index) => ({
+        category, tier: 'BACKUP' as const, rank: index + 1,
+      })),
+  ];
+  const items = [
+    ...parseItemPreferences(raw.preferred_items ?? '', 'preferredItems', 'PREFERRED'),
+    ...parseItemPreferences(raw.backup_items ?? '', 'backupItems', 'BACKUP'),
+  ];
+  try {
+    return validateSupplierCapabilities({ v: 1, categories, items });
+  } catch (error) {
+    if (!(error instanceof SupplierCapabilitiesValidationError)) throw error;
+    throw new SupplierValidationError({ capabilities: [error.message] });
+  }
 }
 
 function restoreSpreadsheetSafeCell(value: string) {
@@ -199,6 +281,8 @@ export function parseSupplierCsv(csv: string): ParsedSupplierCsvRow[] {
         gstin: raw.gstin,
         notes: raw.notes,
         ...(active === null ? {} : { isActive: active }),
+        relationshipType: parseRelationshipType(raw.relationship_type ?? ''),
+        capabilities: parseCapabilities(raw),
       });
 
       if (supplier.email) {
@@ -309,6 +393,8 @@ type SupplierCsvExportRecord = Pick<
   | 'gstin'
   | 'notes'
   | 'isActive'
+  | 'relationshipType'
+  | 'capabilities'
 >;
 
 function escapeCsvCell(value: string | boolean | null) {
@@ -320,8 +406,19 @@ function escapeCsvCell(value: string | boolean | null) {
 export function serializeSuppliersCsv(
   suppliers: readonly SupplierCsvExportRecord[],
 ): string {
-  const rows = suppliers.map((supplier) =>
-    [
+  const rows = suppliers.map((supplier) => {
+    const capabilities = validateSupplierCapabilities(supplier.capabilities);
+    const categoryList = (tier: 'CAPABLE' | 'PREFERRED' | 'BACKUP') =>
+      capabilities.categories
+        .filter((entry) => entry.tier === tier)
+        .map(({ category }) => category)
+        .join('|');
+    const itemList = (tier: 'PREFERRED' | 'BACKUP') =>
+      capabilities.items
+        .filter((entry) => entry.tier === tier)
+        .map(({ itemKey, itemName }) => `${itemKey}::${encodeURIComponent(itemName)}`)
+        .join('|');
+    return [
       supplier.businessName,
       supplier.contactName,
       supplier.phone,
@@ -334,10 +431,16 @@ export function serializeSuppliersCsv(
       supplier.gstin,
       supplier.notes,
       supplier.isActive,
+      supplier.relationshipType,
+      categoryList('CAPABLE'),
+      categoryList('PREFERRED'),
+      categoryList('BACKUP'),
+      itemList('PREFERRED'),
+      itemList('BACKUP'),
     ]
       .map(escapeCsvCell)
-      .join(','),
-  );
+      .join(',');
+  });
   return [SUPPLIER_CSV_HEADERS.map(escapeCsvCell).join(','), ...rows, ''].join(
     '\r\n',
   );

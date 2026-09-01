@@ -68,7 +68,7 @@ test.describe.serial('real restaurant settings and member access', () => {
 
     await expect(page.getByRole('heading', { name: 'Workspace settings' })).toBeVisible();
     await expect(page.getByText('Workspace owner')).toBeVisible();
-    await expect(page.getByText(/sign-in email belongs to your personal account/i)).toBeVisible();
+    await expect(page.getByText(/account email belongs to you/i)).toBeVisible();
     await expect(page.getByLabel('Contact email')).toHaveCount(0);
 
     await page.getByLabel('Restaurant or company name').fill('Monsoon Table Bandra');
@@ -113,7 +113,7 @@ test.describe.serial('real restaurant settings and member access', () => {
     await expect(page).toHaveURL(/\/dashboard$/);
 
     await page.goto('/settings');
-    await expect(page.getByText('View-only access')).toBeVisible();
+    await expect(page.getByText('View access only')).toBeVisible();
     await expect(page.getByText('Workspace member')).toBeVisible();
     await expect(page.getByLabel('Restaurant or company name')).toHaveValue('Monsoon Table Bandra');
     await expect(page.getByLabel('Restaurant or company name')).toBeDisabled();

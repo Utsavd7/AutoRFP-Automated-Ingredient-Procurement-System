@@ -43,6 +43,13 @@ describe('auth rate-limit subjects', () => {
     )).toBe('203.0.113.20');
   });
 
+  it('trusts Netlify client metadata only inside a Netlify production runtime', () => {
+    expect(authClientIdentifier(
+      new Headers({ 'x-nf-client-connection-ip': '203.0.113.30' }),
+      { NODE_ENV: 'production', NETLIFY: 'true', SITE_ID: 'site-1', URL: 'https://quoteplate.netlify.app' },
+    )).toBe('203.0.113.30');
+  });
+
   it('consumes separate email and client buckets for workspace creation', async () => {
     const consume = jest.fn().mockResolvedValue({
       allowed: true,

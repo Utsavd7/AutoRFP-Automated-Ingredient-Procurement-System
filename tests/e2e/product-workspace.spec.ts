@@ -213,8 +213,11 @@ test('runs the real launch workflow from reviewed menu to recorded award', async
   await createAndSignInExportOwner(page, email);
 
   await page.goto('/menus');
+  const skipSetup = page.getByRole('button', { name: 'Skip for now' });
+  if (await skipSetup.isVisible()) await skipSetup.click();
   await page.getByRole('button', { name: 'Add menu' }).first().click();
-  const menuDialog = page.getByRole('dialog', { name: 'Paste your dish names' });
+  await page.getByRole('dialog', { name: 'How would you like to add it?' }).getByRole('button', { name: /Type or paste/ }).click();
+  const menuDialog = page.getByRole('dialog', { name: 'Type or paste dish names' });
   await menuDialog.getByLabel('One dish per line').fill('Tomato curry');
   await menuDialog.getByRole('button', { name: 'Save and review' }).click();
   await expect(page).toHaveURL(/\/menus\/[^/]+$/);
@@ -224,6 +227,7 @@ test('runs the real launch workflow from reviewed menu to recorded award', async
   await page.getByLabel('Tomato curry ingredient 1').fill('Tomato');
   await page.getByLabel('Tomato quantity').fill('100');
   await page.getByLabel('Tomato unit').selectOption('KILOGRAM');
+  await page.getByLabel('Tomato category').selectOption('VEGETABLES');
   page.once('dialog', (dialog) => dialog.accept());
   await page.getByRole('button', { name: 'Approve menu' }).first().click();
   await expect(page.getByText(/Approved · v\d+/).first()).toBeVisible();
@@ -244,7 +248,7 @@ test('runs the real launch workflow from reviewed menu to recorded award', async
 
   await page.goto('/procurement/new');
   await page.getByLabel(/Request title/).fill('Fresh produce · Launch week');
-  await page.getByLabel(/Approved menu/).selectOption({ label: 'Launch dinner menu · 1 dish' });
+  await page.getByLabel(/Approved menu/).selectOption({ label: 'Launch dinner menu' });
   await expect(page.getByText('All ingredients')).toBeVisible();
   const supplierChoice = page.locator('label').filter({ hasText: 'GreenLeaf Launch Foods' });
   const supplierCheckbox = supplierChoice.getByRole('checkbox');
@@ -259,11 +263,19 @@ test('runs the real launch workflow from reviewed menu to recorded award', async
   await expect(page).toHaveURL(/\/procurement\/[^/]+$/);
   await expect(page.getByRole('heading', { name: 'Fresh produce · Launch week' })).toBeVisible();
 
+  await page.getByRole('button', { name: 'Edit draft' }).click();
+  const tomatoPreference = page.getByRole('region', { name: 'Tomato supplier preference' });
+  await tomatoPreference.getByRole('button', { name: 'Choose differently' }).click();
+  await tomatoPreference.getByRole('checkbox', { name: /Open to verified new suppliers/ }).check();
+  await tomatoPreference.getByRole('checkbox', { name: /GreenLeaf Launch Foods/ }).check();
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.getByRole('button', { name: 'Edit draft' })).toBeVisible();
+
   page.once('dialog', (dialog) => dialog.accept());
   await page.getByRole('button', { name: 'Open and create links' }).click();
   await expect(page.getByText('Waiting for supplier quotes')).toBeVisible();
   await expectNoSeriousAxeViolations(page);
-  const supplierLink = await page.locator('code').textContent();
+  const supplierLink = await page.locator('code').filter({ hasText: '/quote#token=' }).textContent();
   expect(supplierLink).toMatch(/\/quote#token=[A-Za-z0-9_-]{43}$/);
 
   const supplierContext = await browser.newContext(projectDeviceContext(testInfo));

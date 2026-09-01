@@ -1,21 +1,21 @@
 import { NextResponse } from 'next/server';
 
 import { problemResponse } from '@/lib/api/problem';
+import { privateNoStoreResponse } from '@/lib/api/private-response';
 import {
   getProcurementRequest,
   updateProcurementRequestDraft,
 } from '@/lib/procurement/request-service';
+import {
+  readRequestBody,
+  requestActor,
+  requestServiceError,
+} from '@/lib/procurement/request-http';
 import { requireAccountContext } from '@/lib/server-account';
 import {
   browserJsonMutationRejection,
   privateMutationResponse,
 } from '@/lib/security/browser-mutation';
-import {
-  readRequestBody,
-  requestActor,
-  requestServiceError,
-} from '../route';
-
 type RequestRouteContext = { params: Promise<{ id: string }> };
 
 function record(value: unknown): Record<string, unknown> {
@@ -27,7 +27,7 @@ function record(value: unknown): Record<string, unknown> {
 export async function GET(_request: Request, context: RequestRouteContext) {
   const account = await requireAccountContext();
   if (!account) {
-    return problemResponse(401, 'Unauthorized', 'Authentication is required.');
+    return privateNoStoreResponse(problemResponse(401, 'Unauthorized', 'Authentication is required.'));
   }
   const { id } = await context.params;
   try {
@@ -35,7 +35,7 @@ export async function GET(_request: Request, context: RequestRouteContext) {
       actor: requestActor(account),
       requestId: id,
     });
-    return NextResponse.json({ request: procurementRequest });
+    return privateNoStoreResponse(NextResponse.json({ request: procurementRequest }));
   } catch (error) {
     return requestServiceError(error);
   }

@@ -1,13 +1,20 @@
 import type { Prisma } from '@prisma/client';
 
 const auditRules = {
-  'member.invited': { entityType: 'Invitation', metadata: ['role'] },
-  'member.invitation-revoked': { entityType: 'Invitation', metadata: [] },
+  'member.invited': { entityType: 'User', metadata: ['role'] },
+  'member.invitation-revoked': { entityType: 'User', metadata: [] },
   'member.joined': { entityType: 'User', metadata: ['role'] },
   'member.deactivated': { entityType: 'User', metadata: ['previousRole'] },
   'workspace.updated': { entityType: 'Tenant', metadata: ['fields'] },
+  'tutorial.updated': { entityType: 'User', metadata: ['action', 'step'] },
   'menu.approved': { entityType: 'Menu', metadata: ['version'] },
   'supplier.created': { entityType: 'Supplier', metadata: [] },
+  'supplier.applied': {
+    entityType: 'Supplier',
+    metadata: ['requestId', 'categoryCount'],
+  },
+  'supplier.verified': { entityType: 'Supplier', metadata: [] },
+  'supplier.rejected': { entityType: 'Supplier', metadata: [] },
   'request.opened': {
     entityType: 'ProcurementRequest',
     metadata: ['itemCount', 'supplierCount'],
@@ -15,7 +22,7 @@ const auditRules = {
   'supplier-link.created': { entityType: 'SupplierRequest', metadata: [] },
   'supplier-link.revoked': { entityType: 'SupplierRequest', metadata: [] },
   'quote.submitted': {
-    entityType: 'SupplierQuote',
+    entityType: 'SupplierRequest',
     metadata: ['revision', 'itemCount'],
   },
   'request.awarded': {

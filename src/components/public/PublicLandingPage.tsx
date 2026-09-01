@@ -10,7 +10,7 @@ import { ProductDecisionPreview } from './ProductDecisionPreview';
 const proofPoints = [
   [`${restaurantSampleQuotes.length} supplier replies`, 'Labelled sample replies, not customer activity.'],
   [`${restaurantSampleRequest.items.length} items requested`, `Requested in sample ${restaurantSampleRequest.id}; coverage stays visible supplier by supplier.`],
-  ['1 decision waiting', 'One sample decision is waiting; no auto-choice is made.'],
+  ['1 decision waiting', 'One sample decision is waiting; the product never chooses automatically.'],
   ['Human approval required', 'Product rule: the restaurant records the final choice.'],
 ];
 
@@ -31,7 +31,7 @@ export function PublicLandingPage() {
           <div className="public-hero__copy public-reveal">
             <p className="public-eyebrow">Restaurant buying, made accountable</p>
             <h1>Compare every quote.<br /><em>Choose with proof.</em></h1>
-            <p className="public-hero__lede">Send one ingredient request to your existing suppliers, then compare price, delivery, coverage, INR totals, GST, freight, and payment terms before your restaurant records its own decision.</p>
+            <p className="public-hero__lede">Send one ingredient list to approved suppliers. Compare prices, delivery, missing items, GST, freight, and payment terms before you choose.</p>
             <div className="public-hero__actions">
               <Link className="public-button" href="/product">See the product <span aria-hidden="true">→</span></Link>
               <Link className="public-inline-link" href="/start">Start a pilot <span aria-hidden="true">↗</span></Link>
@@ -85,7 +85,7 @@ export function PublicLandingPage() {
             <h2 id="pilot-title">Bring one real request.<br />See the entire decision.</h2>
           </div>
           <div>
-            <p>The controlled free pilot is limited to up to four approved restaurant workspaces. An approved Google account is required. No card is needed.</p>
+            <p>The controlled free pilot is limited to up to twenty approved restaurant workspaces. An approved Google account is required. No card is needed.</p>
             <Link className="public-button" href="/start">Start a pilot <span aria-hidden="true">→</span></Link>
           </div>
         </section>

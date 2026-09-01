@@ -3,6 +3,13 @@
 import { Check, X } from 'lucide-react';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 
+import {
+  buildDefaultSourcingSelection,
+  preserveRequestSourcingOverrides,
+  type RequestItemsV1,
+  type RequestSourcingV1,
+} from '@/lib/procurement/request-document';
+
 import styles from './draft-request-editor.module.css';
 
 type DraftSupplierGrant = {
@@ -10,7 +17,7 @@ type DraftSupplierGrant = {
   supplier: { id: string; businessName: string; isActive: boolean };
 };
 
-export type EditableProcurementRequest = {
+type EditableProcurementRequest = {
   id: string;
   title: string;
   status: 'DRAFT' | 'OPEN' | 'AWARDED' | 'CANCELLED';
@@ -25,6 +32,8 @@ export type EditableProcurementRequest = {
   deliveryDate: string;
   quoteDeadline: string;
   commercialTerms: string | null;
+  items: RequestItemsV1;
+  sourcing: RequestSourcingV1;
   supplierRequests: DraftSupplierGrant[];
 };
 
@@ -35,6 +44,13 @@ type SupplierChoice = {
   phone: string | null;
   city: string | null;
   isActive: boolean;
+  relationshipType: 'CURRENT' | 'SELECTED_NEW';
+};
+
+type ItemSourcingDraft = {
+  useRequestSuppliers: boolean;
+  supplierIds: string[];
+  openToNewSuppliers: boolean;
 };
 
 function indiaDateTimeInput(value: string) {
@@ -93,6 +109,9 @@ export function DraftRequestEditor({
   const [supplierIds, setSupplierIds] = useState(
     request.supplierRequests.map(({ supplierId }) => supplierId),
   );
+  const [openToNewSuppliers, setOpenToNewSuppliers] = useState(
+    request.sourcing.default.acceptVerifiedApplications,
+  );
   const [addressLine, setAddressLine] = useState(request.deliveryDetails.addressLine ?? '');
   const [city, setCity] = useState(request.deliveryDetails.city ?? '');
   const [state, setState] = useState(request.deliveryDetails.state ?? '');
@@ -101,6 +120,19 @@ export function DraftRequestEditor({
   const [deliveryDate, setDeliveryDate] = useState(request.deliveryDate.slice(0, 10));
   const [quoteDeadline, setQuoteDeadline] = useState(indiaDateTimeInput(request.quoteDeadline));
   const [commercialTerms, setCommercialTerms] = useState(request.commercialTerms ?? '');
+  const [itemSourcing, setItemSourcing] = useState<Record<string, ItemSourcingDraft>>(
+    () => Object.fromEntries(request.items.items.map((item) => [item.id, {
+      useRequestSuppliers: item.sourcingOverride === null,
+      supplierIds: item.sourcingOverride
+        ? [
+            ...item.sourcingOverride.currentSupplierIds,
+            ...item.sourcingOverride.selectedNewSupplierIds,
+          ]
+        : [],
+      openToNewSuppliers:
+        item.sourcingOverride?.acceptVerifiedApplications ?? false,
+    }])),
+  );
   const [suppliers, setSuppliers] = useState<SupplierChoice[]>([]);
   const [loadingSuppliers, setLoadingSuppliers] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -133,31 +165,71 @@ export function DraftRequestEditor({
           phone: null,
           city: null,
           isActive: true,
+          relationshipType: request.sourcing.default.selectedNewSupplierIds.includes(grant.supplierId)
+            ? 'SELECTED_NEW'
+            : 'CURRENT',
         });
       }
     }
     return [...byId.values()].sort((a, b) =>
       a.businessName.localeCompare(b.businessName, 'en-IN'),
     );
-  }, [request.supplierRequests, suppliers]);
+  }, [
+    request.sourcing.default.selectedNewSupplierIds,
+    request.supplierRequests,
+    suppliers,
+  ]);
 
   const deadlineIso = indiaDeadlineIso(quoteDeadline);
+  const validItemSourcing = request.items.items.every((item) => {
+    const choice = itemSourcing[item.id];
+    return choice?.useRequestSuppliers !== false ||
+      choice.supplierIds.length > 0 ||
+      choice.openToNewSuppliers;
+  });
   const valid = Boolean(
     title.trim() &&
-    supplierIds.length > 0 &&
+    (supplierIds.length > 0 || openToNewSuppliers) &&
     addressLine.trim() &&
     city.trim() &&
     state.trim() &&
     /^[1-9]\d{5}$/.test(pin) &&
     /^\d{4}-\d{2}-\d{2}$/.test(deliveryDate) &&
     deadlineIso &&
-    new Date(deadlineIso).getTime() < new Date(`${deliveryDate}T00:00:00+05:30`).getTime(),
+    new Date(deadlineIso).getTime() < new Date(`${deliveryDate}T00:00:00+05:30`).getTime() &&
+    validItemSourcing,
   );
 
   function toggleSupplier(id: string) {
     setSupplierIds((current) =>
       current.includes(id) ? current.filter((value) => value !== id) : [...current, id],
     );
+  }
+
+  function updateItemSourcing(itemId: string, update: Partial<ItemSourcingDraft>) {
+    setItemSourcing((current) => {
+      const existing = current[itemId] ?? {
+        useRequestSuppliers: true,
+        supplierIds: [],
+        openToNewSuppliers: false,
+      };
+      return {
+        ...current,
+        [itemId]: {
+          ...existing,
+          ...update,
+        },
+      };
+    });
+  }
+
+  function toggleItemSupplier(itemId: string, supplierId: string) {
+    const current = itemSourcing[itemId]?.supplierIds ?? [];
+    updateItemSourcing(itemId, {
+      supplierIds: current.includes(supplierId)
+        ? current.filter((id) => id !== supplierId)
+        : [...current, supplierId],
+    });
   }
 
   async function save(event: FormEvent<HTMLFormElement>) {
@@ -167,13 +239,36 @@ export function DraftRequestEditor({
     setError('');
     setFieldErrors({});
     try {
+      const defaultSourcing = buildDefaultSourcingSelection(
+        currentSuppliers,
+        supplierIds,
+        openToNewSuppliers,
+      );
+      const items = preserveRequestSourcingOverrides(request.items);
+      items.items = items.items.map((item) => {
+        const choice = itemSourcing[item.id];
+        return {
+          ...item,
+          sourcingOverride: !choice || choice.useRequestSuppliers
+            ? null
+            : buildDefaultSourcingSelection(
+                currentSuppliers,
+                choice.supplierIds,
+                choice.openToNewSuppliers,
+              ),
+        };
+      });
       const response = await fetch(`/api/requests/${encodeURIComponent(request.id)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           expectedVersion: request.version,
           title: title.trim(),
-          supplierIds,
+          items,
+          sourcing: {
+            v: 1,
+            default: defaultSourcing,
+          },
           deliveryDetails: {
             addressLine: addressLine.trim(),
             city: city.trim(),
@@ -232,6 +327,18 @@ export function DraftRequestEditor({
       </div>
       <fieldset>
         <legend>Suppliers *</legend>
+        <label className={openToNewSuppliers ? styles.selectedSupplier : styles.supplier}>
+          <input
+            type="checkbox"
+            checked={openToNewSuppliers}
+            onChange={(event) => setOpenToNewSuppliers(event.target.checked)}
+          />
+          <span>
+            <strong>Also invite new verified suppliers</strong>
+            <small>You approve every applicant before they can quote.</small>
+          </span>
+          {openToNewSuppliers && <Check aria-hidden="true" />}
+        </label>
         {loadingSuppliers ? <p className={styles.help}>Loading suppliers…</p> : currentSuppliers.length === 0 ? <p className={styles.help}>Add an active supplier before opening this request.</p> : (
           <div className={styles.suppliers}>
             {currentSuppliers.map((supplier) => (
@@ -243,9 +350,67 @@ export function DraftRequestEditor({
             ))}
           </div>
         )}
-        {fieldErrors.supplierIds?.[0] && <small className={styles.fieldError}>{fieldErrors.supplierIds[0]}</small>}
+        {(fieldErrors.sourcing?.[0] || fieldErrors.items?.[0]) && <small className={styles.fieldError}>{fieldErrors.sourcing?.[0] || fieldErrors.items?.[0]}</small>}
       </fieldset>
-      {!valid && <p className={styles.help}>Complete the required fields, choose a supplier, and keep the deadline before the delivery date.</p>}
+      <fieldset className={styles.itemPreferences}>
+        <legend>Specific item suppliers (optional)</legend>
+        <p className={styles.sectionHelp}>Choose this only when an item should go to different suppliers than the rest of the request.</p>
+        <div className={styles.itemPreferenceList}>
+          {request.items.items.map((item) => {
+            const choice = itemSourcing[item.id] ?? {
+              useRequestSuppliers: true,
+              supplierIds: [],
+              openToNewSuppliers: false,
+            };
+            return (
+              <section aria-label={`${item.name} supplier preference`} className={styles.itemPreference} key={item.id}>
+                <header>
+                  <span><strong>{item.name}</strong><small>{item.quantity} {item.unit.toLowerCase()}</small></span>
+                  <button
+                    aria-pressed={!choice.useRequestSuppliers}
+                    onClick={() => updateItemSourcing(item.id, {
+                      useRequestSuppliers: !choice.useRequestSuppliers,
+                    })}
+                    type="button"
+                  >
+                    {choice.useRequestSuppliers ? 'Choose differently' : 'Use request suppliers'}
+                  </button>
+                </header>
+                {!choice.useRequestSuppliers && (
+                  <div className={styles.itemPreferenceChoices}>
+                    <label className={choice.openToNewSuppliers ? styles.selectedSupplier : styles.supplier}>
+                      <input
+                        checked={choice.openToNewSuppliers}
+                        onChange={(event) => updateItemSourcing(item.id, {
+                          openToNewSuppliers: event.target.checked,
+                        })}
+                        type="checkbox"
+                      />
+                      <span><strong>Open to verified new suppliers</strong><small>You approve applicants before they quote</small></span>
+                      {choice.openToNewSuppliers && <Check aria-hidden="true" />}
+                    </label>
+                    {currentSuppliers.map((supplier) => (
+                      <label className={choice.supplierIds.includes(supplier.id) ? styles.selectedSupplier : styles.supplier} key={supplier.id}>
+                        <input
+                          checked={choice.supplierIds.includes(supplier.id)}
+                          onChange={() => toggleItemSupplier(item.id, supplier.id)}
+                          type="checkbox"
+                        />
+                        <span><strong>{supplier.businessName}</strong><small>{supplier.relationshipType === 'CURRENT' ? 'Current supplier' : 'Selected new supplier'}</small></span>
+                        {choice.supplierIds.includes(supplier.id) && <Check aria-hidden="true" />}
+                      </label>
+                    ))}
+                    {choice.supplierIds.length === 0 && !choice.openToNewSuppliers && (
+                      <p className={styles.itemError}>Choose a supplier or allow verified new suppliers for this item.</p>
+                    )}
+                  </div>
+                )}
+              </section>
+            );
+          })}
+        </div>
+      </fieldset>
+      {!valid && <p className={styles.help}>Complete the required fields, choose a saved supplier or invite new suppliers, and keep the deadline before the delivery date.</p>}
       <footer>
         <button type="button" className={styles.secondary} onClick={onCancel}>Cancel</button>
         <button type="submit" className={styles.primary} disabled={!valid || saving || loadingSuppliers}>{saving ? 'Saving…' : 'Save changes'}</button>

@@ -1,6 +1,4 @@
 import { randomBytes } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
 
 import { PrismaClient } from '@prisma/client';
 
@@ -10,13 +8,10 @@ import {
   createPrismaInvitationRepository,
   revokeInvitation,
 } from '@/lib/members/invitations';
-import {
-  consumeDigestRateLimit,
-  digestRateLimitKey,
-} from '@/lib/security/rate-limit';
+import { createPasswordRecord } from '@/lib/password';
 import { digestOpaqueToken } from '@/lib/security/tokens';
 
-import { withMigratedPostgres, withPostgres } from './setup/postgres';
+import { withMigratedPostgres } from './setup/postgres';
 
 function appDatabaseUrl(databaseUrl: string, password: string) {
   const url = new URL(databaseUrl);
@@ -38,7 +33,8 @@ async function provisionAppClient(admin: PrismaClient, databaseUrl: string) {
 async function seedWorkspace(
   admin: PrismaClient,
   tenantId: string,
-  users: Array<{ id: string; email: string; role: 'OWNER' | 'MEMBER' }>,
+  ownerId: string,
+  email: string,
 ) {
   await admin.tenant.create({
     data: {
@@ -50,66 +46,67 @@ async function seedWorkspace(
       pin: '411001',
       phone: '9000000000',
       users: {
-        create: users.map((user) => ({
-          ...user,
-          name: user.id,
+        create: {
+          id: ownerId,
+          name: ownerId,
+          email,
+          role: 'OWNER',
+          accountState: 'ACTIVE',
           isActive: true,
-        })),
+        },
       },
     },
   });
 }
 
-const start = new Date('2026-08-28T10:00:00.000Z');
+const ownerA = { userId: 'owner-a', tenantId: 'tenant-a' };
+const ownerB = { userId: 'owner-b', tenantId: 'tenant-b' };
+const forbiddenActors = [
+  { userId: 'member-a', tenantId: 'tenant-a' },
+  { userId: 'owner-b', tenantId: 'tenant-a' },
+] as const;
 
-test('restricted runtime invitations are owner-controlled, one-time, tenant-safe, and atomic', async () => {
+test('compact invitations use one tenant-safe User lifecycle atomically', async () => {
   await withMigratedPostgres(async (databaseUrl) => {
     const admin = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
     let app: PrismaClient | undefined;
 
     try {
-      await seedWorkspace(admin, 'tenant-a', [
-        { id: 'owner-a', email: 'owner-a@example.test', role: 'OWNER' },
-        { id: 'member-a', email: 'member-a@example.test', role: 'MEMBER' },
-      ]);
-      await seedWorkspace(admin, 'tenant-b', [
-        { id: 'owner-b', email: 'owner-b@example.test', role: 'OWNER' },
-      ]);
-      app = await provisionAppClient(admin, databaseUrl);
-      const repository = createPrismaInvitationRepository(app);
-
-      const rateLimitSubject = 'b'.repeat(64);
-      const rateLimitResults = await Promise.all(
-        Array.from({ length: 6 }, () =>
-          consumeDigestRateLimit(
-            {
-              scope: 'member-invitation-accept',
-              subjectDigest: rateLimitSubject,
-              limit: 5,
-              windowMs: 15 * 60 * 1_000,
-              now: start,
-            },
-            app,
-          ),
-        ),
+      await seedWorkspace(
+        admin,
+        'tenant-a',
+        'owner-a',
+        'owner-a@example.test',
       );
-      expect(rateLimitResults.filter(({ allowed }) => allowed)).toHaveLength(5);
-      expect(rateLimitResults.filter(({ allowed }) => !allowed)).toHaveLength(1);
-      const storedBucket = await admin.rateLimitBucket.findUniqueOrThrow({
-        where: {
-          keyDigest: digestRateLimitKey(
-            'member-invitation-accept',
-            rateLimitSubject,
-          ),
+      await seedWorkspace(
+        admin,
+        'tenant-b',
+        'owner-b',
+        'owner-b@example.test',
+      );
+      await admin.user.create({
+        data: {
+          id: 'member-a',
+          tenantId: 'tenant-a',
+          name: 'Member A',
+          email: 'member-a@example.test',
+          role: 'MEMBER',
+          accountState: 'ACTIVE',
+          isActive: true,
         },
       });
-      expect(storedBucket.count).toBe(6);
-      expect(JSON.stringify(storedBucket)).not.toContain(rateLimitSubject);
+      app = await provisionAppClient(admin, databaseUrl);
+      const repository = createPrismaInvitationRepository(app);
+      const [{ databaseNow: start }] = await admin.$queryRaw<
+        Array<{ databaseNow: Date }>
+      >`SELECT statement_timestamp() AS "databaseNow"`;
+      const expectedExpiry = new Date(
+        start.getTime() + 7 * 24 * 60 * 60 * 1_000,
+      );
 
       const functions = await admin.$queryRaw<
         Array<{
           name: string;
-          owner: string;
           securityDefiner: boolean;
           settings: string[];
           appCanExecute: boolean;
@@ -118,7 +115,6 @@ test('restricted runtime invitations are owner-controlled, one-time, tenant-safe
       >`
         SELECT
           procedure.proname AS name,
-          owner.rolname AS owner,
           procedure.prosecdef AS "securityDefiner",
           procedure.proconfig AS settings,
           has_function_privilege('autorfp_app', procedure.oid, 'EXECUTE')
@@ -133,7 +129,6 @@ test('restricted runtime invitations are owner-controlled, one-time, tenant-safe
           ) AS "publicCanExecute"
         FROM pg_proc AS procedure
         JOIN pg_namespace AS namespace ON namespace.oid = procedure.pronamespace
-        JOIN pg_roles AS owner ON owner.oid = procedure.proowner
         WHERE namespace.nspname = 'autorfp_private'
           AND procedure.proname IN (
             'autorfp_invitation_tenant_by_digest',
@@ -144,7 +139,6 @@ test('restricted runtime invitations are owner-controlled, one-time, tenant-safe
       expect(functions).toEqual([
         {
           name: 'autorfp_invitation_tenant_by_digest',
-          owner: 'autorfp',
           securityDefiner: true,
           settings: ['search_path=pg_catalog'],
           appCanExecute: true,
@@ -152,7 +146,6 @@ test('restricted runtime invitations are owner-controlled, one-time, tenant-safe
         },
         {
           name: 'autorfp_user_email_exists',
-          owner: 'autorfp',
           securityDefiner: true,
           settings: ['search_path=pg_catalog'],
           appCanExecute: true,
@@ -167,288 +160,106 @@ test('restricted runtime invitations are owner-controlled, one-time, tenant-safe
           AND procedure.proname = 'autorfp_invitation_tenant_by_digest'
       `;
       expect(digestFunction.source).toContain(
-        'invitation."tokenDigest" = lookup_digest::CHAR(64)',
+        'account."invitationTokenDigest" = lookup_digest::CHAR(64)',
       );
-      await expect(
-        app.$queryRaw`
-          SELECT *
-          FROM autorfp_private.autorfp_invitation_tenant_by_digest(${'a'.repeat(65)})
-        `,
-      ).resolves.toEqual([]);
+      expect(digestFunction.source).toContain('account."isActive" = false');
 
-      for (const actor of [
-        { userId: 'member-a', tenantId: 'tenant-a' },
-        { userId: 'owner-b', tenantId: 'tenant-a' },
-      ]) {
-        await expect(
-          createInvitation(
-            { actor, email: 'denied@example.test', role: 'MEMBER' },
-            repository,
-            start,
-          ),
-        ).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
-      }
-      expect(await admin.invitation.count()).toBe(0);
-
-      for (const existingEmail of [
-        'member-a@example.test',
-        'owner-b@example.test',
-      ]) {
+      for (const actor of forbiddenActors) {
         await expect(
           createInvitation(
             {
-              actor: { userId: 'owner-a', tenantId: 'tenant-a' },
-              email: existingEmail,
+              actor,
+              email: `forbidden-${actor.userId}@example.test`,
               role: 'MEMBER',
             },
             repository,
             start,
           ),
-        ).rejects.toMatchObject({
-          code: 'EMAIL_UNAVAILABLE',
-          status: 409,
-          message: 'This email cannot be invited.',
-        });
+        ).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
       }
-      expect(await admin.invitation.count()).toBe(0);
 
-      const first = await createInvitation(
-        {
-          actor: { userId: 'owner-a', tenantId: 'tenant-a' },
-          email: 'replace@example.test',
-          role: 'MEMBER',
-        },
+      const invited = await createInvitation(
+        { actor: ownerA, email: ' MEMBER@EXAMPLE.TEST ', role: 'MEMBER' },
         repository,
         start,
       );
-      const replacement = await createInvitation(
-        {
-          actor: { userId: 'owner-a', tenantId: 'tenant-a' },
-          email: ' REPLACE@EXAMPLE.TEST ',
-          role: 'OWNER',
-        },
-        repository,
-        new Date(start.getTime() + 1_000),
-      );
-      expect(first.token).not.toBe(replacement.token);
-      expect(
-        await admin.invitation.findUnique({ where: { id: first.id } }),
-      ).toEqual(expect.objectContaining({ revokedAt: new Date(start.getTime() + 1_000) }));
-      const storedReplacement = await admin.invitation.findUniqueOrThrow({
-        where: { id: replacement.id },
+      const digest = digestOpaqueToken('member-invitation', invited.token);
+      const invitedRow = await admin.user.findUniqueOrThrow({
+        where: { id: invited.id },
       });
-      expect(storedReplacement).toEqual(
-        expect.objectContaining({
-          tenantId: 'tenant-a',
-          email: 'replace@example.test',
-          role: 'OWNER',
-          tokenDigest: digestOpaqueToken('member-invitation', replacement.token),
-          expiresAt: new Date('2026-09-04T10:00:01.000Z'),
-        }),
-      );
-      expect(JSON.stringify(storedReplacement)).not.toContain(replacement.token);
-      const indexPlan = await admin.$transaction(async (transaction) => {
-        await transaction.$executeRaw`SET LOCAL enable_seqscan = off`;
-        return transaction.$queryRaw<Array<{ 'QUERY PLAN': unknown }>>`
-          EXPLAIN (FORMAT JSON, COSTS OFF)
-          SELECT "tenantId"
-          FROM "Invitation"
-          WHERE "tokenDigest" = ${storedReplacement.tokenDigest}::CHAR(64)
-        `;
+      expect(invitedRow).toMatchObject({
+        tenantId: 'tenant-a',
+        email: 'member@example.test',
+        role: 'MEMBER',
+        accountState: 'INVITED',
+        isActive: false,
+        passwordHash: null,
+        invitationTokenDigest: digest,
+        invitationExpiresAt: expectedExpiry,
+        invitationAcceptedAt: null,
+        invitationRevokedAt: null,
+        invitedByUserId: 'owner-a',
       });
-      expect(JSON.stringify(indexPlan)).toContain('Invitation_tokenDigest_key');
-      await expect(app.invitation.findMany()).resolves.toEqual([]);
-
       await expect(
-        acceptInvitation(
-          {
-            token: replacement.token,
-            email: 'other@example.test',
-            name: 'Wrong Email',
-            password: 'password-1',
-          },
-          repository,
-          new Date(start.getTime() + 2_000),
-        ),
-      ).rejects.toMatchObject({ code: 'INVITATION_UNAVAILABLE', status: 410 });
+        app.$queryRaw`
+          SELECT *
+          FROM autorfp_private.autorfp_invitation_tenant_by_digest(${digest})
+        `,
+      ).resolves.toEqual([{ tenantId: 'tenant-a' }]);
+      await expect(app.user.findMany()).resolves.toEqual([]);
+
+      const impostorDigest = 'f'.repeat(64);
+      await admin.user.create({
+        data: {
+          id: 'active-impostor',
+          tenantId: 'tenant-a',
+          name: 'Active impostor',
+          email: 'active-impostor@example.test',
+          accountState: 'INVITED',
+          isActive: true,
+          invitationTokenDigest: impostorDigest,
+          invitationExpiresAt: expectedExpiry,
+          invitedByUserId: 'owner-a',
+        },
+      });
+      await expect(
+        app.$queryRaw`
+          SELECT *
+          FROM autorfp_private.autorfp_invitation_tenant_by_digest(
+            ${impostorDigest}
+          )
+        `,
+      ).resolves.toEqual([]);
 
       const accepted = await acceptInvitation(
         {
-          token: replacement.token,
-          email: ' REPLACE@EXAMPLE.TEST ',
+          token: invited.token,
+          email: 'member@example.test',
           name: '  Priya Shah  ',
           password: 'correct horse battery staple',
         },
         repository,
-        new Date(start.getTime() + 2_000),
-      );
-      const joined = await admin.user.findUniqueOrThrow({
-        where: { id: accepted.userId },
-      });
-      expect(joined).toEqual(
-        expect.objectContaining({
-          tenantId: 'tenant-a',
-          email: 'replace@example.test',
-          name: 'Priya Shah',
-          role: 'OWNER',
-          passwordHash: expect.stringMatching(/^\$argon2id\$/),
-        }),
-      );
-      expect(
-        await admin.invitation.findUnique({ where: { id: replacement.id } }),
-      ).toEqual(expect.objectContaining({ acceptedAt: expect.any(Date) }));
-      await expect(
-        acceptInvitation(
-          {
-            token: replacement.token,
-            email: 'replace@example.test',
-            name: 'Replay',
-            password: 'password-1',
-          },
-          repository,
-          new Date(start.getTime() + 3_000),
-        ),
-      ).rejects.toMatchObject({ code: 'INVITATION_UNAVAILABLE', status: 410 });
-
-      const [{ databaseNow }] = await admin.$queryRaw<Array<{ databaseNow: Date }>>`
-        SELECT statement_timestamp() AS "databaseNow"
-      `;
-      const expiryDuringHash = await createInvitation(
-        {
-          actor: { userId: 'owner-a', tenantId: 'tenant-a' },
-          email: 'hash-expiry@example.test',
-          role: 'MEMBER',
-        },
-        repository,
-        databaseNow,
-      );
-      const expiresBeforeLockedAccept: typeof repository = {
-        ...repository,
-        async consumeAcceptanceAttempt(input) {
-          const result = await repository.consumeAcceptanceAttempt(input);
-          await admin.$executeRaw`
-            UPDATE "Invitation"
-            SET "expiresAt" = statement_timestamp() - INTERVAL '1 millisecond'
-            WHERE "id" = ${expiryDuringHash.id}
-          `;
-          return result;
-        },
-      };
-      await expect(
-        acceptInvitation(
-          {
-            token: expiryDuringHash.token,
-            email: 'hash-expiry@example.test',
-            name: 'Expired During Hash',
-            password: 'password-1',
-          },
-          expiresBeforeLockedAccept,
-          new Date(databaseNow.getTime() - 24 * 60 * 60 * 1_000),
-        ),
-      ).rejects.toMatchObject({ code: 'INVITATION_UNAVAILABLE', status: 410 });
-      expect(
-        await admin.invitation.findUnique({ where: { id: expiryDuringHash.id } }),
-      ).toEqual(expect.objectContaining({ acceptedAt: null }));
-      expect(
-        await admin.user.count({ where: { email: 'hash-expiry@example.test' } }),
-      ).toBe(0);
-
-      const tenantARace = await createInvitation(
-        {
-          actor: { userId: 'owner-a', tenantId: 'tenant-a' },
-          email: 'cross-tenant-race@example.test',
-          role: 'MEMBER',
-        },
-        repository,
-        databaseNow,
-      );
-      const tenantBRace = await createInvitation(
-        {
-          actor: { userId: 'owner-b', tenantId: 'tenant-b' },
-          email: 'cross-tenant-race@example.test',
-          role: 'MEMBER',
-        },
-        repository,
-        databaseNow,
-      );
-      const crossTenantResults = await Promise.allSettled(
-        [tenantARace, tenantBRace].map((invitation, index) =>
-          acceptInvitation(
-            {
-              token: invitation.token,
-              email: 'cross-tenant-race@example.test',
-              name: `Cross Tenant ${index + 1}`,
-              password: 'password-1',
-            },
-            repository,
-            databaseNow,
-          ),
-        ),
-      );
-      expect(
-        crossTenantResults.filter((result) => result.status === 'fulfilled'),
-      ).toHaveLength(1);
-      expect(
-        crossTenantResults.map((result) =>
-          result.status === 'fulfilled'
-            ? { status: 'fulfilled' }
-            : {
-                status: 'rejected',
-                code: result.reason?.code,
-                httpStatus: result.reason?.status,
-                message: result.reason?.message,
-                meta: result.reason?.meta,
-              },
-        ),
-      ).toEqual(
-        expect.arrayContaining([
-          { status: 'fulfilled' },
-          expect.objectContaining({
-            status: 'rejected',
-            code: 'EMAIL_UNAVAILABLE',
-            httpStatus: 409,
-          }),
-        ]),
-      );
-      expect(
-        await admin.user.count({
-          where: { email: 'cross-tenant-race@example.test' },
-        }),
-      ).toBe(1);
-
-      const revoked = await createInvitation(
-        {
-          actor: { userId: 'owner-a', tenantId: 'tenant-a' },
-          email: 'revoked@example.test',
-          role: 'MEMBER',
-        },
-        repository,
-        start,
-      );
-      await expect(
-        revokeInvitation(
-          {
-            actor: { userId: 'member-a', tenantId: 'tenant-a' },
-            invitationId: revoked.id,
-          },
-          repository,
-          new Date(start.getTime() + 1_000),
-        ),
-      ).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
-      await revokeInvitation(
-        {
-          actor: { userId: 'owner-a', tenantId: 'tenant-a' },
-          invitationId: revoked.id,
-        },
-        repository,
         new Date(start.getTime() + 1_000),
       );
+      expect(accepted).toEqual({ userId: invited.id, tenantId: 'tenant-a' });
+      const acceptedRow = await admin.user.findUniqueOrThrow({
+        where: { id: invited.id },
+      });
+      expect(acceptedRow).toMatchObject({
+        id: invited.id,
+        name: 'Priya Shah',
+        accountState: 'ACTIVE',
+        isActive: true,
+        passwordHash: expect.stringMatching(/^\$argon2id\$/),
+        invitationTokenDigest: null,
+        invitationAcceptedAt: expect.any(Date),
+      });
       await expect(
         acceptInvitation(
           {
-            token: revoked.token,
-            email: 'revoked@example.test',
-            name: 'Revoked',
+            token: invited.token,
+            email: 'member@example.test',
+            name: 'Replay',
             password: 'password-1',
           },
           repository,
@@ -456,74 +267,192 @@ test('restricted runtime invitations are owner-controlled, one-time, tenant-safe
         ),
       ).rejects.toMatchObject({ code: 'INVITATION_UNAVAILABLE', status: 410 });
 
-      const expired = await createInvitation(
-        {
-          actor: { userId: 'owner-a', tenantId: 'tenant-a' },
-          email: 'expired@example.test',
-          role: 'MEMBER',
-        },
+      const concurrent = await createInvitation(
+        { actor: ownerA, email: 'concurrent@example.test', role: 'MEMBER' },
         repository,
         start,
       );
-      await admin.$executeRaw`
-        UPDATE "Invitation"
-        SET "expiresAt" = statement_timestamp() - INTERVAL '1 millisecond'
-        WHERE "id" = ${expired.id}
-      `;
-      await expect(
+      const concurrentAttempts = await Promise.allSettled([
         acceptInvitation(
           {
-            token: expired.token,
-            email: 'expired@example.test',
-            name: 'Expired',
+            token: concurrent.token,
+            email: 'concurrent@example.test',
+            name: 'Concurrent One',
             password: 'password-1',
           },
           repository,
-          new Date('2026-09-04T10:00:00.000Z'),
+          new Date(start.getTime() + 1_000),
         ),
-      ).rejects.toMatchObject({ code: 'INVITATION_UNAVAILABLE', status: 410 });
+        acceptInvitation(
+          {
+            token: concurrent.token,
+            email: 'concurrent@example.test',
+            name: 'Concurrent Two',
+            password: 'password-2',
+          },
+          repository,
+          new Date(start.getTime() + 1_000),
+        ),
+      ]);
+      expect(concurrentAttempts.map(({ status }) => status).sort()).toEqual([
+        'fulfilled',
+        'rejected',
+      ]);
+      const concurrentFailure = concurrentAttempts.find(
+        (attempt) => attempt.status === 'rejected',
+      );
+      expect(concurrentFailure).toMatchObject({
+        reason: { code: 'INVITATION_UNAVAILABLE', status: 410 },
+      });
+      expect(
+        await admin.user.findUniqueOrThrow({ where: { id: concurrent.id } }),
+      ).toMatchObject({
+        accountState: 'ACTIVE',
+        isActive: true,
+        invitationTokenDigest: null,
+        invitationAcceptedAt: expect.any(Date),
+      });
 
-      const raced = await createInvitation(
-        {
-          actor: { userId: 'owner-a', tenantId: 'tenant-a' },
-          email: 'race@example.test',
-          role: 'MEMBER',
-        },
+      const boundary = await createInvitation(
+        { actor: ownerA, email: 'boundary@example.test', role: 'MEMBER' },
         repository,
         start,
       );
-      const raceResults = await Promise.allSettled(
-        ['Race One', 'Race Two'].map((name) =>
-          acceptInvitation(
-            {
-              token: raced.token,
-              email: 'race@example.test',
-              name,
-              password: 'password-1',
-            },
+      const passwordHash = (
+        await createPasswordRecord('correct horse battery staple')
+      ).passwordHash;
+      await expect(
+        repository.accept({
+          tokenDigest: digestOpaqueToken('member-invitation', boundary.token),
+          tenantId: 'tenant-b',
+          email: 'boundary@example.test',
+          name: 'Wrong Tenant',
+          passwordHash,
+        }),
+      ).resolves.toBeNull();
+      expect(
+        await admin.user.findUniqueOrThrow({ where: { id: boundary.id } }),
+      ).toMatchObject({ accountState: 'INVITED', isActive: false });
+
+      const expiredAfterResolution = await createInvitation(
+        { actor: ownerA, email: 'expired-after-resolve@example.test' },
+        repository,
+        start,
+      );
+      const expiredDigest = digestOpaqueToken(
+        'member-invitation',
+        expiredAfterResolution.token,
+      );
+      await expect(
+        repository.resolve({ tokenDigest: expiredDigest }),
+      ).resolves.toEqual({ tenantId: 'tenant-a' });
+      await admin.user.update({
+        where: { id: expiredAfterResolution.id },
+        data: { invitationExpiresAt: new Date(start.getTime() - 1_000) },
+      });
+      await expect(
+        repository.accept({
+          tokenDigest: expiredDigest,
+          tenantId: 'tenant-a',
+          email: 'expired-after-resolve@example.test',
+          name: 'Too Late',
+          passwordHash,
+        }),
+      ).resolves.toBeNull();
+      expect(
+        await admin.user.findUniqueOrThrow({
+          where: { id: expiredAfterResolution.id },
+        }),
+      ).toMatchObject({ accountState: 'INVITED', isActive: false });
+
+      await expect(
+        createInvitation(
+          { actor: ownerA, email: 'owner-b@example.test', role: 'MEMBER' },
+          repository,
+          start,
+        ),
+      ).rejects.toMatchObject({
+        code: 'EMAIL_UNAVAILABLE',
+        status: 409,
+        message: 'This email cannot be invited.',
+      });
+      const replacement = await createInvitation(
+        { actor: ownerA, email: 'boundary@example.test', role: 'OWNER' },
+        repository,
+        new Date(start.getTime() + 1_000),
+      );
+      expect(replacement.id).toBe(boundary.id);
+      expect(replacement.token).not.toBe(boundary.token);
+      expect(
+        await admin.user.findUniqueOrThrow({ where: { id: boundary.id } }),
+      ).toMatchObject({
+        role: 'OWNER',
+        accountState: 'INVITED',
+        isActive: false,
+        invitationTokenDigest: digestOpaqueToken(
+          'member-invitation',
+          replacement.token,
+        ),
+      });
+      await expect(
+        createInvitation(
+          { actor: ownerB, email: 'boundary@example.test', role: 'MEMBER' },
+          repository,
+          start,
+        ),
+      ).rejects.toMatchObject({
+        code: 'EMAIL_UNAVAILABLE',
+        status: 409,
+        message: 'This email cannot be invited.',
+      });
+
+      const revoked = await createInvitation(
+        { actor: ownerA, email: 'revoked@example.test', role: 'OWNER' },
+        repository,
+        start,
+      );
+      for (const actor of forbiddenActors) {
+        await expect(
+          revokeInvitation(
+            { actor, invitationId: revoked.id },
             repository,
             new Date(start.getTime() + 1_000),
           ),
-        ),
-      );
-      expect(raceResults.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+        ).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
+      }
       expect(
-        raceResults.filter(
-          (result) =>
-            result.status === 'rejected' &&
-            result.reason?.code === 'INVITATION_UNAVAILABLE',
+        await admin.user.findUniqueOrThrow({ where: { id: revoked.id } }),
+      ).toMatchObject({
+        accountState: 'INVITED',
+        isActive: false,
+        invitationTokenDigest: digestOpaqueToken(
+          'member-invitation',
+          revoked.token,
         ),
-      ).toHaveLength(1);
-      expect(await admin.user.count({ where: { email: 'race@example.test' } })).toBe(1);
+      });
+      await revokeInvitation(
+        { actor: ownerA, invitationId: revoked.id },
+        repository,
+        new Date(start.getTime() + 1_000),
+      );
+      expect(
+        await admin.user.findUniqueOrThrow({ where: { id: revoked.id } }),
+      ).toMatchObject({
+        accountState: 'DEACTIVATED',
+        isActive: false,
+        invitationTokenDigest: null,
+        invitationAcceptedAt: null,
+        invitationRevokedAt: new Date(start.getTime() + 1_000),
+      });
 
       const rollback = await createInvitation(
-        {
-          actor: { userId: 'owner-a', tenantId: 'tenant-a' },
-          email: 'rollback@example.test',
-          role: 'MEMBER',
-        },
+        { actor: ownerA, email: 'rollback@example.test', role: 'MEMBER' },
         repository,
         start,
+      );
+      const rollbackDigest = digestOpaqueToken(
+        'member-invitation',
+        rollback.token,
       );
       await admin.$executeRawUnsafe(`
         CREATE FUNCTION public.fail_member_joined_audit() RETURNS trigger
@@ -539,7 +468,7 @@ test('restricted runtime invitations are owner-controlled, one-time, tenant-safe
       await admin.$executeRawUnsafe(`
         CREATE TRIGGER fail_member_joined_audit
         BEFORE INSERT ON public."AuditEvent"
-        FOR EACH ROW EXECUTE FUNCTION public.fail_member_joined_audit();
+        FOR EACH ROW EXECUTE FUNCTION public.fail_member_joined_audit()
       `);
       await expect(
         acceptInvitation(
@@ -553,86 +482,42 @@ test('restricted runtime invitations are owner-controlled, one-time, tenant-safe
           new Date(start.getTime() + 1_000),
         ),
       ).rejects.toThrow('audit unavailable');
-      expect(await admin.user.count({ where: { email: 'rollback@example.test' } })).toBe(0);
       expect(
-        await admin.invitation.findUnique({ where: { id: rollback.id } }),
-      ).toEqual(expect.objectContaining({ acceptedAt: null }));
-
-      const audit = await admin.auditEvent.findMany({
-        where: { tenantId: 'tenant-a' },
-        orderBy: { createdAt: 'asc' },
+        await admin.user.findUniqueOrThrow({ where: { id: rollback.id } }),
+      ).toMatchObject({
+        accountState: 'INVITED',
+        isActive: false,
+        invitationTokenDigest: rollbackDigest,
+        invitationAcceptedAt: null,
       });
-      expect(audit).toEqual(
+
+      expect(
+        await admin.auditEvent.findMany({
+          where: { tenantId: 'tenant-a' },
+          orderBy: { createdAt: 'asc' },
+        }),
+      ).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
-            action: 'member.invitation-revoked',
-            entityType: 'Invitation',
-            entityId: first.id,
-          }),
-          expect.objectContaining({
             action: 'member.invited',
-            entityType: 'Invitation',
-            metadata: { role: 'OWNER' },
+            entityType: 'User',
+            entityId: invited.id,
+            metadata: { role: 'MEMBER' },
           }),
           expect.objectContaining({
             action: 'member.joined',
             entityType: 'User',
-            actorUserId: accepted.userId,
-            metadata: { role: 'OWNER' },
+            entityId: invited.id,
           }),
           expect.objectContaining({
             action: 'member.invitation-revoked',
-            entityType: 'Invitation',
+            entityType: 'User',
             entityId: revoked.id,
           }),
         ]),
       );
     } finally {
       await app?.$disconnect();
-      await admin.$disconnect();
-    }
-  });
-});
-
-test('invitation migration accepts a capable Neon-shaped object owner', async () => {
-  await withPostgres(async ({ databaseUrl, migrateTo }) => {
-    await migrateTo('20260827000300_forced_rls');
-    const admin = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
-    try {
-      await admin.$executeRawUnsafe(
-        'CREATE ROLE neon_launch_owner NOSUPERUSER NOCREATEDB NOCREATEROLE BYPASSRLS NOLOGIN',
-      );
-      await admin.$executeRawUnsafe(
-        'ALTER SCHEMA autorfp_private OWNER TO neon_launch_owner',
-      );
-      await admin.$executeRawUnsafe(
-        'ALTER TABLE public."Invitation" OWNER TO neon_launch_owner',
-      );
-      await admin.$executeRawUnsafe(
-        'ALTER TABLE public."User" OWNER TO neon_launch_owner',
-      );
-      await admin.$executeRawUnsafe(
-        'ALTER TABLE public."Tenant" OWNER TO neon_launch_owner',
-      );
-      const migration = readFileSync(
-        path.resolve(
-          __dirname,
-          '../../prisma/migrations/20260827000400_member_invitations/migration.sql',
-        ),
-        'utf8',
-      );
-      const ownerCheck = migration.slice(
-        migration.indexOf('DO $migration_owner$'),
-        migration.indexOf('$migration_owner$;') + '$migration_owner$;'.length,
-      );
-
-      await expect(
-        admin.$transaction(async (transaction) => {
-          await transaction.$executeRawUnsafe('SET LOCAL ROLE neon_launch_owner');
-          await transaction.$executeRawUnsafe(ownerCheck);
-        }),
-      ).resolves.toBeUndefined();
-    } finally {
       await admin.$disconnect();
     }
   });

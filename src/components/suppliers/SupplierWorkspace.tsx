@@ -3,10 +3,12 @@
 import {
   Building2,
   Check,
+  Clipboard,
   Download,
   FileUp,
   Mail,
   MapPin,
+  MessageCircle,
   MoreHorizontal,
   Phone,
   Plus,
@@ -15,9 +17,19 @@ import {
 } from 'lucide-react';
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 
+import {
+  PROCUREMENT_CATEGORIES,
+  type ProcurementCategory,
+} from '@/lib/domain/procurement-categories';
+import {
+  emptySupplierCapabilities,
+  type SupplierCapabilitiesV1,
+  type SupplierCategoryTier,
+} from '@/lib/suppliers/supplier-capabilities';
+
 import styles from './supplier-workspace.module.css';
 
-export type SupplierSummary = {
+type SupplierSummary = {
   id: string;
   businessName: string;
   contactName: string | null;
@@ -30,15 +42,29 @@ export type SupplierSummary = {
   pin: string | null;
   gstin: string | null;
   notes: string | null;
+  relationshipType: 'CURRENT' | 'SELECTED_NEW' | 'APPLICANT';
+  verificationStatus: 'UNVERIFIED' | 'PENDING' | 'VERIFIED' | 'REJECTED';
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  capabilities?: SupplierCapabilitiesV1;
 };
 
 type SupplierDraft = Omit<
   SupplierSummary,
-  'id' | 'createdAt' | 'updatedAt'
->;
+  | 'id'
+  | 'createdAt'
+  | 'updatedAt'
+  | 'capabilities'
+  | 'relationshipType'
+  | 'verificationStatus'
+> & { capabilities: SupplierCapabilitiesV1 };
+
+type FreshApplicantLink = {
+  businessName: string;
+  url: string;
+  expiresAt: string;
+};
 
 type Problem = {
   detail?: string;
@@ -59,6 +85,7 @@ const emptyDraft: SupplierDraft = {
   gstin: '',
   notes: '',
   isActive: true,
+  capabilities: emptySupplierCapabilities(),
 };
 
 function draftFromSupplier(supplier: SupplierSummary): SupplierDraft {
@@ -75,10 +102,125 @@ function draftFromSupplier(supplier: SupplierSummary): SupplierDraft {
     gstin: supplier.gstin ?? '',
     notes: supplier.notes ?? '',
     isActive: supplier.isActive,
+    capabilities: supplier.capabilities ?? emptySupplierCapabilities(),
   };
 }
 
-function cleanDraft(draft: SupplierDraft) {
+const categoryOptions = Object.entries(PROCUREMENT_CATEGORIES) as Array<
+  [ProcurementCategory, string]
+>;
+
+const categoryTiers: ReadonlyArray<{
+  value: SupplierCategoryTier;
+  label: string;
+}> = [
+  { value: 'PREFERRED', label: 'Preferred' },
+  { value: 'CAPABLE', label: 'Can supply' },
+  { value: 'BACKUP', label: 'Backup' },
+];
+
+function categoryLabel(label: string) {
+  return label.replaceAll('-', ' ').replaceAll('&', 'and');
+}
+
+export function setSupplierCategoryTier(
+  capabilities: SupplierCapabilitiesV1,
+  category: ProcurementCategory,
+  tier: SupplierCategoryTier | null,
+): SupplierCapabilitiesV1 {
+  const selected = new Map(
+    capabilities.categories.map((entry) => [entry.category, entry.tier]),
+  );
+  if (tier === null) selected.delete(category);
+  else selected.set(category, tier);
+
+  const ranks: Record<SupplierCategoryTier, number> = {
+    CAPABLE: 0,
+    PREFERRED: 0,
+    BACKUP: 0,
+  };
+  const categories = categoryOptions.flatMap(([key]) => {
+    const selectedTier = selected.get(key);
+    if (!selectedTier) return [];
+    ranks[selectedTier] += 1;
+    return [{ category: key, tier: selectedTier, rank: ranks[selectedTier] }];
+  });
+
+  return { ...capabilities, categories };
+}
+
+export function SupplierCapabilityFields({
+  capabilities,
+  disabled,
+  error,
+  onChange,
+}: {
+  capabilities: SupplierCapabilitiesV1;
+  disabled: boolean;
+  error: string;
+  onChange: (capabilities: SupplierCapabilitiesV1) => void;
+}) {
+  const selected = new Map(
+    capabilities.categories.map((entry) => [entry.category, entry.tier]),
+  );
+
+  return (
+    <fieldset className={styles.capabilityPanel} disabled={disabled}>
+      <legend>What they supply</legend>
+      <p id="supplier-capability-help" className={styles.capabilityHelp}>
+        Select every category they supply. Use Preferred for your regular choice,
+        Can supply for another approved option, and Backup when your regular supplier cannot deliver.
+      </p>
+      <div className={styles.categoryGrid} aria-describedby="supplier-capability-help">
+        {categoryOptions.map(([category, rawLabel]) => {
+          const label = categoryLabel(rawLabel);
+          const tier = selected.get(category);
+          const inputId = `supplier-category-${category.toLowerCase()}`;
+          return (
+            <div
+              className={`${styles.categoryChoice} ${tier ? styles.categoryChoiceSelected : ''}`}
+              key={category}
+              role="group"
+              aria-label={label}
+            >
+              <label htmlFor={inputId}>
+                <input
+                  id={inputId}
+                  type="checkbox"
+                  checked={Boolean(tier)}
+                  onChange={(event) => onChange(setSupplierCategoryTier(
+                    capabilities,
+                    category,
+                    event.target.checked ? 'CAPABLE' : null,
+                  ))}
+                />
+                <span>{label}</span>
+              </label>
+              {tier && (
+                <select
+                  aria-label={`${label} supplier level`}
+                  value={tier}
+                  onChange={(event) => onChange(setSupplierCategoryTier(
+                    capabilities,
+                    category,
+                    event.target.value as SupplierCategoryTier,
+                  ))}
+                >
+                  {categoryTiers.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {error && <small className={styles.capabilityError}>{error}</small>}
+    </fieldset>
+  );
+}
+
+export function cleanSupplierDraft(draft: SupplierDraft) {
   return Object.fromEntries(
     Object.entries(draft).map(([key, value]) => [
       key,
@@ -110,7 +252,7 @@ export function SupplierWorkspace({
 }) {
   const [suppliers, setSuppliers] = useState(initialSuppliers ?? []);
   const [search, setSearch] = useState('');
-  const [activeFilter, setActiveFilter] = useState<'true' | 'false' | 'all'>('true');
+  const [activeFilter, setActiveFilter] = useState<'true' | 'false' | 'all'>('all');
   const [loading, setLoading] = useState(initialSuppliers === undefined);
   const [error, setError] = useState(initialError ?? '');
   const [editorOpen, setEditorOpen] = useState(false);
@@ -118,16 +260,21 @@ export function SupplierWorkspace({
   const [draft, setDraft] = useState<SupplierDraft>(emptyDraft);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
   const [editorError, setEditorError] = useState('');
+  const [editorLoading, setEditorLoading] = useState(false);
+  const [editorReady, setEditorReady] = useState(true);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState('');
   const [importing, setImporting] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | null>(initialNextCursor);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [reviewing, setReviewing] = useState('');
+  const [freshApplicantLink, setFreshApplicantLink] = useState<FreshApplicantLink | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const initialLoadStarted = useRef(false);
   const editorDialog = useRef<HTMLElement>(null);
   const savingRef = useRef(false);
+  const editorRequest = useRef(0);
 
   const loadSuppliers = useCallback(async (query = search, filter = activeFilter, cursor?: string) => {
     if (cursor) setLoadingMore(true);
@@ -160,7 +307,7 @@ export function SupplierWorkspace({
   useEffect(() => {
     if (initialSuppliers !== undefined || initialLoadStarted.current) return;
     initialLoadStarted.current = true;
-    void loadSuppliers('', 'true');
+    void loadSuppliers('', 'all');
   }, [initialSuppliers, loadSuppliers]);
 
   useEffect(() => {
@@ -198,8 +345,11 @@ export function SupplierWorkspace({
   }, [editorOpen]);
 
   function openCreate() {
+    editorRequest.current += 1;
     savingRef.current = false;
     setSaving(false);
+    setEditorLoading(false);
+    setEditorReady(true);
     setEditing(null);
     setDraft(emptyDraft);
     setFieldErrors({});
@@ -208,18 +358,46 @@ export function SupplierWorkspace({
   }
 
   function openEdit(supplier: SupplierSummary) {
+    const requestId = editorRequest.current + 1;
+    editorRequest.current = requestId;
     savingRef.current = false;
     setSaving(false);
     setEditing(supplier);
     setDraft(draftFromSupplier(supplier));
     setFieldErrors({});
     setEditorError('');
+    setEditorLoading(true);
+    setEditorReady(false);
     setEditorOpen(true);
+    void (async () => {
+      try {
+        const response = await fetch(`/api/suppliers/${encodeURIComponent(supplier.id)}`, {
+          cache: 'no-store',
+        });
+        if (!response.ok) {
+          const problem = await readProblem(response, 'We could not load this supplier.');
+          throw new Error(problem.message);
+        }
+        const result = (await response.json()) as {
+          supplier?: SupplierSummary & { capabilities: SupplierCapabilitiesV1 };
+        };
+        if (!result.supplier) throw new Error('We could not load this supplier.');
+        if (editorRequest.current !== requestId) return;
+        setEditing(result.supplier);
+        setDraft(draftFromSupplier(result.supplier));
+        setEditorReady(true);
+      } catch (caught) {
+        if (editorRequest.current !== requestId) return;
+        setEditorError(caught instanceof Error ? caught.message : 'We could not load this supplier.');
+      } finally {
+        if (editorRequest.current === requestId) setEditorLoading(false);
+      }
+    })();
   }
 
   async function saveSupplier(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (saving || !draft.businessName.trim()) return;
+    if (saving || !editorReady || !draft.businessName.trim()) return;
     savingRef.current = true;
     setSaving(true);
     setEditorError('');
@@ -230,7 +408,7 @@ export function SupplierWorkspace({
         {
           method: editing ? 'PUT' : 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(cleanDraft(draft)),
+          body: JSON.stringify(cleanSupplierDraft(draft)),
         },
       );
       if (!response.ok) {
@@ -272,6 +450,71 @@ export function SupplierWorkspace({
     }
     setSuppliers((current) => current.filter(({ id }) => id !== supplier.id));
     setNotice('Supplier deactivated.');
+  }
+
+  async function reviewApplication(
+    supplier: SupplierSummary,
+    decision: 'APPROVE' | 'REJECT',
+  ) {
+    const action = decision === 'APPROVE' ? 'approve' : 'reject';
+    if (!window.confirm(`${decision === 'APPROVE' ? 'Approve' : 'Reject'} ${supplier.businessName}?`)) {
+      return;
+    }
+    const workId = `${supplier.id}:${decision}`;
+    setReviewing(workId);
+    setError('');
+    try {
+      const response = await fetch(`/api/suppliers/${encodeURIComponent(supplier.id)}/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ decision }),
+      });
+      if (!response.ok) {
+        const problem = await readProblem(response, `We could not ${action} this supplier.`);
+        throw new Error(problem.message);
+      }
+      const result = (await response.json()) as {
+        supplier: SupplierSummary;
+        link?: { url: string; expiresAt: string };
+      };
+      setSuppliers((current) => {
+        const withoutReviewed = current.filter(({ id }) => id !== result.supplier.id);
+        if (
+          (activeFilter === 'true' && !result.supplier.isActive) ||
+          (activeFilter === 'false' && result.supplier.isActive)
+        ) return withoutReviewed;
+        return [result.supplier, ...withoutReviewed];
+      });
+      if (decision === 'APPROVE' && result.link) {
+        setFreshApplicantLink({
+          businessName: result.supplier.businessName,
+          ...result.link,
+        });
+        setNotice(`${result.supplier.businessName} approved. Share the private quote link now.`);
+      } else {
+        setNotice(`${result.supplier.businessName} rejected.`);
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : `We could not ${action} this supplier.`);
+    } finally {
+      setReviewing('');
+    }
+  }
+
+  async function copyApplicantLink() {
+    if (!freshApplicantLink) return;
+    try {
+      await navigator.clipboard.writeText(freshApplicantLink.url);
+      setNotice(`${freshApplicantLink.businessName} quote link copied.`);
+    } catch {
+      setError('Copy was blocked by the browser. Select and copy the link manually.');
+    }
+  }
+
+  function shareApplicantLink() {
+    if (!freshApplicantLink) return;
+    const text = `Please send your prices to our restaurant: ${freshApplicantLink.url}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
   }
 
   async function importCsv(file: File | undefined) {
@@ -385,9 +628,9 @@ export function SupplierWorkspace({
             void loadSuppliers(search, filter);
           }}
         >
+          <option value="all">All suppliers and applications</option>
           <option value="true">Active suppliers</option>
-          <option value="false">Inactive suppliers</option>
-          <option value="all">All suppliers</option>
+          <option value="false">Inactive suppliers and applications</option>
         </select>
         <input
           ref={fileInput}
@@ -414,6 +657,26 @@ export function SupplierWorkspace({
           <Check aria-hidden="true" /> {notice}
           <button type="button" aria-label="Dismiss message" onClick={() => setNotice('')}><X /></button>
         </div>
+      )}
+      {freshApplicantLink && (
+        <section className={styles.freshLink} aria-label="Approved supplier quote link">
+          <div>
+            <strong>{freshApplicantLink.businessName} can now quote</strong>
+            <p>This private link is shown only now. Copy it and send it to the supplier.</p>
+            <code>{freshApplicantLink.url}</code>
+          </div>
+          <span>
+            <button type="button" onClick={() => void copyApplicantLink()}>
+              <Clipboard aria-hidden="true" /> Copy link
+            </button>
+            <button type="button" onClick={shareApplicantLink}>
+              <MessageCircle aria-hidden="true" /> WhatsApp
+            </button>
+            <button type="button" aria-label="Close approved supplier link" onClick={() => setFreshApplicantLink(null)}>
+              <X aria-hidden="true" /> Close
+            </button>
+          </span>
+        </section>
       )}
       {error && (
         <div className={styles.error} role="alert">
@@ -464,14 +727,45 @@ export function SupplierWorkspace({
                 {supplier.gstin && <span>GSTIN {supplier.gstin}</span>}
               </div>
               <div>
-                <span className={supplier.isActive ? styles.activeBadge : styles.inactiveBadge}>
-                  {supplier.isActive ? 'Active' : 'Inactive'}
+                <span className={
+                  supplier.verificationStatus === 'PENDING'
+                    ? styles.pendingBadge
+                    : supplier.verificationStatus === 'REJECTED'
+                      ? styles.rejectedBadge
+                      : supplier.isActive
+                        ? styles.activeBadge
+                        : styles.inactiveBadge
+                }>
+                  {supplier.verificationStatus === 'PENDING'
+                    ? 'Needs review'
+                    : supplier.verificationStatus === 'REJECTED'
+                      ? 'Rejected'
+                      : supplier.isActive ? 'Active' : 'Inactive'}
                 </span>
               </div>
               <div className={styles.actions}>
-                <button type="button" aria-label={`Edit ${supplier.businessName}`} onClick={() => openEdit(supplier)}>
-                  <MoreHorizontal aria-hidden="true" />
-                </button>
+                {supplier.relationshipType === 'APPLICANT' && supplier.verificationStatus === 'PENDING' ? (
+                  <span className={styles.reviewActions}>
+                    <button
+                      type="button"
+                      disabled={Boolean(reviewing)}
+                      onClick={() => void reviewApplication(supplier, 'APPROVE')}
+                    >
+                      {reviewing === `${supplier.id}:APPROVE` ? 'Approving…' : 'Approve'}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={Boolean(reviewing)}
+                      onClick={() => void reviewApplication(supplier, 'REJECT')}
+                    >
+                      {reviewing === `${supplier.id}:REJECT` ? 'Rejecting…' : 'Reject'}
+                    </button>
+                  </span>
+                ) : (
+                  <button type="button" aria-label={`Edit ${supplier.businessName}`} onClick={() => openEdit(supplier)}>
+                    <MoreHorizontal aria-hidden="true" />
+                  </button>
+                )}
               </div>
             </article>
           ))}
@@ -503,37 +797,52 @@ export function SupplierWorkspace({
             </header>
             <form onSubmit={saveSupplier}>
               {editorError && <div className={styles.dialogError} role="alert">{editorError}</div>}
-              <div className={styles.formGrid}>
-                {input('businessName', 'Business name', { required: true, placeholder: 'GreenLeaf Fresh Foods' })}
-                {input('contactName', 'Contact person', { placeholder: 'Meera Shah' })}
-                {input('phone', 'Phone', { type: 'tel', placeholder: '+91 98765 43210' })}
-                {input('whatsappNumber', 'WhatsApp number', { type: 'tel', placeholder: '+91 98765 43210' })}
-                {input('email', 'Email', { type: 'email', placeholder: 'orders@example.com' })}
-                {input('gstin', 'GSTIN', { placeholder: '27ABCDE1234F1Z5' })}
-                <div className={styles.fullWidth}>{input('addressLine', 'Address', { placeholder: 'APMC Market, Vashi' })}</div>
-                {input('city', 'City', { placeholder: 'Navi Mumbai' })}
-                {input('state', 'State', { placeholder: 'Maharashtra' })}
-                {input('pin', 'PIN code', { placeholder: '400703' })}
-                <label className={styles.field}>
-                  <span>Status</span>
-                  <select
-                    value={draft.isActive ? 'active' : 'inactive'}
-                    onChange={(event) => setDraft((current) => ({ ...current, isActive: event.target.value === 'active' }))}
-                  >
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                  </select>
-                </label>
-                <label className={`${styles.field} ${styles.fullWidth}`}>
-                  <span>Notes</span>
-                  <textarea
-                    rows={3}
-                    placeholder="Delivery timing, payment terms or useful reminders"
-                    value={draft.notes ?? ''}
-                    onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))}
+              {editorLoading && (
+                <div className={styles.loadingDetails} role="status">Loading supplier details…</div>
+              )}
+              <fieldset
+                className={styles.editorFields}
+                disabled={saving || editorLoading || !editorReady}
+                aria-busy={editorLoading}
+              >
+                <div className={styles.formGrid}>
+                  {input('businessName', 'Business name', { required: true, placeholder: 'GreenLeaf Fresh Foods' })}
+                  {input('contactName', 'Contact person', { placeholder: 'Meera Shah' })}
+                  {input('phone', 'Phone', { type: 'tel', placeholder: '+91 98765 43210' })}
+                  {input('whatsappNumber', 'WhatsApp number', { type: 'tel', placeholder: '+91 98765 43210' })}
+                  {input('email', 'Email', { type: 'email', placeholder: 'orders@example.com' })}
+                  {input('gstin', 'GSTIN', { placeholder: '27ABCDE1234F1Z5' })}
+                  <div className={styles.fullWidth}>{input('addressLine', 'Address', { placeholder: 'APMC Market, Vashi' })}</div>
+                  {input('city', 'City', { placeholder: 'Navi Mumbai' })}
+                  {input('state', 'State', { placeholder: 'Maharashtra' })}
+                  {input('pin', 'PIN code', { placeholder: '400703' })}
+                  <label className={styles.field}>
+                    <span>Status</span>
+                    <select
+                      value={draft.isActive ? 'active' : 'inactive'}
+                      onChange={(event) => setDraft((current) => ({ ...current, isActive: event.target.value === 'active' }))}
+                    >
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
+                    </select>
+                  </label>
+                  <SupplierCapabilityFields
+                    capabilities={draft.capabilities}
+                    disabled={saving || editorLoading || !editorReady}
+                    error={fieldErrors.capabilities?.[0] ?? ''}
+                    onChange={(capabilities) => setDraft((current) => ({ ...current, capabilities }))}
                   />
-                </label>
-              </div>
+                  <label className={`${styles.field} ${styles.fullWidth}`}>
+                    <span>Notes</span>
+                    <textarea
+                      rows={3}
+                      placeholder="Delivery timing, payment terms or useful reminders"
+                      value={draft.notes ?? ''}
+                      onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))}
+                    />
+                  </label>
+                </div>
+              </fieldset>
               <footer>
                 {editing?.isActive && (
                   <button className={styles.dangerButton} type="button" onClick={() => {
@@ -544,7 +853,7 @@ export function SupplierWorkspace({
                   </button>
                 )}
                 <button className={styles.secondaryButton} type="button" disabled={saving} onClick={() => setEditorOpen(false)}>Cancel</button>
-                <button className={styles.primaryButton} type="submit" disabled={saving || !draft.businessName.trim()}>
+                <button className={styles.primaryButton} type="submit" disabled={saving || !editorReady || !draft.businessName.trim()}>
                   {saving ? 'Saving…' : editing ? 'Save changes' : 'Add supplier'}
                 </button>
               </footer>

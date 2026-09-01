@@ -93,6 +93,7 @@ async function loadActor(
     where: {
       id: actor.userId,
       tenantId: actor.tenantId,
+      accountState: 'ACTIVE',
       isActive: true,
       tenant: { isActive: true },
     },
@@ -173,7 +174,11 @@ export function createWorkspaceSettingsOperations(
         const current = await loadActor(transaction, actor);
         const [members, invitations] = await Promise.all([
           transaction.user.findMany({
-            where: { tenantId: actor.tenantId, isActive: true },
+            where: {
+              tenantId: actor.tenantId,
+              accountState: 'ACTIVE',
+              isActive: true,
+            },
             orderBy: [{ role: 'asc' }, { name: 'asc' }, { id: 'asc' }],
             select: {
               id: true,
@@ -184,20 +189,22 @@ export function createWorkspaceSettingsOperations(
               lastLoginAt: true,
             },
           }),
-          transaction.invitation.findMany({
+          transaction.user.findMany({
             where: {
               tenantId: actor.tenantId,
-              acceptedAt: null,
-              revokedAt: null,
-              expiresAt: { gt: dependencies.now() },
+              accountState: 'INVITED',
+              isActive: false,
+              invitationAcceptedAt: null,
+              invitationRevokedAt: null,
+              invitationExpiresAt: { gt: dependencies.now() },
             },
-            orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+            orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
             select: {
               id: true,
               email: true,
               role: true,
-              expiresAt: true,
-              createdAt: true,
+              invitationExpiresAt: true,
+              updatedAt: true,
               invitedBy: { select: { name: true } },
             },
           }),
@@ -237,9 +244,9 @@ export function createWorkspaceSettingsOperations(
             id: invitation.id,
             email: invitation.email,
             role: invitation.role,
-            expiresAt: invitation.expiresAt.toISOString(),
-            createdAt: invitation.createdAt.toISOString(),
-            invitedByName: invitation.invitedBy.name,
+            expiresAt: invitation.invitationExpiresAt!.toISOString(),
+            createdAt: invitation.updatedAt.toISOString(),
+            invitedByName: invitation.invitedBy!.name,
           })),
         };
       });
@@ -319,7 +326,7 @@ export function createWorkspaceSettingsOperations(
         if (!target.isActive) throw new AuthorizationError();
         await transaction.user.update({
           where: { id: targetUserId },
-          data: { isActive: false },
+          data: { accountState: 'DEACTIVATED', isActive: false },
         });
         await dependencies.writeAudit(transaction, {
           tenantId: actor.tenantId,

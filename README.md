@@ -1,178 +1,124 @@
 # QuotePlate
 
-**Every supplier quote. One accountable decision.**
+![QuotePlate, restaurant procurement made accountable](public/brand/social-card.png)
 
-QuotePlate is an India-first restaurant procurement workspace. A restaurant can prepare an ingredient request, collect quotes from its own suppliers without asking them to create accounts, compare the real landed cost, record a whole or split award, and keep the complete commercial history for the next buying cycle.
+QuotePlate is a procurement workspace for restaurants in India. A restaurant can turn a menu into an ingredient request, collect private supplier quotes, compare the real landed cost, record its decision, and repeat the next buying cycle from a factual history.
 
-Built by [Utsav Doshi](https://github.com/Utsavd7) · [Open QuotePlate](https://quoteplate.vercel.app) · [View the repository](https://github.com/Utsavd7/QuotePlate)
+Built by [Utsav Doshi](https://github.com/Utsavd7).
 
-![QuotePlate wordmark](public/brand/wordmark-horizontal.svg)
+## Product
 
-## Product status
+QuotePlate covers the complete first release workflow:
 
-The complete launch workflow is implemented. Unit, integration, responsive browser, accessibility, migration, tenant-isolation, production-build, and bounded 20-restaurant load checks pass. The merged product is live at [quoteplate.vercel.app](https://quoteplate.vercel.app); the public homepage, product tour, liveness check, and restricted production database connection have been reverified. Readiness allows a bounded five seconds for a cardless Neon Free database to wake from an idle state. The controlled release remains fail-closed unless Google sign-in, readiness, and the live canary pass. No launch step may add a card, enable billing, or accept a paid upgrade.
+- create a menu by typing dish names, uploading up to five photos, taking phone photos, or importing a menu page you have permission to use;
+- scan menu photos inside the browser, review the detected text, remove unwanted text, and approve the final dishes and ingredients;
+- organise ingredients using categories familiar to Indian restaurants, including vegetables, fruit, dairy, grains, pulses, spices, beverages, bakery, sweets, frozen food, ready food, meat, seafood, and packaging;
+- keep current suppliers, add a preferred supplier for an item, choose more than one sourcing route, or accept applications from verified new suppliers;
+- send each supplier a private quote link with no supplier account required;
+- collect quantities, rates, GST, freight, availability, delivery, substitutions, and payment terms;
+- compare complete and incomplete quotes without an automatic purchasing decision;
+- award the full request to one supplier or split items across suppliers;
+- download request, comparison, award, accounting, QR, supplier, and purchase order records;
+- repeat a previous request and use prior buying facts as guidance;
+- manage restaurant details, roles, invitations, sign in, sign out, and the optional six step setup guide;
+- use the public site and product workspace on phones, tablets, and laptops.
 
-The controlled launch is sized for **one to four restaurants** on cardless free plans. The code and test profile already cover **20 isolated restaurant workspaces** so the application can grow without a rewrite.
+The product does not introduce suppliers and then disappear from the workflow. Its value is the reusable request, quote, decision, purchase order, and price history for every buying cycle.
 
-## Product experience
+## ₹0 launch boundary
 
-The public site keeps the approved professional header and leads with a rendered sample quote comparison: supplier totals, coverage, terms, and the requirement for a human decision are visible before sign-in. Every example is labelled as sample or illustrative data, including a clear notice that displayed prices are not live market data.
+The controlled pilot accepts up to twenty approved restaurant workspaces. The application load profile checks twenty isolated workspaces locally; live free tier usage still needs monitoring as real restaurants join.
 
-The product tour follows the same request, supplier-response, comparison, and human-award flow as the signed-in workspace. The shared QuotePlate visual system continues through the tour, authentication, app shell, and overview. Browser checks cover the public journey at phone, tablet, and laptop widths, including contained comparison scrolling and no page-level horizontal overflow.
+| Need | Launch choice | Cost boundary |
+| --- | --- | --- |
+| Web application | Netlify Free | Commercial projects are allowed. No card is required and the monthly credit limit is hard. |
+| PostgreSQL | Neon Free | No card is required. Compute sleeps when idle and the free plan includes a limited restore window. |
+| Menu OCR | Tesseract.js in the browser | Open source. Photos are processed on the user device and no OCR API is called. |
+| Sign in | NextAuth with Google OAuth or restaurant credentials | Open source authentication code. Google OAuth itself has no per login API charge. |
+| Email and messages | Copyable invitation and supplier links | No email, SMS, or WhatsApp provider is required. |
+| Monitoring | Health endpoints and a small canary script | No paid monitoring service is required. |
 
-The controlled pilot is limited to approved restaurant workspaces. The onboarding terms state the boundary plainly: no payment card and no billing.
+There is no Stripe integration, payment workflow, card field, paid AI service, vector database, supplier marketplace fee, automatic recharge, or usage priced API in the application. The repository never stores card information.
 
-## What a restaurant can do
+Unlimited OCR was reviewed and intentionally not added. Its 3 billion parameter, 6.78 GB model needs GPU infrastructure, while browser OCR keeps the pilot simple and free.
 
-- Activate a production owner workspace with an approved Google account; invited or existing users can use local credentials where configured.
-- Invite team members with expiring, single-use links and sign out from every responsive layout.
-- Paste a menu, review dishes and ingredient quantities, correct them, approve the reviewed menu, and track its version number.
-- Add, search, edit, deactivate, import, or export up to 500 suppliers per operation in the restaurant's own directory.
-- Build a draft request with delivery details, dates, commercial terms, up to 250 items, and up to 20 suppliers.
-- Open the request and share a different secure link or QR code with each supplier.
-- Let a supplier quote without an account, including partial availability, substitutions, GST, tax-inclusive rates, freight, delivery, validity, terms, and a deliberate no-quote choice.
-- Preserve every submitted quote revision instead of silently replacing earlier prices.
-- Compare normalized unit rates, coverage, GST, freight, delivery fit, and final landed totals in one view.
-- Award the complete request to one supplier or split it item by item, with a human-entered reason and an immutable decision record.
-- Download request, comparison, award, and accounting CSVs plus one PDF purchase order per winning supplier.
-- Review history and practical spend insights, then repeat an earlier request as a fresh editable draft.
+## Safety and privacy
 
-## Why suppliers do not need another app
-
-QuotePlate works with the suppliers a restaurant already knows. Each supplier receives a private, expiring request link and can submit from a phone without registering, installing an app, or joining a marketplace. A restaurant can create, rotate, or revoke that link and see when it was first viewed.
-
-## Why a restaurant keeps using it after meeting a supplier
-
-Direct supplier relationships are expected, not blocked. The lasting value is the next purchase: comparing fresh prices, checking GST and freight, tracking revisions, splitting an award, generating purchase orders, and knowing exactly why a decision was made. Going back to calls and spreadsheets removes that shared record and makes price changes harder to spot.
-
-## Product principles
-
-- **Factual, not automated theatre.** QuotePlate records supplier-entered facts and keeps the final award under human control.
-- **No marketplace lock-in.** The restaurant owns its supplier relationships and procurement records.
-- **No paid API dependency.** The launch product uses no paid AI, email, SMS, WhatsApp, pricing, payments, or supplier-discovery API.
-- **No surprise billing.** Provider-side caps, card removal, and a manual release check protect the free-plan boundary. Project workflows never add a payment method, enable overage, auto-recharge, or accept an upgrade.
-- **Useful on an ordinary phone.** The public site, authenticated workspace, forms, tables, dialogs, and supplier quote flow are tested across phone, tablet, and desktop layouts.
-
-## Technology
-
-| Layer | Choice |
-| --- | --- |
-| Web application | Next.js 16, React 19, TypeScript, Tailwind CSS 4 |
-| Database | PostgreSQL with Prisma 5 |
-| Authentication | NextAuth, Google OAuth, Argon2 local credentials |
-| Documents | CSV, QR code PNG, and PDF generated inside the application |
-| Production host | Vercel Hobby (cardless) — [production address](https://quoteplate.vercel.app) |
-| Production database | Neon Postgres Free |
-| Automation | GitHub Actions with manual production approval |
-| Production backup | Encrypted S3-compatible storage, only when a cardless free provider is configured |
-| Self-hosting option | Multi-stage, non-root Docker image |
-
-All production dependencies are open source. There is no LLM, vector database, background-job platform, paid monitoring service, transactional-email vendor, or usage-priced API in the runtime.
-
-## Security model
-
-- Restaurant data isolation and least-privilege runtime access are enforced and covered by database-backed tests.
-- Supplier and invitation secrets are random opaque tokens; only their digests are stored.
-- Supplier links expire and can be revoked or rotated. Quote revisions and final awards are immutable records.
-- Browser mutations require a same-origin check, and public/auth endpoints use bounded bodies and persistent rate limits.
-- Authentication responses avoid account-discovery details, and production startup fails closed on unsafe configuration.
-- Security headers, private database functions, owner/member authorization, bounded exports, and cursor pagination are verified in automated tests.
+- Restaurant data is isolated by workspace at the database layer.
+- Supplier links are random, stored only as digests, limited to one request, replaceable, revocable, and time limited.
+- Award records preserve the checked prices, quantities, supplier facts, and delivery terms used for the decision.
+- Owner only actions protect restaurant settings, team access, supplier verification, and awards.
+- Production startup fails closed when required configuration is missing.
+- Rate limits cover account creation, invitations, supplier access, supplier submissions, and applications.
+- Security headers block framing, content type guessing, browser referrer leakage, and unnecessary device permissions.
+- Manual encrypted backup and restore scripts are included. They write only to storage chosen by the operator and never create a paid cloud service.
 
 ## Run locally
 
-### Requirements
+Requirements: Node.js 24 and PostgreSQL 16.
 
-- Node.js `24.x`
-- npm
-- PostgreSQL 15 or newer for manual development
-- Docker or a local PostgreSQL installation for the integration and browser suites
-
-Install the exact dependency tree:
-
-```sh
-git clone https://github.com/Utsavd7/QuotePlate.git
-cd QuotePlate
-npm ci --omit=peer
+```bash
+npm install
 cp .env.sample .env
-```
-
-Set the local values documented in `.env.sample`, create an empty development database, and add a migration-owner `DIRECT_URL` to the untracked `.env` file. `DATABASE_URL` is the restricted runtime connection; `DIRECT_URL` is used only by migration commands. Never commit either value. Then apply the committed migrations. Do not use `prisma db push`.
-
-```sh
 npx prisma migrate deploy
 npm run dev
 ```
 
-Google OAuth is optional locally. Add its values from `.env.sample` only when you want to exercise the real provider. Never commit a populated `.env` file.
+Fill the local environment file with your own values. Never commit it. QuotePlate reads these production variables:
 
-For the fastest clean review, `npm run test:integration` and `npm run test:e2e` create and remove their own disposable local PostgreSQL environments; they do not use a remote database or paid service.
+- `DATABASE_URL`
+- `DIRECT_URL` for migrations only
+- `NEXTAUTH_URL`
+- `NEXTAUTH_SECRET`
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `QUOTEPLATE_PILOT_EMAILS`
+- `QUOTEPLATE_RUNTIME_STARTUP_CHECK`
+
+`QUOTEPLATE_PILOT_EMAILS` accepts up to twenty approved owner emails. Production owner creation remains closed to every email outside that list.
+
+## Deploy on the free plans
+
+1. Create or keep the Neon project on the Free plan with no payment method.
+2. Apply the committed database migrations with the database owner credential, then set a strong password for the migration created `autorfp_app` runtime role. Do not put the owner credential in the web application.
+3. Import this GitHub repository into a Netlify Free account with no payment method. Netlify detects the Next.js application and builds it with `npm run build`.
+4. Add the production variables in Netlify. Use only the restricted application database connection at runtime.
+5. Add the final HTTPS address and `/api/auth/callback/google` callback in the Google OAuth client.
+6. Confirm `/api/health/live` and `/api/health/ready`, then run `CANARY_BASE_URL=https://your-site.example scripts/canary.sh` before inviting a restaurant.
+
+If a provider asks for a card, paid upgrade, overage setting, or automatic recharge, stop and leave the deployment on its existing free limit.
+
+## Recovery
+
+Neon Free supplies its limited restore window. For an additional operator controlled copy, use the included scripts with a dedicated read only database credential:
+
+```bash
+BACKUP_DATABASE_URL="..." AGE_RECIPIENT="..." \
+  BACKUP_OUTPUT_FILE="/absolute/path/quoteplate.dump.gz.age" \
+  scripts/backup-postgres.sh
+
+RESTORE_DATABASE_URL="..." AGE_IDENTITY_FILE="/absolute/path/identity.txt" \
+  scripts/restore-verify.sh "/absolute/path/quoteplate.dump.gz.age"
+```
+
+Keep backup files and encryption keys in separate operator controlled locations. These scripts do not upload, schedule, subscribe to, or purchase any storage service.
 
 ## Verification
 
-```sh
+```bash
 npm test
 npm run test:integration
-npm run test:e2e
-npm run lint
 npm run typecheck
+npm run lint
 npm run build
+npm run test:e2e
 ```
 
-The [GitHub Actions release gate](https://github.com/Utsavd7/QuotePlate/actions/workflows/ci.yml) repeats the full verification set for every pull request and every commit merged to `main`. The database bootstrap accepts only an exact `main` commit whose push workflow passed.
+The checks cover access control, tenant isolation, authentication, menu intake, OCR boundaries, supplier lifecycle, quote integrity, landed cost calculations, full and split awards, exports, responsive layouts, accessibility, migrations, and a bounded twenty restaurant load profile. Live Google redirect verification is kept behind the explicit `npm run test:e2e:google-live` command so local tests never pretend to validate Google.
 
-The pull-request workflow repeats lint, type checks, unit tests, real PostgreSQL integration, the production build, responsive browser journeys, and the production dependency audit on a clean Ubuntu runner.
+## Project references
 
-| Gate | Result |
-| --- | --- |
-| Unit and API tests | 82 suites, 531 tests passed |
-| Real PostgreSQL integration | 21 suites, 37 tests passed |
-| Responsive end-to-end journeys | 51 passed across desktop, phone and tablet; 3 intentional live-provider/bounded-profile skips |
-| Empty-database migrations and forced-RLS isolation | Passed |
-| Bounded 20-restaurant profile | Passed with zero errors or tenant mismatches |
-| Production dependency audit | 0 vulnerabilities |
-| Lint, TypeScript, Next.js build | Passed |
-| Vercel-compatible Next.js production build | Passed |
+- [Brand assets and usage](docs/brand/README.md)
+- [India restaurant procurement review](docs/research/india-restaurant-procurement-competitive-review.md)
 
-See [docs/reports/launch-verification.md](docs/reports/launch-verification.md) for the evidence and remaining provider gates.
-
-## Free-only production release
-
-The database bootstrap is intentionally separate from hosting. It accepts only an exact commit already on `main`, requires successful CI for that commit, and applies migrations with a step-scoped owner credential. Vercel deploys the same reviewed `main` commit; deployment protection stays enabled until the database, Google OAuth, runtime checks, and canary are ready.
-
-Before a first release:
-
-1. Confirm Vercel Hobby, Neon Free, GitHub, Google, and any optional backup provider are cardless with no paid overage or auto-recharge.
-2. Use `NEXTAUTH_URL=https://quoteplate.vercel.app` and configure Google OAuth with the exact callback `https://quoteplate.vercel.app/api/auth/callback/google`; every production owner email must be Google-verified and exactly listed in `QUOTEPLATE_PILOT_EMAILS`.
-3. Run the database-only bootstrap workflow for the approved `main` commit.
-4. Set the runtime-role password interactively and store only the restricted pooled URL in Vercel.
-5. Configure the dedicated read-only backup role and complete one real encrypted restore using the cardless backup environment.
-6. Redeploy the verified `main` commit on Vercel Hobby, run the live canary, and only then remove deployment protection. Stop immediately if any provider asks for payment or an upgrade.
-
-Operational instructions:
-
-- [Deployment](docs/runbooks/deployment.md)
-- [No-billing boundaries](docs/runbooks/cost-boundaries.md)
-- [Backup and restore](docs/runbooks/backup-restore.md)
-- [Rollback](docs/runbooks/rollback.md)
-- [Incident response](docs/runbooks/incident.md)
-
-## Repository map
-
-```text
-src/app/                 public pages, authenticated screens, and route handlers
-src/components/          product workspaces and responsive UI
-src/lib/                 auth, tenancy, procurement, quotes, awards, exports, reporting
-tests/e2e/               complete desktop, phone, and tablet product journeys
-tests/load/              bounded 20-restaurant launch profile
-__tests__/integration/   real PostgreSQL migration and isolation checks
-scripts/                 canary, backup, restore, and operational safeguards
-public/brand/            canonical SVG logo, app icon, and social card
-docs/                    research, verification, brand, and runbooks
-```
-
-## Design and research
-
-- [Brand kit and canonical SVG assets](docs/brand/README.md)
-- [India restaurant procurement competitive review](docs/research/india-restaurant-procurement-competitive-review.md)
-
-**QuotePlate** combines the two sides of the product: supplier **quotes** and the restaurant **plate** those purchases ultimately serve. The two document forms in the mark represent a request and a quote moving toward one recorded decision. The product and company names remain provisional until formal trademark, company-name, and domain clearance is completed.
+Repository: [github.com/Utsavd7/QuotePlate](https://github.com/Utsavd7/QuotePlate)

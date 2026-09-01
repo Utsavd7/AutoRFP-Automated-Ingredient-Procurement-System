@@ -1,9 +1,9 @@
 'use client';
 
 import { useMemo, useState, type FormEvent } from 'react';
-import type { ProcurementUnit } from '@prisma/client';
-
+import type { ItemSpecificationV1 } from '@/lib/domain/item-specification';
 import { formatInr } from '@/lib/domain/money';
+import type { ProcurementUnit } from '@/lib/domain/quantity';
 import { formatScaledDecimal } from '@/lib/domain/validation';
 
 import styles from './quote-access.module.css';
@@ -16,6 +16,9 @@ type PublicQuoteLineDto = {
   unitRatePaise: string | null;
   gstBasisPoints: number | null;
   taxInclusive: boolean;
+  suppliedBrand: string | null;
+  suppliedPackSize: string | null;
+  suppliedQualityGrade: string | null;
   substitution: string | null;
   subtotalPaise: string;
   gstPaise: string;
@@ -30,6 +33,7 @@ export type PublicQuoteDto = {
   totalPaise: string;
   deliveryDate: string;
   validUntil: string;
+  minimumOrder: string | null;
   commercialTerms: string | null;
   notes: string | null;
   submittedAt: string;
@@ -46,9 +50,11 @@ export type PublicQuoteRequestDto = {
   commercialTerms: string | null;
   items: Array<{
     id: string;
+    itemKey: string;
     name: string;
     quantity: string;
     unit: ProcurementUnit;
+    specification: ItemSpecificationV1;
   }>;
   latestQuote: PublicQuoteDto | null;
 };
@@ -148,9 +154,14 @@ export function SupplierQuoteForm({
         requestItemId: item.id,
         noQuote: false,
         availableQuantity: String(form.get(`quantity:${item.id}`) ?? ''),
+        unit: item.unit,
         unitRateInr: String(form.get(`rate:${item.id}`) ?? ''),
         gstPercent: String(form.get(`gst:${item.id}`) ?? ''),
         taxInclusive: form.get(`inclusive:${item.id}`) === 'on',
+        suppliedBrand: latestByItem.get(item.id)?.suppliedBrand ?? null,
+        suppliedPackSize: latestByItem.get(item.id)?.suppliedPackSize ?? null,
+        suppliedQualityGrade:
+          latestByItem.get(item.id)?.suppliedQualityGrade ?? null,
         substitution: String(form.get(`substitution:${item.id}`) ?? '') || null,
       };
     });
@@ -158,6 +169,7 @@ export function SupplierQuoteForm({
       expectedLatestRevision: request.latestQuote?.revision ?? 0,
       deliveryDate: String(form.get('deliveryDate') ?? ''),
       validUntil: String(form.get('validUntil') ?? ''),
+      minimumOrder: request.latestQuote?.minimumOrder ?? null,
       freightInr: String(form.get('freightInr') ?? ''),
       commercialTerms: String(form.get('commercialTerms') ?? '') || null,
       notes: String(form.get('notes') ?? '') || null,
@@ -255,6 +267,15 @@ export function SupplierQuoteForm({
                   <div>
                     <h3>{item.name}</h3>
                     <p>{item.quantity} {unit}</p>
+                    {item.specification.referenceUrl ? (
+                      <a
+                        href={item.specification.referenceUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        View food reference
+                      </a>
+                    ) : null}
                   </div>
                   <label className={styles.noQuote}>
                     <input

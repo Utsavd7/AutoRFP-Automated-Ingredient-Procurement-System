@@ -11,6 +11,7 @@ describe('reporting workspaces', () => {
       generatedAt: '2026-08-28T12:00:00.000Z', capped: false,
       summary: { requestSampleSize: 4, supplierRequestsSent: 12, supplierResponses: 9, responseRatePercent: '75', quoteLinesExpected: 40, quoteLinesFullyCovered: 34, quotedLineCoveragePercent: '85', awardedRequestCount: 3, totalAwardedPaise: '4526000' },
       priceRanges: [{ itemName: 'Tomato', unit: 'KILOGRAM', quoteCount: 3, minimumUnitRatePaise: '4200', maximumUnitRatePaise: '5100', minimumSupplierName: 'GreenLeaf', maximumSupplierName: 'Shakti Foods', observedVariancePercent: '21.43' }],
+      historyGuidance: [{ itemKey: 'tomato', itemName: 'Tomato', unit: 'KILOGRAM', lastOrderedQuantity: '90', lastOrderedAt: '2026-08-20T10:00:00.000Z', lastSupplierNames: ['GreenLeaf'], seasonalNotice: null, unusualQuantityNotice: 'Quantity check: this is more than twice recent orders.' }],
       notes: ['Observed ranges compare submitted quotes; they are not savings claims or automatic recommendations.'],
     }} />);
     expect(html).toContain('Submitted facts only');
@@ -18,6 +19,10 @@ describe('reporting workspaces', () => {
     expect(html).toContain('₹45,260.00');
     expect(html).toContain('₹42.00');
     expect(html).toContain('range, not savings');
+    expect(html).toContain('Previous buying guidance');
+    expect(html).toContain('Last ordered 90 kg');
+    expect(html).toContain('GreenLeaf');
+    expect(html).toContain('Quantity check');
     expect(html).not.toContain('forecast');
     expect(html).not.toContain('recommended supplier');
   });

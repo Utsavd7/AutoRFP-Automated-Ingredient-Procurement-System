@@ -24,7 +24,7 @@ const postMenu = (menuText: string) =>
         Origin: 'http://localhost',
         'Sec-Fetch-Site': 'same-origin',
       },
-      body: JSON.stringify({ menuText, tenantId: 'client-controlled-tenant' }),
+      body: JSON.stringify({ menuText }),
     }),
   );
 
@@ -39,12 +39,22 @@ describe('parse-menu persistence', () => {
     } as never);
   });
 
-  it('persists the menu and every recipe with one nested create', async () => {
-    const recipes = [
-      { id: 'recipe-1', name: 'Paneer Tikka', ingredients: [] },
-      { id: 'recipe-2', name: 'Masala Dosa', ingredients: [] },
-    ];
-    menuCreate.mockResolvedValue({ id: 'menu-1', recipes } as never);
+  it('persists one v1 menu document and keeps the exact response contract', async () => {
+    menuCreate.mockResolvedValue({
+      id: 'menu-1',
+      document: {
+        v: 1,
+        source: {
+          kind: 'PASTE',
+          canonicalUrl: null,
+          permissionConfirmed: false,
+        },
+        dishes: [
+          { id: 'd1', name: 'Paneer Tikka', position: 0, ingredients: [] },
+          { id: 'd2', name: 'Masala Dosa', position: 1, ingredients: [] },
+        ],
+      },
+    } as never);
 
     const response = await postMenu('Paneer Tikka\nMasala Dosa');
 
@@ -82,6 +92,51 @@ describe('parse-menu persistence', () => {
       detail: 'The menu draft could not be saved. Try again.',
     });
     expect(JSON.stringify(problem)).not.toContain('database URL');
+  });
+
+  it('forwards reviewed OCR provenance but never image bytes or confidence lines', async () => {
+    menuCreate.mockResolvedValue({ id: 'menu-ocr' } as never);
+    const response = await POST(new Request('http://localhost/api/parse-menu', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: 'http://localhost',
+        'Sec-Fetch-Site': 'same-origin',
+      },
+      body: JSON.stringify({
+        menuText: 'Tomato\nOnion',
+        source: {
+          kind: 'OCR', documentKind: 'BUYING_LIST',
+          lines: [
+            { text: 'Tomato', confidence: 0.94 },
+            { text: 'Onion', confidence: 0.71 },
+          ],
+        },
+      }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(menuCreate).toHaveBeenCalledWith({
+      actor: { tenantId: 'session-tenant', userId: 'member-a' },
+      name: 'Menu draft',
+      menuText: 'Tomato\nOnion',
+      source: { kind: 'OCR', canonicalUrl: null, permissionConfirmed: false },
+    });
+    expect(JSON.stringify(menuCreate.mock.calls)).not.toContain('confidence');
+  });
+
+  it('rejects a client-controlled tenant field instead of silently ignoring it', async () => {
+    const response = await POST(new Request('http://localhost/api/parse-menu', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: 'http://localhost',
+        'Sec-Fetch-Site': 'same-origin',
+      },
+      body: JSON.stringify({ menuText: 'Dal Makhani', tenantId: 'other-tenant' }),
+    }));
+    expect(response.status).toBe(422);
+    expect(menuCreate).not.toHaveBeenCalled();
   });
 
   it('returns 422 when a deterministic dish exceeds the review boundary', async () => {

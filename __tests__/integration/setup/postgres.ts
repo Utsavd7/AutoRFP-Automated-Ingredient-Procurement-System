@@ -30,6 +30,9 @@ const migrationOrder = [
   '20260827000800_award_snapshot_capacity',
   '20260827000900_minimal_launch_columns',
   '20260827001000_backup_role',
+  '20260827001100_minimal_rate_limit_bucket',
+  '20260827001200_current_user_credentials',
+  '20260831000100_compact_nine_table_schema',
 ] as const;
 
 export type PostgresHarness = {

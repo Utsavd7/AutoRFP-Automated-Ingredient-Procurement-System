@@ -124,7 +124,7 @@ export function createOverviewOperations(
             where: {
               tenantId: actor.tenantId,
               request: { tenantId: actor.tenantId, status: 'OPEN' },
-              quotes: { some: { tenantId: actor.tenantId } },
+              quoteRevision: { gt: 0 },
             },
           }),
           transaction.procurementRequest.findMany({
@@ -158,7 +158,7 @@ export function createOverviewOperations(
               where: {
                 tenantId: actor.tenantId,
                 requestId: { in: deadlines.map(({ id }) => id) },
-                quotes: { some: { tenantId: actor.tenantId } },
+                quoteRevision: { gt: 0 },
               },
               _count: { _all: true },
             })

@@ -1,0 +1,26 @@
+export const PROCUREMENT_CATEGORIES = Object.freeze({
+  VEGETABLES: 'Vegetables',
+  FRUITS: 'Fruits',
+  DAIRY: 'Dairy',
+  GRAINS_PULSES: 'Grains & Pulses',
+  FLOUR_BAKERY: 'Flour & Bakery',
+  OILS_FATS: 'Oils & Fats',
+  SPICES_SEASONINGS: 'Spices & Seasonings',
+  DRY_GOODS: 'Dry Goods',
+  BEVERAGES: 'Beverages',
+  COFFEE_TEA: 'Coffee & Tea',
+  MEAT_POULTRY: 'Meat & Poultry',
+  SEAFOOD: 'Seafood',
+  EGGS: 'Eggs',
+  FROZEN_FOODS: 'Frozen Foods',
+  READY_MADE_OUTSOURCED: 'Ready-made & Outsourced',
+  SWEETS_DESSERTS: 'Sweets & Desserts',
+  SAUCES_CONDIMENTS: 'Sauces & Condiments',
+  PACKAGING_DISPOSABLES: 'Packaging & Disposables',
+  CLEANING_HYGIENE: 'Cleaning & Hygiene',
+  GAS_FUEL: 'Gas & Fuel',
+  KITCHEN_SUPPLIES: 'Kitchen Supplies',
+  OTHER: 'Other',
+} as const);
+
+export type ProcurementCategory = keyof typeof PROCUREMENT_CATEGORIES;

@@ -45,7 +45,7 @@ describe('settings workspace UI', () => {
     expect(html).toContain('Invite someone');
     expect(html).toContain('Deactivate');
     expect(html).toContain('Save restaurant details');
-    expect(html).toContain('Your sign-in email belongs to your personal account');
+    expect(html).toContain('Your account email belongs to you');
     expect(html).not.toContain('Contact email');
     expect(html).not.toMatch(/tenant-a|tokenDigest|passwordHash|billing|card details|pricing/i);
   });
@@ -59,7 +59,7 @@ describe('settings workspace UI', () => {
     };
     const html = renderToStaticMarkup(<SettingsWorkspace initialData={memberSettings} />);
 
-    expect(html).toContain('View-only access');
+    expect(html).toContain('View access only');
     expect(html).toContain('Only workspace owners can change restaurant details or manage access.');
     expect(html).not.toContain('Invite someone');
     expect(html).not.toContain('Deactivate');

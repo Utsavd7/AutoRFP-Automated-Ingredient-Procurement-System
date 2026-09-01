@@ -2,13 +2,14 @@ import {
   normalizeSupplierPhone,
   SUPPLIER_LIMITS,
   SupplierValidationError,
+  validateSupplierLifecycleState,
   validateSupplierCreateInput,
   validateSupplierListInput,
   validateSupplierUpdateInput,
 } from '@/lib/suppliers/supplier-schema';
 
 describe('supplier input validation', () => {
-  it('normalizes a representative Indian supplier without trusting extra fields', () => {
+  it('normalizes a representative Indian direct supplier', () => {
     expect(
       validateSupplierCreateInput({
         businessName: '  Shree Balaji Fresh Produce  ',
@@ -23,8 +24,12 @@ describe('supplier input validation', () => {
         gstin: ' 27AAPFU0939F1ZV ',
         notes: '  Delivers before 7 am  ',
         isActive: true,
-        tenantId: 'tenant-b',
-        verifiedAt: '2026-08-27T00:00:00.000Z',
+        relationshipType: 'SELECTED_NEW',
+        capabilities: {
+          v: 1,
+          categories: [{ category: 'VEGETABLES', tier: 'CAPABLE', rank: 1 }],
+          items: [],
+        },
       }),
     ).toEqual({
       businessName: 'Shree Balaji Fresh Produce',
@@ -39,6 +44,12 @@ describe('supplier input validation', () => {
       gstin: '27AAPFU0939F1ZV',
       notes: 'Delivers before 7 am',
       isActive: true,
+      relationshipType: 'SELECTED_NEW',
+      capabilities: {
+        v: 1,
+        categories: [{ category: 'VEGETABLES', tier: 'CAPABLE', rank: 1 }],
+        items: [],
+      },
     });
   });
 
@@ -106,6 +117,8 @@ describe('supplier input validation', () => {
       gstin: null,
       notes: null,
       isActive: true,
+      relationshipType: 'CURRENT',
+      capabilities: { v: 1, categories: [], items: [] },
     });
   });
 
@@ -124,9 +137,35 @@ describe('supplier input validation', () => {
     expect(() => validateSupplierUpdateInput({})).toThrow(
       SupplierValidationError,
     );
-    expect(() =>
-      validateSupplierUpdateInput({ verifiedAt: new Date().toISOString() }),
-    ).toThrow(SupplierValidationError);
+    for (const forbidden of [
+      'tenantId', 'verificationStatus', 'applicationRequestId',
+      'verifiedAt', 'verifiedByUserId',
+    ]) {
+      expect(() => validateSupplierUpdateInput({ [forbidden]: 'forbidden' }))
+        .toThrow(SupplierValidationError);
+    }
+    expect(() => validateSupplierCreateInput({
+      businessName: 'Applicant', relationshipType: 'APPLICANT',
+    })).toThrow(SupplierValidationError);
+  });
+
+  it('accepts only server-owned direct and applicant lifecycle states', () => {
+    const pending = {
+      relationshipType: 'APPLICANT' as const,
+      verificationStatus: 'PENDING' as const,
+      applicationRequestId: 'request-a',
+      verifiedAt: null,
+      verifiedByUserId: null,
+      isActive: false,
+    };
+    expect(validateSupplierLifecycleState(pending)).toEqual(pending);
+    expect(() => validateSupplierLifecycleState({ ...pending, isActive: true }))
+      .toThrow(SupplierValidationError);
+    expect(() => validateSupplierLifecycleState({
+      ...pending,
+      relationshipType: 'CURRENT',
+      applicationRequestId: null,
+    })).toThrow(SupplierValidationError);
   });
 
   it('bounds active filters, search, limits, and opaque cursor size', () => {

@@ -92,6 +92,9 @@ export function QuoteAccessClient() {
       <p className={styles.intro}>
         You do not need an account. Open the restaurant’s request, check the items and submit your prices.
       </p>
+      <p className={styles.intro}>
+        This link opens only this restaurant request. The restaurant can replace or revoke it.
+      </p>
       <div className={styles.status} role="status" aria-live="polite">
         <span className={styles.indicator} aria-hidden="true" />
         <div>
@@ -110,7 +113,7 @@ export function QuoteAccessClient() {
       <div className={styles.assurance}>
         <span>Private link</span>
         <span>No supplier fee</span>
-        <span>India-ready pricing</span>
+        <span>Prices in ₹ with GST</span>
       </div>
     </section>
   );

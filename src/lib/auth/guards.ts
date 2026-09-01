@@ -1,9 +1,10 @@
-import type { Prisma, UserRole } from '@prisma/client';
+import type { Prisma, UserAccountState, UserRole } from '@prisma/client';
 
 export type AuthorizationActor = {
   id: string;
   tenantId: string;
   role: UserRole;
+  accountState?: UserAccountState;
   isActive: boolean;
 };
 
@@ -41,6 +42,7 @@ export function requireOwner<T extends AuthorizationActor>(
 ) {
   if (
     !ownerCapabilities.has(capability) ||
+    (actor.accountState !== undefined && actor.accountState !== 'ACTIVE') ||
     !actor.isActive ||
     actor.role !== 'OWNER'
   ) {
@@ -63,15 +65,24 @@ export async function assertCanDeactivateUser(
     FOR UPDATE
   `;
   const users = await transaction.$queryRaw<
-    Array<{ id: string; role: UserRole; isActive: boolean }>
+    Array<{
+      id: string;
+      role: UserRole;
+      accountState: UserAccountState;
+      isActive: boolean;
+    }>
   >`
-    SELECT "id", "role", "isActive"
+    SELECT "id", "role", "accountState", "isActive"
     FROM "User"
     WHERE "tenantId" = ${actor.tenantId}
       AND (
         "id" = ${actor.id}
         OR "id" = ${targetUserId}
-        OR ("role" = 'OWNER' AND "isActive" = true)
+        OR (
+          "role" = 'OWNER'
+          AND "accountState" = 'ACTIVE'
+          AND "isActive" = true
+        )
       )
     ORDER BY "id"
     FOR UPDATE
@@ -83,12 +94,17 @@ export async function assertCanDeactivateUser(
     'manage-members',
   );
   const target = users.find(({ id }) => id === targetUserId);
-  if (!target) throw new AuthorizationError();
+  if (!target || target.accountState !== 'ACTIVE') {
+    throw new AuthorizationError();
+  }
 
   if (
     target.isActive &&
     target.role === 'OWNER' &&
-    users.filter(({ role, isActive }) => role === 'OWNER' && isActive).length <= 1
+    users.filter(
+      ({ role, accountState, isActive }) =>
+        role === 'OWNER' && accountState === 'ACTIVE' && isActive,
+    ).length <= 1
   ) {
     throw new LastActiveOwnerError();
   }

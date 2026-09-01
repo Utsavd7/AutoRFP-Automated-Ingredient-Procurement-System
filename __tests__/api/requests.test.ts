@@ -59,11 +59,23 @@ const account = {
 const draft = {
   title: 'Weekly vegetables — Indiranagar',
   menuId: 'menu-a',
-  ingredientSelection: {
-    mode: 'SELECTED',
-    ingredientIds: ['ingredient-a', 'ingredient-b'],
+  selectedItemIds: ['ingredient-a', 'ingredient-b'],
+  defaultSourcing: {
+    v: 1,
+    modes: ['CURRENT', 'VERIFIED_NEW'],
+    currentSupplierIds: ['supplier-a'],
+    selectedNewSupplierIds: [],
+    acceptVerifiedApplications: true,
   },
-  supplierIds: ['supplier-a', 'supplier-b'],
+  sourcingOverrides: {
+    'ingredient-b': {
+      v: 1,
+      modes: ['SELECTED_NEW'],
+      currentSupplierIds: [],
+      selectedNewSupplierIds: ['supplier-b'],
+      acceptVerifiedApplications: false,
+    },
+  },
   deliveryDetails: {
     addressLine: '12, 100 Feet Road',
     city: 'Bengaluru',
@@ -127,6 +139,8 @@ describe('procurement request API', () => {
       draft: expect.objectContaining(draft),
     });
     expect(created.status).toBe(201);
+    expect(listed.headers.get('cache-control')).toBe('private, no-store');
+    expect(created.headers.get('cache-control')).toBe('private, no-store');
     await expect(listed.json()).resolves.toEqual({
       requests: [{ id: 'request-a' }],
       nextCursor: 'next-page',
@@ -147,7 +161,9 @@ describe('procurement request API', () => {
     const updated = await updateRequest(
       jsonRequest('http://localhost/api/requests/request-a', 'PATCH', {
         expectedVersion: 1,
-        ...draft,
+        title: 'Updated request',
+        items: { v: 1, items: [] },
+        sourcing: { v: 1, default: draft.defaultSourcing },
       }),
       routeContext('request-a') as never,
     );
@@ -160,10 +176,19 @@ describe('procurement request API', () => {
       actor: { tenantId: 'tenant-a', userId: 'member-a' },
       requestId: 'request-a',
       expectedVersion: 1,
-      patch: expect.objectContaining(draft),
+      patch: {
+        title: 'Updated request',
+        items: { v: 1, items: [] },
+        sourcing: { v: 1, default: draft.defaultSourcing },
+      },
     });
     expect(loaded.status).toBe(200);
     expect(updated.status).toBe(200);
+    for (const response of [loaded, updated]) {
+      expect(response.headers.get('cache-control')).toBe('private, no-store');
+      expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+      expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+    }
   });
 
   it('opens atomically and returns each raw supplier share URL once', async () => {
@@ -177,6 +202,10 @@ describe('procurement request API', () => {
           expiresAt: '2027-01-09T10:00:00.000Z',
         },
       ],
+      applicationLink: {
+        url: 'https://quoteplate.example/supplier-application#token=raw-application-token',
+        expiresAt: '2027-01-09T10:00:00.000Z',
+      },
     } as never);
 
     const response = await openRequest(
@@ -195,6 +224,7 @@ describe('procurement request API', () => {
     await expect(response.json()).resolves.toMatchObject({
       request: { status: 'OPEN' },
       links: [{ supplierId: 'supplier-a' }],
+      applicationLink: { url: expect.stringContaining('supplier-application') },
     });
   });
 
@@ -298,6 +328,11 @@ describe('procurement request API', () => {
     await expect(missing.json()).resolves.not.toHaveProperty('tenantId');
     expect(conflict.status).toBe(409);
     expect(unauthorized.status).toBe(401);
+    for (const response of [invalid, missing, conflict, unauthorized]) {
+      expect(response.headers.get('cache-control')).toBe('private, no-store');
+      expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+      expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+    }
   });
 
   it.each([

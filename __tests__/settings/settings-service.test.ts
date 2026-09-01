@@ -25,6 +25,7 @@ const owner = {
   name: 'Ananya Mehta',
   email: 'ananya@monsoontable.in',
   role: 'OWNER' as const,
+  accountState: 'ACTIVE' as const,
   isActive: true,
   createdAt: new Date('2026-01-02T00:00:00.000Z'),
   lastLoginAt: new Date('2026-08-28T08:15:00.000Z'),
@@ -32,43 +33,48 @@ const owner = {
 };
 
 function fakeTransaction() {
+  const members = [
+    {
+      id: owner.id,
+      name: owner.name,
+      email: owner.email,
+      role: owner.role,
+      createdAt: owner.createdAt,
+      lastLoginAt: owner.lastLoginAt,
+    },
+    {
+      id: 'member-a',
+      name: 'Ravi Kumar',
+      email: 'ravi@monsoontable.in',
+      role: 'MEMBER',
+      createdAt: new Date('2026-03-04T00:00:00.000Z'),
+      lastLoginAt: null,
+    },
+  ];
+  const pendingInvitations = [
+    {
+      id: 'invited-user-a',
+      email: 'chef@monsoontable.in',
+      role: 'MEMBER',
+      invitationExpiresAt: new Date('2026-09-04T12:00:00.000Z'),
+      updatedAt: new Date('2026-08-28T12:00:00.000Z'),
+      invitedBy: { name: 'Ananya Mehta' },
+    },
+  ];
+
   return {
     user: {
       findFirst: jest.fn().mockResolvedValue(owner),
-      findMany: jest.fn().mockResolvedValue([
-        {
-          id: owner.id,
-          name: owner.name,
-          email: owner.email,
-          role: owner.role,
-          createdAt: owner.createdAt,
-          lastLoginAt: owner.lastLoginAt,
-        },
-        {
-          id: 'member-a',
-          name: 'Ravi Kumar',
-          email: 'ravi@monsoontable.in',
-          role: 'MEMBER',
-          createdAt: new Date('2026-03-04T00:00:00.000Z'),
-          lastLoginAt: null,
-        },
-      ]),
+      findMany: jest.fn().mockImplementation(
+        ({ where }: { where: { accountState: string } }) =>
+          Promise.resolve(
+            where.accountState === 'INVITED' ? pendingInvitations : members,
+          ),
+      ),
       update: jest.fn().mockResolvedValue({ ...owner, email: 'ops@monsoontable.in' }),
     },
     tenant: {
       update: jest.fn().mockResolvedValue({ ...tenant, phone: '9123456789' }),
-    },
-    invitation: {
-      findMany: jest.fn().mockResolvedValue([
-        {
-          id: 'invitation-a',
-          email: 'chef@monsoontable.in',
-          role: 'MEMBER',
-          expiresAt: new Date('2026-09-04T12:00:00.000Z'),
-          createdAt: new Date('2026-08-28T12:00:00.000Z'),
-          invitedBy: { name: 'Ananya Mehta' },
-        },
-      ]),
     },
     $queryRaw: jest.fn(),
   };
@@ -98,7 +104,11 @@ describe('workspace settings service', () => {
 
     expect(transact).toHaveBeenCalledWith('tenant-a', expect.any(Function));
     expect(transaction.user.findMany).toHaveBeenCalledWith({
-      where: { tenantId: 'tenant-a', isActive: true },
+      where: {
+        tenantId: 'tenant-a',
+        accountState: 'ACTIVE',
+        isActive: true,
+      },
       orderBy: [{ role: 'asc' }, { name: 'asc' }, { id: 'asc' }],
       select: {
         id: true,
@@ -109,20 +119,22 @@ describe('workspace settings service', () => {
         lastLoginAt: true,
       },
     });
-    expect(transaction.invitation.findMany).toHaveBeenCalledWith({
+    expect(transaction.user.findMany).toHaveBeenCalledWith({
       where: {
         tenantId: 'tenant-a',
-        acceptedAt: null,
-        revokedAt: null,
-        expiresAt: { gt: new Date('2026-08-28T12:30:00.000Z') },
+        accountState: 'INVITED',
+        isActive: false,
+        invitationAcceptedAt: null,
+        invitationRevokedAt: null,
+        invitationExpiresAt: { gt: new Date('2026-08-28T12:30:00.000Z') },
       },
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
       select: {
         id: true,
         email: true,
         role: true,
-        expiresAt: true,
-        createdAt: true,
+        invitationExpiresAt: true,
+        updatedAt: true,
         invitedBy: { select: { name: true } },
       },
     });
@@ -166,7 +178,7 @@ describe('workspace settings service', () => {
       ],
       pendingInvitations: [
         {
-          id: 'invitation-a',
+          id: 'invited-user-a',
           email: 'chef@monsoontable.in',
           role: 'MEMBER',
           expiresAt: '2026-09-04T12:00:00.000Z',

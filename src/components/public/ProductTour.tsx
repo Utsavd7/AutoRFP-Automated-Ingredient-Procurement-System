@@ -77,7 +77,7 @@ export function ProductTour() {
         <div className="tour-step__copy">
           <span className="tour-index">03 / Compare and award</span>
           <h2 id="tour-comparison-title">Compare the facts before you award.</h2>
-          <p>Review landed total, GST, delivery, coverage, and terms side by side. Your team records the whole-basket or split award; QuotePlate does not choose for you.</p>
+          <p>Compare total cost, GST, delivery, missing items, and payment terms. Choose one supplier for the full order, or different suppliers for different items.</p>
         </div>
         <div className="tour-product tour-product--comparison" role="group" aria-label="Illustrative comparison workspace">
           <div className="tour-product__bar">

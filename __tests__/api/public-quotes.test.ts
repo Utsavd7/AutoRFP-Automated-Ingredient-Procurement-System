@@ -1,6 +1,8 @@
 import { createPublicQuoteHandlers } from '@/lib/quotes/public-quote-http';
 import {
+  PublicQuoteDocumentSizeError,
   PublicQuoteRevisionConflictError,
+  PublicQuoteRevisionLimitError,
   PublicQuoteSubmissionLimitError,
   PublicQuoteUnavailableError,
   PublicQuoteValidationError,
@@ -39,10 +41,6 @@ describe('public supplier quote API', () => {
     const handlers = createPublicQuoteHandlers({
       load,
       submit: jest.fn(),
-      readRateLimit: jest.fn().mockResolvedValue({
-        allowed: true,
-        retryAfterSeconds: 900,
-      }),
     });
 
     const response = await handlers.GET(request('GET'));
@@ -50,6 +48,7 @@ describe('public supplier quote API', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('cache-control')).toBe('private, no-store');
     expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff');
     expect(load).toHaveBeenCalledWith({ token });
     await expect(response.json()).resolves.toEqual(
       expect.objectContaining({ restaurantName: 'Monsoon Table Pune' }),
@@ -114,10 +113,6 @@ describe('public supplier quote API', () => {
     const handlers = createPublicQuoteHandlers({
       load,
       submit: jest.fn(),
-      readRateLimit: jest.fn().mockResolvedValue({
-        allowed: true,
-        retryAfterSeconds: 900,
-      }),
     });
 
     for (const candidate of ['', 'bad-token', token]) {
@@ -182,6 +177,28 @@ describe('public supplier quote API', () => {
     expect((await handlers.POST(oversized)).status).toBe(413);
   });
 
+  it.each([
+    new PublicQuoteRevisionConflictError(),
+    new PublicQuoteRevisionLimitError(),
+    new PublicQuoteDocumentSizeError(),
+  ])('maps safe revision conflicts to 409 without losing privacy headers', async (error) => {
+    const handlers = createPublicQuoteHandlers({
+      load: jest.fn(),
+      submit: jest.fn().mockRejectedValue(error),
+      submissionClientRateLimit: jest.fn().mockResolvedValue({
+        allowed: true,
+        retryAfterSeconds: 900,
+      }),
+    });
+
+    const response = await handlers.POST(request('POST', {}));
+
+    expect(response.status).toBe(409);
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+  });
+
   it('requires JSON and rejects cookie-authenticated mutations outside the exact origin', async () => {
     const submit = jest.fn().mockResolvedValue({ revision: 1 });
     const handlers = createPublicQuoteHandlers({ load: jest.fn(), submit });
@@ -215,31 +232,6 @@ describe('public supplier quote API', () => {
     );
     expect(siblingOrigin.status).toBe(403);
     expect(submit).not.toHaveBeenCalled();
-  });
-
-  it('rate-limits repeated reads before loading supplier request data', async () => {
-    const load = jest.fn();
-    const readRateLimit = jest.fn().mockResolvedValue({
-      allowed: false,
-      retryAfterSeconds: 90,
-    });
-    const handlers = createPublicQuoteHandlers({
-      load,
-      submit: jest.fn(),
-      readRateLimit,
-      now: () => new Date('2026-08-28T10:00:00.000Z'),
-    });
-    const quoteRequest = request('GET');
-
-    const response = await handlers.GET(quoteRequest);
-
-    expect(response.status).toBe(429);
-    expect(response.headers.get('retry-after')).toBe('90');
-    expect(readRateLimit).toHaveBeenCalledWith({
-      request: quoteRequest,
-      now: new Date('2026-08-28T10:00:00.000Z'),
-    });
-    expect(load).not.toHaveBeenCalled();
   });
 
   it('limits a submitting client before consuming token buckets or resolving grants', async () => {

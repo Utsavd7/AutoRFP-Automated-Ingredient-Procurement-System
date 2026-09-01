@@ -1,6 +1,12 @@
 import { randomUUID } from 'node:crypto';
 
-import { Prisma, type PrismaClient } from '@prisma/client';
+import {
+  Prisma,
+  type PrismaClient,
+  type SupplierRelationshipType,
+  type SupplierVerificationStatus,
+  type UserRole,
+} from '@prisma/client';
 
 import { writeAuditEvent } from '@/lib/audit/write-event';
 import { AuthorizationError } from '@/lib/auth/guards';
@@ -10,23 +16,49 @@ import {
 } from '@/lib/db/tenant-transaction';
 import { prisma } from '@/lib/prisma';
 import {
+  EMPTY_QUOTE_REVISIONS,
+  fragmentShareUrl,
+  issueToken,
+  linkExpiry,
+  shareBaseUrl,
+  type IssuedToken,
+} from '@/lib/procurement/request-service';
+import {
+  requestAcceptsVerifiedApplications,
+  RequestDocumentValidationError,
+  validateRequestDocuments,
+} from '@/lib/procurement/request-document';
+import { createOpaqueToken } from '@/lib/security/tokens';
+import {
   type ParsedSupplierCsvRow,
   SUPPLIER_CSV_LIMITS,
   SupplierCsvError,
   type SupplierCsvRowError,
 } from '@/lib/suppliers/csv';
 import {
+  type SupplierCapabilitiesV1,
+  SupplierCapabilitiesValidationError,
+  validateSupplierCapabilities,
+} from '@/lib/suppliers/supplier-capabilities';
+import {
   SUPPLIER_LIMITS,
   SupplierValidationError,
+  validateSupplierLifecycleState,
   validateSupplierCreateInput,
   validateSupplierListInput,
   validateSupplierUpdateInput,
+  validateSupplierVerificationDecision,
 } from '@/lib/suppliers/supplier-schema';
 
 type SupplierClient = Pick<PrismaClient, '$queryRaw' | '$transaction'> &
   TenantTransactionHost;
 
 type SupplierActor = { tenantId: string; userId: string };
+
+type SupplierVerificationOptions = {
+  tokenFactory?: () => IssuedToken;
+  shareBaseUrl?: string;
+};
 
 type SupplierFilters = { active: boolean | null; search: string | null };
 
@@ -40,6 +72,40 @@ type SupplierCursor = SupplierFilters & {
 const SUPPLIER_ID_BYTES = 200;
 const SUPPLIER_CURSOR_VERSION = 1;
 export const SUPPLIER_EXPORT_LIMIT = 500;
+
+const supplierSummarySelect = {
+  id: true,
+  tenantId: true,
+  businessName: true,
+  contactName: true,
+  phone: true,
+  whatsappNumber: true,
+  email: true,
+  addressLine: true,
+  city: true,
+  state: true,
+  pin: true,
+  gstin: true,
+  notes: true,
+  relationshipType: true,
+  verificationStatus: true,
+  isActive: true,
+  createdAt: true,
+  updatedAt: true,
+} satisfies Prisma.SupplierSelect;
+
+const supplierDetailSelect = {
+  ...supplierSummarySelect,
+  applicationRequestId: true,
+  capabilities: true,
+  verifiedAt: true,
+  verifiedByUserId: true,
+} satisfies Prisma.SupplierSelect;
+
+const supplierExportSelect = {
+  ...supplierSummarySelect,
+  capabilities: true,
+} satisfies Prisma.SupplierSelect;
 
 export class SupplierConflictError extends Error {
   readonly code = 'SUPPLIER_CONFLICT';
@@ -58,6 +124,16 @@ export class SupplierNotFoundError extends Error {
   constructor() {
     super('Supplier not found.');
     this.name = 'SupplierNotFoundError';
+  }
+}
+
+export class SupplierVerificationConflictError extends Error {
+  readonly code = 'SUPPLIER_VERIFICATION_CONFLICT';
+  readonly status = 409;
+
+  constructor() {
+    super('This supplier application has already been decided or cannot be changed here.');
+    this.name = 'SupplierVerificationConflictError';
   }
 }
 
@@ -92,11 +168,34 @@ async function requireActiveActor(
       id: actor.userId,
       tenantId: actor.tenantId,
       isActive: true,
+      accountState: 'ACTIVE',
       tenant: { isActive: true },
     },
-    select: { id: true },
+    select: { id: true, role: true },
   });
   if (!current) throw new AuthorizationError();
+  return current;
+}
+
+function prismaCapabilities(
+  capabilities: SupplierCapabilitiesV1,
+): Prisma.InputJsonValue {
+  return capabilities as unknown as Prisma.InputJsonValue;
+}
+
+function storedCapabilities(value: Prisma.JsonValue): SupplierCapabilitiesV1 {
+  try {
+    return validateSupplierCapabilities(value);
+  } catch (error) {
+    if (!(error instanceof SupplierCapabilitiesValidationError)) throw error;
+    throw new SupplierValidationError({
+      capabilities: [`Stored supplier capabilities are invalid: ${error.message}`],
+    });
+  }
+}
+
+function validatedDetail<T extends { capabilities: Prisma.JsonValue }>(supplier: T) {
+  return { ...supplier, capabilities: storedCapabilities(supplier.capabilities) };
 }
 
 async function lockTenant(
@@ -263,27 +362,79 @@ function listWhere(input: {
   };
 }
 
+type SupplierPageInput = {
+  tenantId: string;
+  active: boolean | null;
+  search: string | null;
+  cursor: SupplierCursor | undefined;
+  snapshot: Date;
+  limit: number;
+};
+
 async function findSupplierPage(
   transaction: Prisma.TransactionClient,
-  input: {
-    tenantId: string;
-    active: boolean | null;
-    search: string | null;
-    cursor: SupplierCursor | undefined;
-    snapshot: Date;
-    limit: number;
-  },
+  input: SupplierPageInput,
 ) {
   const suppliers = await transaction.supplier.findMany({
     where: listWhere(input),
     orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     take: input.limit + 1,
+    select: supplierSummarySelect,
   });
   const hasMore = suppliers.length > input.limit;
   if (hasMore) suppliers.pop();
   const last = suppliers.at(-1);
   return {
     suppliers,
+    nextCursor:
+      hasMore && last
+        ? encodeCursor({
+            v: SUPPLIER_CURSOR_VERSION,
+            snapshot: input.snapshot.toISOString(),
+            active: input.active,
+            search: input.search,
+            createdAt: last.createdAt.toISOString(),
+            id: last.id,
+          })
+        : null,
+  };
+}
+
+async function findSupplierExportPage(
+  transaction: Prisma.TransactionClient,
+  input: SupplierPageInput,
+) {
+  const suppliers = await transaction.supplier.findMany({
+    where: {
+      AND: [
+        listWhere(input),
+        {
+          relationshipType: { in: ['CURRENT', 'SELECTED_NEW'] },
+          verificationStatus: 'VERIFIED',
+        },
+      ],
+    },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    take: input.limit + 1,
+    select: supplierExportSelect,
+  });
+  const hasMore = suppliers.length > input.limit;
+  if (hasMore) suppliers.pop();
+  const validated = suppliers.map((supplier) => {
+    if (
+      supplier.relationshipType === 'APPLICANT' ||
+      supplier.verificationStatus !== 'VERIFIED'
+    ) {
+      throw new SupplierVerificationConflictError();
+    }
+    return {
+      ...validatedDetail(supplier),
+      relationshipType: supplier.relationshipType,
+    };
+  });
+  const last = validated.at(-1);
+  return {
+    suppliers: validated,
     nextCursor:
       hasMore && last
         ? encodeCursor({
@@ -309,6 +460,16 @@ async function transactionSnapshot(transaction: Prisma.TransactionClient) {
   return snapshot;
 }
 
+async function databaseClock(transaction: Prisma.TransactionClient) {
+  const [clock] = await transaction.$queryRaw<Array<{ now: Date }>>`
+    SELECT pg_catalog.clock_timestamp() AS "now"
+  `;
+  if (!clock || !(clock.now instanceof Date) || Number.isNaN(clock.now.getTime())) {
+    throw new TypeError('PostgreSQL returned an invalid supplier review clock.');
+  }
+  return clock.now;
+}
+
 export async function createSupplier(
   input: { actor: SupplierActor; supplier: unknown },
   client: SupplierClient = prisma,
@@ -328,8 +489,27 @@ export async function createSupplier(
       if (Object.keys(conflicts).length > 0) {
         throw new SupplierConflictError(conflicts);
       }
+      const verifiedAt = await databaseClock(transaction);
+      validateSupplierLifecycleState({
+        relationshipType: supplier.relationshipType,
+        verificationStatus: 'VERIFIED',
+        applicationRequestId: null,
+        verifiedAt,
+        verifiedByUserId: actor.userId,
+        isActive: supplier.isActive,
+      });
+      const { capabilities, ...fields } = supplier;
       const created = await transaction.supplier.create({
-        data: { tenantId: actor.tenantId, ...supplier },
+        data: {
+          tenantId: actor.tenantId,
+          ...fields,
+          verificationStatus: 'VERIFIED',
+          applicationRequestId: null,
+          capabilities: prismaCapabilities(capabilities),
+          verifiedAt,
+          verifiedByUserId: actor.userId,
+        },
+        select: supplierDetailSelect,
       });
       await writeAuditEvent(transaction, {
         tenantId: actor.tenantId,
@@ -337,7 +517,7 @@ export async function createSupplier(
         action: 'supplier.created',
         entityId: created.id,
       });
-      return created;
+      return validatedDetail(created);
     },
     client,
   );
@@ -414,7 +594,7 @@ export async function listSuppliersForExport(
       const snapshot = cursor
         ? new Date(cursor.snapshot)
         : await transactionSnapshot(transaction);
-      return findSupplierPage(transaction, {
+      return findSupplierExportPage(transaction, {
         tenantId: actor.tenantId,
         ...filters,
         cursor,
@@ -438,9 +618,10 @@ export async function getSupplier(
       await requireActiveActor(transaction, actor);
       const supplier = await transaction.supplier.findFirst({
         where: { tenantId: actor.tenantId, id: supplierId },
+        select: supplierDetailSelect,
       });
       if (!supplier) throw new SupplierNotFoundError();
-      return supplier;
+      return validatedDetail(supplier);
     },
     client,
   );
@@ -460,9 +641,28 @@ export async function updateSupplier(
       await requireActiveActor(transaction, actor);
       const existing = await transaction.supplier.findFirst({
         where: { tenantId: actor.tenantId, id: supplierId },
-        select: { id: true },
+        select: {
+          relationshipType: true,
+          verificationStatus: true,
+          applicationRequestId: true,
+          verifiedAt: true,
+          verifiedByUserId: true,
+          isActive: true,
+        },
       });
       if (!existing) throw new SupplierNotFoundError();
+      if (
+        existing.relationshipType === 'APPLICANT' &&
+        (existing.verificationStatus === 'PENDING' ||
+          existing.verificationStatus === 'REJECTED')
+      ) {
+        throw new SupplierVerificationConflictError();
+      }
+      validateSupplierLifecycleState({
+        ...existing,
+        relationshipType: changes.relationshipType ?? existing.relationshipType,
+        isActive: changes.isActive ?? existing.isActive,
+      });
       const conflicts = await duplicateErrors(transaction, {
         tenantId: actor.tenantId,
         email: changes.email,
@@ -472,12 +672,42 @@ export async function updateSupplier(
       if (Object.keys(conflicts).length > 0) {
         throw new SupplierConflictError(conflicts);
       }
-      return transaction.supplier.update({
+      let revokedAt: Date | undefined;
+      if (changes.isActive === false) {
+        await transaction.$queryRaw`
+          SELECT "id"
+          FROM "SupplierRequest"
+          WHERE "tenantId" = ${actor.tenantId}
+            AND "supplierId" = ${supplierId}
+          ORDER BY "id"
+          FOR UPDATE
+        `;
+        revokedAt = await databaseClock(transaction);
+      }
+      const { capabilities, ...scalarChanges } = changes;
+      const updated = await transaction.supplier.update({
         where: {
           tenantId_id: { tenantId: actor.tenantId, id: supplierId },
         },
-        data: changes,
+        data: {
+          ...scalarChanges,
+          ...(capabilities
+            ? { capabilities: prismaCapabilities(capabilities) }
+            : {}),
+        },
+        select: supplierDetailSelect,
       });
+      if (revokedAt) {
+        await transaction.supplierRequest.updateMany({
+          where: {
+            tenantId: actor.tenantId,
+            supplierId,
+            revokedAt: null,
+          },
+          data: { revokedAt },
+        });
+      }
+      return validatedDetail(updated);
     },
     client,
   );
@@ -606,6 +836,7 @@ export async function importSupplierRows(
     async (transaction) => {
       await lockTenant(transaction, actor.tenantId);
       await requireActiveActor(transaction, actor);
+      const verifiedAt = await databaseClock(transaction);
       const emails = rows.flatMap(({ supplier }) =>
         supplier.email ? [supplier.email] : [],
       );
@@ -637,7 +868,24 @@ export async function importSupplierRows(
       const suppliers = rows.map(({ supplier }) => ({
         id: randomUUID(),
         tenantId: actor.tenantId,
-        ...supplier,
+        businessName: supplier.businessName,
+        contactName: supplier.contactName,
+        phone: supplier.phone,
+        whatsappNumber: supplier.whatsappNumber,
+        email: supplier.email,
+        addressLine: supplier.addressLine,
+        city: supplier.city,
+        state: supplier.state,
+        pin: supplier.pin,
+        gstin: supplier.gstin,
+        notes: supplier.notes,
+        isActive: supplier.isActive,
+        relationshipType: supplier.relationshipType,
+        verificationStatus: 'VERIFIED' as const,
+        applicationRequestId: null,
+        capabilities: prismaCapabilities(supplier.capabilities),
+        verifiedAt,
+        verifiedByUserId: actor.userId,
       }));
       const result = await transaction.supplier.createMany({ data: suppliers });
       await transaction.auditEvent.createMany({
@@ -650,6 +898,236 @@ export async function importSupplierRows(
         })),
       });
       return { importedCount: result.count };
+    },
+    client,
+  );
+}
+
+type LockedSupplierApplication = {
+  id: string;
+  relationshipType: SupplierRelationshipType;
+  verificationStatus: SupplierVerificationStatus;
+  applicationRequestId: string | null;
+  isActive: boolean;
+  verifiedAt: Date | null;
+  verifiedByUserId: string | null;
+};
+
+type LockedApplicationRequest = {
+  id: string;
+  status: string;
+  items: Prisma.JsonValue;
+  sourcing: Prisma.JsonValue;
+  quoteDeadline: Date;
+  applicationTokenDigest: string | null;
+  applicationExpiresAt: Date | null;
+  applicationRevokedAt: Date | null;
+  now: Date;
+};
+
+const approvedSupplierRequestSelect = {
+  id: true,
+  tenantId: true,
+  requestId: true,
+  supplierId: true,
+  expiresAt: true,
+  revokedAt: true,
+  viewedAt: true,
+  quoteRevision: true,
+  createdAt: true,
+  updatedAt: true,
+} satisfies Prisma.SupplierRequestSelect;
+
+function requestAcceptsApproval(request: LockedApplicationRequest) {
+  if (
+    request.status !== 'OPEN' ||
+    !/^[a-f0-9]{64}$/.test(request.applicationTokenDigest ?? '') ||
+    request.applicationRevokedAt !== null ||
+    !(request.applicationExpiresAt instanceof Date) ||
+    !(request.quoteDeadline instanceof Date) ||
+    !(request.now instanceof Date) ||
+    Number.isNaN(request.applicationExpiresAt.getTime()) ||
+    Number.isNaN(request.quoteDeadline.getTime()) ||
+    Number.isNaN(request.now.getTime()) ||
+    request.applicationExpiresAt.getTime() <= request.now.getTime() ||
+    request.quoteDeadline.getTime() <= request.now.getTime()
+  ) {
+    return false;
+  }
+  try {
+    const documents = validateRequestDocuments(request.items, request.sourcing);
+    return requestAcceptsVerifiedApplications(
+      documents.items,
+      documents.sourcing,
+    );
+  } catch (error) {
+    if (error instanceof RequestDocumentValidationError) return false;
+    throw error;
+  }
+}
+
+export async function decideSupplierVerification(
+  input: {
+    actor: SupplierActor;
+    supplierId: string;
+    decision: unknown;
+  },
+  client: SupplierClient = prisma,
+  options: SupplierVerificationOptions = {},
+) {
+  const actor = validateActor(input.actor);
+  const supplierId = validateSupplierId(input.supplierId);
+  const decision = validateSupplierVerificationDecision({ decision: input.decision });
+  return withTenant(
+    actor.tenantId,
+    async (transaction) => {
+      const current = await requireActiveActor(transaction, actor);
+      if ((current.role as UserRole) !== 'OWNER') throw new AuthorizationError();
+
+      const candidate = await transaction.supplier.findFirst({
+        where: { tenantId: actor.tenantId, id: supplierId },
+        select: { applicationRequestId: true },
+      });
+      if (!candidate) throw new SupplierNotFoundError();
+      if (!candidate.applicationRequestId) {
+        throw new SupplierVerificationConflictError();
+      }
+
+      const [request] = await transaction.$queryRaw<LockedApplicationRequest[]>`
+        SELECT "id", "status", "items", "sourcing", "quoteDeadline",
+               "applicationTokenDigest", "applicationExpiresAt",
+               "applicationRevokedAt", pg_catalog.clock_timestamp() AS "now"
+        FROM "ProcurementRequest"
+        WHERE "tenantId" = ${actor.tenantId}
+          AND "id" = ${candidate.applicationRequestId}
+        FOR UPDATE
+      `;
+      if (!request) throw new SupplierVerificationConflictError();
+
+      const [supplier] = await transaction.$queryRaw<LockedSupplierApplication[]>`
+        SELECT "id", "relationshipType", "verificationStatus",
+               "applicationRequestId", "isActive", "verifiedAt", "verifiedByUserId"
+        FROM "Supplier"
+        WHERE "tenantId" = ${actor.tenantId}
+          AND "id" = ${supplierId}
+        FOR UPDATE
+      `;
+      if (!supplier) throw new SupplierNotFoundError();
+      if (
+        supplier.relationshipType !== 'APPLICANT' ||
+        supplier.verificationStatus !== 'PENDING' ||
+        supplier.isActive ||
+        !supplier.applicationRequestId ||
+        supplier.applicationRequestId !== candidate.applicationRequestId ||
+        supplier.verifiedAt !== null ||
+        supplier.verifiedByUserId !== null
+      ) {
+        throw new SupplierVerificationConflictError();
+      }
+
+      const existingSupplierRequests = await transaction.$queryRaw<
+        Array<{ id: string }>
+      >`
+        SELECT "id"
+        FROM "SupplierRequest"
+        WHERE "tenantId" = ${actor.tenantId}
+          AND "requestId" = ${request.id}
+          AND "supplierId" = ${supplierId}
+        ORDER BY "id"
+        FOR UPDATE
+      `;
+      if (existingSupplierRequests.length > 0) {
+        throw new SupplierVerificationConflictError();
+      }
+
+      if (decision === 'APPROVE' && !requestAcceptsApproval(request)) {
+        throw new SupplierVerificationConflictError();
+      }
+
+      const lifecycle = validateSupplierLifecycleState(decision === 'APPROVE'
+        ? {
+            relationshipType: 'SELECTED_NEW',
+            verificationStatus: 'VERIFIED',
+            applicationRequestId: supplier.applicationRequestId,
+            verifiedAt: request.now,
+            verifiedByUserId: actor.userId,
+            isActive: true,
+          }
+        : {
+            relationshipType: 'APPLICANT',
+            verificationStatus: 'REJECTED',
+            applicationRequestId: supplier.applicationRequestId,
+            verifiedAt: null,
+            verifiedByUserId: null,
+            isActive: false,
+          });
+
+      let supplierRequest: Prisma.SupplierRequestGetPayload<{
+        select: typeof approvedSupplierRequestSelect;
+      }> | undefined;
+      let link: { url: string; expiresAt: string } | undefined;
+      if (decision === 'APPROVE') {
+        const token = issueToken(
+          'supplier-request',
+          options.tokenFactory ?? (() => createOpaqueToken('supplier-request')),
+        );
+        const expiresAt = linkExpiry(request.now, request.quoteDeadline);
+        const baseUrl = shareBaseUrl(options.shareBaseUrl);
+        supplierRequest = await transaction.supplierRequest.create({
+          data: {
+            tenantId: actor.tenantId,
+            requestId: request.id,
+            supplierId,
+            tokenDigest: token.digest,
+            expiresAt,
+            revokedAt: null,
+            viewedAt: null,
+            quoteRevision: 0,
+            quoteRevisions:
+              EMPTY_QUOTE_REVISIONS as unknown as Prisma.InputJsonValue,
+          },
+          select: approvedSupplierRequestSelect,
+        });
+        link = {
+          url: fragmentShareUrl(baseUrl, '/quote', token.raw),
+          expiresAt: expiresAt.toISOString(),
+        };
+      }
+
+      const updated = await transaction.supplier.updateMany({
+        where: {
+          tenantId: actor.tenantId,
+          id: supplierId,
+          relationshipType: 'APPLICANT',
+          verificationStatus: 'PENDING',
+          isActive: false,
+        },
+        data: lifecycle,
+      });
+      if (updated.count !== 1) throw new SupplierVerificationConflictError();
+      const reviewed = await transaction.supplier.findFirst({
+        where: { tenantId: actor.tenantId, id: supplierId },
+        select: supplierDetailSelect,
+      });
+      if (!reviewed) throw new SupplierNotFoundError();
+      await writeAuditEvent(transaction, {
+        tenantId: actor.tenantId,
+        actorUserId: actor.userId,
+        action: decision === 'APPROVE' ? 'supplier.verified' : 'supplier.rejected',
+        entityId: supplierId,
+      });
+      if (supplierRequest) {
+        await writeAuditEvent(transaction, {
+          tenantId: actor.tenantId,
+          actorUserId: actor.userId,
+          action: 'supplier-link.created',
+          entityId: supplierRequest.id,
+        });
+      }
+      return {
+        supplier: validatedDetail(reviewed),
+        ...(supplierRequest && link ? { supplierRequest, link } : {}),
+      };
     },
     client,
   );

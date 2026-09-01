@@ -1,4 +1,4 @@
-# ── Dependencies ──────────────────────────────────────────
+# Dependencies
 /node_modules
 /.pnp
 .pnp.*
@@ -8,12 +8,13 @@
 !.yarn/releases
 !.yarn/versions
 
-# ── Next.js build output ──────────────────────────────────
+# Next.js build output
 /.next/
 /out/
 /build
+/public/ocr/
 
-# ── Environment files (never commit real keys) ────────────
+# Environment files. Never commit real keys.
 .env
 .env.*
 !.env.sample
@@ -21,18 +22,17 @@
 .env.development.local
 .env.test.local
 .env.production.local
-# .env.sample is intentionally NOT listed here — commit it
 
-# ── Prisma generated client ───────────────────────────────
+# Prisma generated client
 /src/generated/prisma
 
-# ── Database files ────────────────────────────────────────
+# Database files
 *.db
 *.db-journal
 *.sqlite
 *.sqlite3
 
-# ── Logs ─────────────────────────────────────────────────
+# Logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -42,43 +42,34 @@ yarn-error.log*
 /tmp/
 /autorfp-demo/
 
-# ── OS / editor ───────────────────────────────────────────
+# Operating system and editors
 .DS_Store
 Thumbs.db
 *.pem
 .vscode/
 .idea/
 
-# ── TypeScript ────────────────────────────────────────────
+# TypeScript
 *.tsbuildinfo
 next-env.d.ts
 
-# ── Testing ───────────────────────────────────────────────
+# Testing
 /coverage
 /.next-auth-e2e/
 /.auth-e2e-support/
 /test-results/
 /playwright-report/
 
-# ── Vercel ────────────────────────────────────────────────
+# Deployment tools
 .vercel
-
-# ── Netlify local build output ────────────────────────────
 /.netlify/
 
-# ── ChromaDB vector store data ────────────────────────────
-/chroma_data/
-/chroma/
-
-# ── Local scripts ─────────────────────────────────────────
-/scripts/show-tables.sh
-
-# ── Isolated Codex implementation worktrees ───────────────
+# Isolated Codex worktrees and local design exploration
 /.worktrees/
-
-# ── Local design exploration ───────────────────────────────
 /.superpowers/
+/AGENTS.md
+/CLAUDE.md
 
-# ── One-off test files ────────────────────────────────────
+# One off test files
 test.js
 test-groq.js

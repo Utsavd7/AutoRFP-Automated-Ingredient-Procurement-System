@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { privateNoStoreResponse } from '@/lib/api/private-response';
 import { problemResponse } from '@/lib/api/problem';
 import {
   InvalidJsonBodyError,
@@ -32,13 +33,19 @@ function menuError(error: unknown) {
   if (error instanceof AuthorizationError) {
     return problemResponse(403, 'Forbidden', 'You cannot access this menu.');
   }
-  throw error;
+  return problemResponse(
+    500,
+    'Unable to complete menu request',
+    'The menu request could not be completed. Try again.',
+  );
 }
 
 export async function GET(request: Request) {
   const context = await requireAccountContext();
   if (!context) {
-    return problemResponse(401, 'Unauthorized', 'Authentication is required.');
+    return privateNoStoreResponse(
+      problemResponse(401, 'Unauthorized', 'Authentication is required.'),
+    );
   }
 
   const url = new URL(request.url);
@@ -49,9 +56,9 @@ export async function GET(request: Request) {
       cursor: url.searchParams.get('cursor') ?? undefined,
       limit: limitText === null ? undefined : Number(limitText),
     });
-    return NextResponse.json(result);
+    return privateNoStoreResponse(NextResponse.json(result));
   } catch (error) {
-    return menuError(error);
+    return privateNoStoreResponse(menuError(error));
   }
 }
 

@@ -1,20 +1,32 @@
-import {
-  type PrismaClient,
-  type ProcurementUnit,
-} from '@prisma/client';
+import type { PrismaClient } from '@prisma/client';
 
 import { AuthorizationError } from '@/lib/auth/guards';
+import { validateAwardDocuments } from '@/lib/awards/award-document';
 import {
   type TenantTransactionHost,
   withTenant,
 } from '@/lib/db/tenant-transaction';
+import type { ItemSpecificationV1 } from '@/lib/domain/item-specification';
+import type { ProcurementUnit } from '@/lib/domain/quantity';
 import {
   formatScaledDecimal,
   MAX_DECIMAL_18_3_SCALED,
   MAX_SIGNED_BIGINT,
   parseUnsignedFixed,
 } from '@/lib/domain/validation';
+import {
+  RequestDocumentValidationError,
+  validateRequestDocuments,
+} from '@/lib/procurement/request-document';
 import { prisma } from '@/lib/prisma';
+import { eligibleQuoteRequestItems } from '@/lib/quotes/public-quote-service';
+import {
+  latestQuoteRevision,
+  PublicQuoteStorageCorruptionError,
+  type QuoteRevisionItemV1,
+  type QuoteRevisionV1,
+  validateQuoteRevisionsDocument,
+} from '@/lib/quotes/quote-revisions';
 
 export class QuoteComparisonNotFoundError extends Error {
   readonly code = 'QUOTE_COMPARISON_NOT_FOUND';
@@ -28,52 +40,27 @@ export class QuoteComparisonNotFoundError extends Error {
 
 export type ComparisonRequestItem = {
   id: string;
+  itemKey: string;
   name: string;
   quantity: string;
   unit: ProcurementUnit;
+  specification: ItemSpecificationV1;
 };
 
 export type ComparisonRequest = {
   id: string;
   title: string;
-  deliveryDate: Date;
-  quoteDeadline: Date;
+  deliveryDate: string;
+  quoteDeadline: string;
   commercialTerms: string | null;
   items: ComparisonRequestItem[];
 };
 
-export type ComparisonQuoteItem = {
-  id: string;
-  requestItemId: string;
-  noQuote: boolean;
-  availableQuantity: string | null;
-  unit: ProcurementUnit | null;
-  unitRatePaise: bigint | null;
-  gstBasisPoints: number | null;
-  taxInclusive: boolean;
-  substitution: string | null;
-  subtotalPaise: bigint;
-  gstPaise: bigint;
-  totalPaise: bigint;
-};
-
-export type ComparisonQuote = {
-  id: string;
+export type ComparisonQuote = QuoteRevisionV1 & {
   supplierRequestId: string;
-  supplierId: string;
   supplierName: string;
   supplierActive: boolean;
-  revision: number;
-  subtotalPaise: bigint;
-  gstPaise: bigint;
-  freightPaise: bigint;
-  totalPaise: bigint;
-  deliveryDate: Date;
-  validUntil: Date;
-  commercialTerms: string | null;
-  notes: string | null;
-  submittedAt: Date;
-  items: ComparisonQuoteItem[];
+  eligibleRequestItemIds: string[];
 };
 
 type StandardUnit = {
@@ -88,10 +75,6 @@ const STANDARD_UNITS: Partial<Record<ProcurementUnit, StandardUnit>> = {
   MILLILITRE: { dimension: 'VOLUME', baseFactor: BigInt(1) },
   PIECE: { dimension: 'COUNT', baseFactor: BigInt(1) },
 };
-
-function dateOnly(value: Date) {
-  return value.toISOString().slice(0, 10);
-}
 
 function currentIndiaDate(now: Date) {
   return new Date(now.getTime() + 330 * 60 * 1_000).toISOString().slice(0, 10);
@@ -141,11 +124,19 @@ function requestDto(request: ComparisonRequest) {
   return {
     id: request.id,
     title: request.title,
-    deliveryDate: dateOnly(request.deliveryDate),
-    quoteDeadline: request.quoteDeadline.toISOString(),
+    deliveryDate: request.deliveryDate,
+    quoteDeadline: request.quoteDeadline,
     commercialTerms: request.commercialTerms,
     itemCount: request.items.length,
     items: request.items.map((item) => ({ ...item })),
+  };
+}
+
+function suppliedSpecification(item: QuoteRevisionItemV1 | undefined) {
+  return {
+    brand: item?.suppliedBrand ?? null,
+    packSize: item?.suppliedPackSize ?? null,
+    qualityGrade: item?.suppliedQualityGrade ?? null,
   };
 }
 
@@ -162,9 +153,30 @@ export function compareLatestQuotes(
   }
 
   const quoteDtos = quotes.map((quote) => {
-    const quoteItems = new Map(quote.items.map((item) => [item.requestItemId, item]));
+    if (!Array.isArray(quote.eligibleRequestItemIds)) {
+      throw new TypeError('Comparison quote eligibility must be an array.');
+    }
+    const eligibleRequestItemIds = new Set(quote.eligibleRequestItemIds);
+    if (
+      eligibleRequestItemIds.size === 0 ||
+      eligibleRequestItemIds.size !== quote.eligibleRequestItemIds.length ||
+      quote.eligibleRequestItemIds.some((itemId) => !requestItems.has(itemId))
+    ) {
+      throw new TypeError('Comparison quote eligibility must reference unique request items.');
+    }
+    const quoteItems = new Map<string, QuoteRevisionItemV1>();
+    for (const item of quote.items) {
+      if (
+        quoteItems.has(item.requestItemId) ||
+        !eligibleRequestItemIds.has(item.requestItemId)
+      ) {
+        throw new TypeError('Comparison quote items must match eligible request items.');
+      }
+      quoteItems.set(item.requestItemId, item);
+    }
     const missingRequestItemIds: string[] = [];
     const partialRequestItemIds: string[] = [];
+    const unitMismatchRequestItemIds: string[] = [];
     const substitutions: Array<{ requestItemId: string; text: string }> = [];
     let coveredItemCount = 0;
 
@@ -176,6 +188,32 @@ export function compareLatestQuotes(
         maximumScaled: MAX_DECIMAL_18_3_SCALED,
         allowZero: false,
       });
+      const common = {
+        requestItemId: requestItem.id,
+        requestItemKey: requestItem.itemKey,
+        requestItemName: requestItem.name,
+        requestedQuantity: requestItem.quantity,
+        requestUnit: requestItem.unit,
+        requestedSpecification: requestItem.specification,
+        suppliedSpecification: suppliedSpecification(quoted),
+      };
+      if (!eligibleRequestItemIds.has(requestItem.id)) {
+        return {
+          ...common,
+          quotedAvailableQuantity: null,
+          quotedUnit: null,
+          normalizedAvailableQuantity: null,
+          normalizedUnitRatePaise: null,
+          unitComparable: false,
+          coverage: 'NOT_REQUESTED' as const,
+          gstBasisPoints: null,
+          taxInclusive: false,
+          substitution: null,
+          subtotalPaise: '0',
+          gstPaise: '0',
+          totalPaise: '0',
+        };
+      }
       if (
         !quoted ||
         quoted.noQuote ||
@@ -186,11 +224,7 @@ export function compareLatestQuotes(
       ) {
         missingRequestItemIds.push(requestItem.id);
         return {
-          requestItemId: requestItem.id,
-          requestItemName: requestItem.name,
-          quoteItemId: quoted?.id ?? null,
-          requestedQuantity: requestItem.quantity,
-          requestUnit: requestItem.unit,
+          ...common,
           quotedAvailableQuantity: quoted?.availableQuantity ?? null,
           quotedUnit: quoted?.unit ?? null,
           normalizedAvailableQuantity: null,
@@ -200,14 +234,14 @@ export function compareLatestQuotes(
           gstBasisPoints: quoted?.gstBasisPoints ?? null,
           taxInclusive: quoted?.taxInclusive ?? false,
           substitution: quoted?.substitution ?? null,
-          subtotalPaise: quoted?.subtotalPaise.toString() ?? '0',
-          gstPaise: quoted?.gstPaise.toString() ?? '0',
-          totalPaise: quoted?.totalPaise.toString() ?? '0',
+          subtotalPaise: quoted?.subtotalPaise ?? '0',
+          gstPaise: quoted?.gstPaise ?? '0',
+          totalPaise: quoted?.totalPaise ?? '0',
         };
       }
 
-      let availableMilli: bigint | null = null;
-      let ratePaise: bigint | null = null;
+      let availableMilli: bigint | null;
+      let ratePaise: bigint | null;
       try {
         availableMilli = normalizeQuoteQuantityMilli(
           quoted.availableQuantity,
@@ -215,7 +249,7 @@ export function compareLatestQuotes(
           requestItem.unit,
         );
         ratePaise = normalizeQuoteUnitRatePaise(
-          quoted.unitRatePaise,
+          BigInt(quoted.unitRatePaise),
           quoted.unit,
           requestItem.unit,
         );
@@ -225,9 +259,10 @@ export function compareLatestQuotes(
       }
       const unitComparable = availableMilli !== null && ratePaise !== null;
       let coverage: 'FULL' | 'PARTIAL' | 'UNIT_MISMATCH';
-      if (availableMilli === null || ratePaise === null) {
+      if (!unitComparable) {
         coverage = 'UNIT_MISMATCH';
-      } else if (availableMilli >= requestedMilli) {
+        unitMismatchRequestItemIds.push(requestItem.id);
+      } else if (availableMilli !== null && availableMilli >= requestedMilli) {
         coverage = 'FULL';
         coveredItemCount += 1;
       } else {
@@ -241,11 +276,7 @@ export function compareLatestQuotes(
         });
       }
       return {
-        requestItemId: requestItem.id,
-        requestItemName: requestItem.name,
-        quoteItemId: quoted.id,
-        requestedQuantity: requestItem.quantity,
-        requestUnit: requestItem.unit,
+        ...common,
         quotedAvailableQuantity: quoted.availableQuantity,
         quotedUnit: quoted.unit,
         normalizedAvailableQuantity:
@@ -256,50 +287,39 @@ export function compareLatestQuotes(
         gstBasisPoints: quoted.gstBasisPoints,
         taxInclusive: quoted.taxInclusive,
         substitution: quoted.substitution,
-        subtotalPaise: quoted.subtotalPaise.toString(),
-        gstPaise: quoted.gstPaise.toString(),
-        totalPaise: quoted.totalPaise.toString(),
+        subtotalPaise: quoted.subtotalPaise,
+        gstPaise: quoted.gstPaise,
+        totalPaise: quoted.totalPaise,
       };
     });
 
-    const fullCoverage = coveredItemCount === request.items.length;
-    const expired = dateOnly(quote.validUntil) < indiaToday;
-    const awardIssues: Array<
-      'SUPPLIER_INACTIVE' | 'QUOTE_EXPIRED' | 'INCOMPLETE_COVERAGE'
-    > = [];
-    if (!quote.supplierActive) awardIssues.push('SUPPLIER_INACTIVE');
-    if (expired) awardIssues.push('QUOTE_EXPIRED');
-    if (!fullCoverage) awardIssues.push('INCOMPLETE_COVERAGE');
     return {
-      quoteId: quote.id,
       supplierRequestId: quote.supplierRequestId,
-      supplierId: quote.supplierId,
       supplierName: quote.supplierName,
       supplierActive: quote.supplierActive,
       revision: quote.revision,
-      subtotalPaise: quote.subtotalPaise.toString(),
-      gstPaise: quote.gstPaise.toString(),
-      freightPaise: quote.freightPaise.toString(),
-      totalPaise: quote.totalPaise.toString(),
-      deliveryDate: dateOnly(quote.deliveryDate),
-      validUntil: dateOnly(quote.validUntil),
-      submittedAt: quote.submittedAt.toISOString(),
+      subtotalPaise: quote.subtotalPaise,
+      gstPaise: quote.gstPaise,
+      freightPaise: quote.freightPaise,
+      totalPaise: quote.totalPaise,
+      deliveryDate: quote.deliveryDate,
+      validUntil: quote.validUntil,
+      submittedAt: quote.submittedAt,
+      minimumOrder: quote.minimumOrder,
       commercialTerms: quote.commercialTerms,
       notes: quote.notes,
       coveredItemCount,
-      totalItemCount: request.items.length,
-      fullCoverage,
-      comparable: fullCoverage && !expired,
-      awardable: awardIssues.length === 0,
-      awardIssues,
+      totalItemCount: eligibleRequestItemIds.size,
+      fullCoverage: coveredItemCount === eligibleRequestItemIds.size,
       deliveryFit:
-        dateOnly(quote.deliveryDate) <= dateOnly(request.deliveryDate)
+        quote.deliveryDate <= request.deliveryDate
           ? ('ON_OR_BEFORE' as const)
           : ('AFTER_REQUESTED_DATE' as const),
-      expired,
+      expired: quote.validUntil < indiaToday,
       missingTerms: !quote.commercialTerms?.trim(),
       missingRequestItemIds,
       partialRequestItemIds,
+      unitMismatchRequestItemIds,
       substitutions,
       items,
     };
@@ -308,14 +328,13 @@ export function compareLatestQuotes(
   quoteDtos.sort(
     (left, right) =>
       left.supplierName.localeCompare(right.supplierName, 'en-IN') ||
-      left.supplierId.localeCompare(right.supplierId) ||
-      left.quoteId.localeCompare(right.quoteId),
+      left.supplierRequestId.localeCompare(right.supplierRequestId),
   );
-
   return { request: requestDto(request), quotes: quoteDtos };
 }
 
-type ComparisonClient = TenantTransactionHost & Pick<PrismaClient, '$queryRaw'>;
+type ComparisonClient = TenantTransactionHost &
+  Pick<PrismaClient, '$queryRaw' | '$transaction'>;
 
 function validId(value: unknown) {
   return (
@@ -327,10 +346,24 @@ function validId(value: unknown) {
   );
 }
 
-export async function getQuoteComparison(input: {
-  actor: { tenantId: string; userId: string };
-  requestId: string;
-}, client: ComparisonClient = prisma) {
+function storedRequestDocuments(items: unknown, sourcing: unknown) {
+  try {
+    return validateRequestDocuments(items, sourcing);
+  } catch (error) {
+    if (error instanceof RequestDocumentValidationError) {
+      throw new PublicQuoteStorageCorruptionError();
+    }
+    throw error;
+  }
+}
+
+export async function getQuoteComparison(
+  input: {
+    actor: { tenantId: string; userId: string };
+    requestId: string;
+  },
+  client: ComparisonClient = prisma,
+) {
   if (
     !validId(input.actor?.tenantId) ||
     !validId(input.actor?.userId) ||
@@ -353,15 +386,6 @@ export async function getQuoteComparison(input: {
       });
       if (!actor) throw new AuthorizationError();
 
-      const [locked] = await transaction.$queryRaw<Array<{ id: string }>>`
-        SELECT "id"
-        FROM "ProcurementRequest"
-        WHERE "tenantId" = ${input.actor.tenantId}
-          AND "id" = ${input.requestId}
-        FOR SHARE
-      `;
-      if (!locked) throw new QuoteComparisonNotFoundError();
-
       const request = await transaction.procurementRequest.findFirst({
         where: { tenantId: input.actor.tenantId, id: input.requestId },
         select: {
@@ -372,40 +396,18 @@ export async function getQuoteComparison(input: {
           deliveryDate: true,
           quoteDeadline: true,
           commercialTerms: true,
-          items: {
-            orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-            select: { id: true, name: true, quantity: true, unit: true },
-          },
+          items: true,
+          sourcing: true,
           award: {
             select: {
               id: true,
               requestId: true,
               rationale: true,
+              allocationLines: true,
               supplierSnapshots: true,
               deliverySnapshot: true,
               totalPaise: true,
               createdAt: true,
-              lines: {
-                orderBy: [
-                  { requestItemId: 'asc' },
-                  { supplierId: 'asc' },
-                  { supplierQuoteItemId: 'asc' },
-                ],
-                select: {
-                  id: true,
-                  requestItemId: true,
-                  supplierQuoteItemId: true,
-                  supplierId: true,
-                  quantity: true,
-                  unit: true,
-                  unitRatePaise: true,
-                  gstBasisPoints: true,
-                  subtotalPaise: true,
-                  gstPaise: true,
-                  totalPaise: true,
-                  requestItem: { select: { name: true } },
-                },
-              },
             },
           },
           supplierRequests: {
@@ -413,81 +415,84 @@ export async function getQuoteComparison(input: {
             select: {
               id: true,
               supplierId: true,
-              supplier: { select: { businessName: true, isActive: true } },
-              quotes: {
-                orderBy: { revision: 'desc' },
-                take: 1,
+              quoteRevision: true,
+              quoteRevisions: true,
+              supplier: {
                 select: {
-                  id: true,
-                  revision: true,
-                  subtotalPaise: true,
-                  gstPaise: true,
-                  freightPaise: true,
-                  totalPaise: true,
-                  deliveryDate: true,
-                  validUntil: true,
-                  commercialTerms: true,
-                  notes: true,
-                  submittedAt: true,
-                  items: {
-                    orderBy: { requestItemId: 'asc' },
-                    select: {
-                      id: true,
-                      requestItemId: true,
-                      noQuote: true,
-                      availableQuantity: true,
-                      unit: true,
-                      unitRatePaise: true,
-                      gstBasisPoints: true,
-                      taxInclusive: true,
-                      substitution: true,
-                      subtotalPaise: true,
-                      gstPaise: true,
-                      totalPaise: true,
-                    },
-                  },
+                  businessName: true,
+                  isActive: true,
+                  applicationRequestId: true,
                 },
               },
             },
           },
         },
       });
-      if (!request || request.items.length === 0) {
-        throw new QuoteComparisonNotFoundError();
-      }
-
-      const compared = compareLatestQuotes(
-        {
-          id: request.id,
-          title: request.title,
-          deliveryDate: request.deliveryDate,
-          quoteDeadline: request.quoteDeadline,
-          commercialTerms: request.commercialTerms,
-          items: request.items.map((item) => ({
-            ...item,
-            quantity: item.quantity.toString(),
-          })),
-        },
-        request.supplierRequests.flatMap((supplierRequest) => {
-          const quote = supplierRequest.quotes[0];
-          return quote
+      if (!request) throw new QuoteComparisonNotFoundError();
+      const documents = storedRequestDocuments(request.items, request.sourcing);
+      const comparisonRequest: ComparisonRequest = {
+        id: request.id,
+        title: request.title,
+        deliveryDate: request.deliveryDate.toISOString().slice(0, 10),
+        quoteDeadline: request.quoteDeadline.toISOString(),
+        commercialTerms: request.commercialTerms,
+        items: documents.items.items.map((item) => ({
+          id: item.id,
+          itemKey: item.itemKey,
+          name: item.name,
+          quantity: item.quantity,
+          unit: item.unit,
+          specification: item.specification,
+        })),
+      };
+      const quotes = request.supplierRequests.flatMap<ComparisonQuote>(
+        (supplierRequest) => {
+          const eligibleItems = eligibleQuoteRequestItems({
+            requestId: request.id,
+            items: documents.items,
+            sourcing: documents.sourcing,
+            supplier: {
+              id: supplierRequest.supplierId,
+              applicationRequestId:
+                supplierRequest.supplier.applicationRequestId,
+            },
+          });
+          if (eligibleItems.length === 0) {
+            throw new PublicQuoteStorageCorruptionError();
+          }
+          const revisions = validateQuoteRevisionsDocument(
+            supplierRequest.quoteRevisions,
+            eligibleItems,
+          );
+          if (
+            !Number.isSafeInteger(supplierRequest.quoteRevision) ||
+            supplierRequest.quoteRevision !== revisions.revisions.length
+          ) {
+            throw new PublicQuoteStorageCorruptionError();
+          }
+          const latest = latestQuoteRevision(revisions);
+          return latest
             ? [
                 {
-                  ...quote,
                   supplierRequestId: supplierRequest.id,
-                  supplierId: supplierRequest.supplierId,
                   supplierName: supplierRequest.supplier.businessName,
                   supplierActive: supplierRequest.supplier.isActive,
-                  items: quote.items.map((item) => ({
-                    ...item,
-                    availableQuantity: item.availableQuantity?.toString() ?? null,
-                  })),
+                  eligibleRequestItemIds: eligibleItems.map((item) => item.id),
+                  ...latest,
                 },
               ]
             : [];
-        }),
+        },
       );
-
+      const compared = compareLatestQuotes(comparisonRequest, quotes);
+      const award = request.award
+        ? validateAwardDocuments({
+            allocationLines: request.award.allocationLines,
+            supplierSnapshots: request.award.supplierSnapshots,
+            deliverySnapshot: request.award.deliverySnapshot,
+            totalPaise: request.award.totalPaise,
+          })
+        : null;
       return {
         ...compared,
         request: {
@@ -495,35 +500,18 @@ export async function getQuoteComparison(input: {
           status: request.status,
           version: request.version,
           award: request.award
-            ? (() => {
-                if (!Array.isArray(request.award.supplierSnapshots)) {
-                  throw new TypeError('Award supplier snapshots are not an array.');
-                }
-                return {
-                  id: request.award.id,
-                  requestId: request.award.requestId,
-                  rationale: request.award.rationale,
-                  totalPaise: request.award.totalPaise.toString(),
-                  createdAt: request.award.createdAt.toISOString(),
-                  splitAward: request.award.supplierSnapshots.length > 1,
-                  suppliers: request.award.supplierSnapshots,
-                  deliverySnapshot: request.award.deliverySnapshot,
-                  lines: request.award.lines.map((line) => ({
-                    id: line.id,
-                    requestItemId: line.requestItemId,
-                    requestItemName: line.requestItem.name,
-                    supplierQuoteItemId: line.supplierQuoteItemId,
-                    supplierId: line.supplierId,
-                    quantity: line.quantity.toString(),
-                    unit: line.unit,
-                    unitRatePaise: line.unitRatePaise.toString(),
-                    gstBasisPoints: line.gstBasisPoints,
-                    subtotalPaise: line.subtotalPaise.toString(),
-                    gstPaise: line.gstPaise.toString(),
-                    totalPaise: line.totalPaise.toString(),
-                  })),
-                };
-              })()
+            ? {
+                id: request.award.id,
+                requestId: request.award.requestId,
+                rationale: request.award.rationale,
+                allocationLines: award!.allocationLines,
+                lines: award!.allocationLines.lines,
+                suppliers: award!.supplierSnapshots.suppliers,
+                deliverySnapshot: award!.deliverySnapshot,
+                totalPaise: award!.totalPaise,
+                splitAward: award!.splitAward,
+                createdAt: request.award.createdAt.toISOString(),
+              }
             : null,
         },
       };

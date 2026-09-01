@@ -9,6 +9,43 @@ import { encode } from 'next-auth/jwt';
 
 const nextAuthPath = /^\/api\/auth\/(?:providers|session|csrf|signin(?:\/[^/?]+)?|callback\/[^/?]+|signout|error)(?:[/?]|$)/;
 
+function compactRequestDocuments({ itemId, itemName, quantity, supplierId }) {
+  return {
+    items: {
+      v: 1,
+      items: [{
+        id: itemId,
+        itemKey: itemName.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+        name: itemName,
+        quantity,
+        unit: 'KILOGRAM',
+        specification: {
+          v: 1,
+          category: 'VEGETABLES',
+          description: null,
+          preferredBrand: null,
+          packSize: null,
+          qualityGrade: null,
+          notes: null,
+          referenceUrl: null,
+          thumbnailWebpBase64: null,
+        },
+        sourcingOverride: null,
+      }],
+    },
+    sourcing: {
+      v: 1,
+      default: {
+        v: 1,
+        modes: ['CURRENT'],
+        currentSupplierIds: [supplierId],
+        selectedNewSupplierIds: [],
+        acceptVerifiedApplications: false,
+      },
+    },
+  };
+}
+
 function bodyBuffer(request) {
   return new Promise((resolveBody, reject) => {
     const chunks = [];
@@ -207,7 +244,7 @@ export async function startAuthGateway({
         const privilege = body.available ? 'GRANT' : 'REVOKE';
         const recipient = body.available ? 'TO' : 'FROM';
         await admin.$executeRawUnsafe(
-          `${privilege} EXECUTE ON FUNCTION autorfp_private.autorfp_auth_identity_by_provider(TEXT, TEXT) ${recipient} autorfp_app`,
+          `${privilege} EXECUTE ON FUNCTION autorfp_private.autorfp_auth_identity_by_google_subject(TEXT) ${recipient} autorfp_app`,
         );
         response.writeHead(204).end();
         return;
@@ -264,6 +301,10 @@ export async function startAuthGateway({
               state: 'Maharashtra',
               pin: '411037',
               gstin: '27ABCDE9999F1Z1',
+              capabilities: { v: 1, categories: [], items: [] },
+              verificationStatus: 'VERIFIED',
+              verifiedAt: new Date(),
+              verifiedByUserId: user.id,
             },
           });
           await transaction.procurementRequest.create({
@@ -273,6 +314,12 @@ export async function startAuthGateway({
               title: 'Fresh produce · Export journey',
               status: 'OPEN',
               version: 2,
+              ...compactRequestDocuments({
+                itemId,
+                itemName,
+                quantity: '100',
+                supplierId,
+              }),
               deliveryDetails: {
                 addressLine: '18 Koregaon Park Road',
                 city: 'Pune',
@@ -287,16 +334,6 @@ export async function startAuthGateway({
               createdByUserId: user.id,
             },
           });
-          await transaction.requestItem.create({
-            data: {
-              id: itemId,
-              tenantId: user.tenantId,
-              requestId,
-              name: itemName,
-              quantity: '100',
-              unit: 'KILOGRAM',
-            },
-          });
           await transaction.supplierRequest.create({
             data: {
               id: grantId,
@@ -305,6 +342,7 @@ export async function startAuthGateway({
               supplierId,
               tokenDigest: randomBytes(32).toString('hex'),
               expiresAt: new Date('2099-09-03T10:00:00.000Z'),
+              quoteRevisions: { v: 1, revisions: [] },
             },
           });
         });
@@ -369,6 +407,10 @@ export async function startAuthGateway({
                 businessName: `Load Supplier ${suffix}`,
                 contactName: `Supplier Contact ${suffix}`,
                 phone: `91111111${suffix}`,
+                capabilities: { v: 1, categories: [], items: [] },
+                verificationStatus: 'VERIFIED',
+                verifiedAt: new Date(),
+                verifiedByUserId: userId,
               },
             });
             await transaction.procurementRequest.create({
@@ -378,6 +420,12 @@ export async function startAuthGateway({
                 title: `Load produce request ${suffix}`,
                 status: 'OPEN',
                 version: 2,
+                ...compactRequestDocuments({
+                  itemId,
+                  itemName: 'Tomato',
+                  quantity: '10',
+                  supplierId,
+                }),
                 deliveryDetails: {
                   addressLine: `${index} Market Road`,
                   city: 'Pune',
@@ -391,16 +439,6 @@ export async function startAuthGateway({
                 createdByUserId: userId,
               },
             });
-            await transaction.requestItem.create({
-              data: {
-                id: itemId,
-                tenantId,
-                requestId,
-                name: 'Tomato',
-                quantity: '10',
-                unit: 'KILOGRAM',
-              },
-            });
             await transaction.supplierRequest.create({
               data: {
                 id: supplierRequestId,
@@ -409,6 +447,7 @@ export async function startAuthGateway({
                 supplierId,
                 tokenDigest,
                 expiresAt: new Date('2099-09-15T10:00:00.000Z'),
+                quoteRevisions: { v: 1, revisions: [] },
               },
             });
           });
@@ -446,6 +485,7 @@ export async function startAuthGateway({
                   requestItemId: itemId,
                   noQuote: false,
                   availableQuantity: '10',
+                  unit: 'KILOGRAM',
                   unitRateInr: '50',
                   gstPercent: '5',
                   taxInclusive: false,

@@ -28,6 +28,10 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { formatInr } from '@/lib/domain/money';
+import type {
+  RequestItemsV1,
+  RequestSourcingV1,
+} from '@/lib/procurement/request-document';
 import {
   cappedAllocationQuantity,
   calculateSplitAwardPreview,
@@ -37,7 +41,7 @@ import { DraftRequestEditor } from './DraftRequestEditor';
 import styles from './request-detail.module.css';
 
 type Status = 'DRAFT' | 'OPEN' | 'AWARDED' | 'CANCELLED';
-type RequestItem = { id: string; name: string; quantity: string; unit: string };
+type RequestItem = RequestItemsV1['items'][number];
 type SupplierGrant = {
   id: string;
   supplierId: string;
@@ -55,7 +59,7 @@ type SupplierGrant = {
   };
 };
 
-export type ProcurementRequestDetail = {
+type ProcurementRequestDetail = {
   id: string;
   title: string;
   status: Status;
@@ -64,22 +68,29 @@ export type ProcurementRequestDetail = {
   deliveryDate: string;
   quoteDeadline: string;
   commercialTerms: string | null;
-  items: RequestItem[];
+  items: RequestItemsV1;
+  sourcing: RequestSourcingV1;
   supplierRequests: SupplierGrant[];
 };
 
 type ComparisonItem = {
   requestItemId: string;
+  requestItemKey: string;
   requestItemName: string;
-  quoteItemId: string | null;
   requestedQuantity: string;
   requestUnit: string;
+  requestedSpecification: Record<string, unknown>;
+  suppliedSpecification: {
+    brand: string | null;
+    packSize: string | null;
+    qualityGrade: string | null;
+  };
   quotedAvailableQuantity: string | null;
   quotedUnit: string | null;
   normalizedAvailableQuantity: string | null;
   normalizedUnitRatePaise: string | null;
   unitComparable: boolean;
-  coverage: 'FULL' | 'PARTIAL' | 'MISSING' | 'UNIT_MISMATCH';
+  coverage: 'FULL' | 'PARTIAL' | 'MISSING' | 'UNIT_MISMATCH' | 'NOT_REQUESTED';
   gstBasisPoints: number | null;
   taxInclusive: boolean;
   substitution: string | null;
@@ -89,10 +100,9 @@ type ComparisonItem = {
 };
 
 type ComparisonQuote = {
-  quoteId: string;
   supplierRequestId: string;
-  supplierId: string;
   supplierName: string;
+  supplierActive: boolean;
   revision: number;
   subtotalPaise: string;
   gstPaise: string;
@@ -101,36 +111,35 @@ type ComparisonQuote = {
   deliveryDate: string;
   validUntil: string;
   submittedAt: string;
+  minimumOrder: string | null;
   commercialTerms: string | null;
   notes: string | null;
   coveredItemCount: number;
   totalItemCount: number;
   fullCoverage: boolean;
-  comparable: boolean;
   deliveryFit: 'ON_OR_BEFORE' | 'AFTER_REQUESTED_DATE';
   expired: boolean;
   missingTerms: boolean;
   missingRequestItemIds: string[];
   partialRequestItemIds: string[];
+  unitMismatchRequestItemIds: string[];
   substitutions: Array<{ requestItemId: string; text: string }>;
-  supplierActive?: boolean;
-  awardable?: boolean;
-  awardIssues?: string[];
   items: ComparisonItem[];
 };
 
 type AwardSupplierSnapshot = {
   supplierId: string;
+  supplierRequestId: string;
+  quoteRevision: number;
   supplierName: string;
   contactName?: string | null;
   phone?: string | null;
   email?: string | null;
   gstin?: string | null;
-  quoteId: string;
-  revision: number;
   freightPaise: string;
   deliveryDate: string;
   commercialTerms?: string | null;
+  lines: Array<{ requestItemId: string; itemName: string }>;
 };
 
 type AwardDetail = {
@@ -147,11 +156,10 @@ type AwardDetail = {
   };
   suppliers: AwardSupplierSnapshot[];
   lines: Array<{
-    id: string;
     requestItemId: string;
-    requestItemName: string;
-    supplierQuoteItemId: string;
+    supplierRequestId: string;
     supplierId: string;
+    quoteRevision: number;
     quantity: string;
     unit: string;
     unitRatePaise: string;
@@ -162,7 +170,7 @@ type AwardDetail = {
   }>;
 };
 
-export type QuoteComparison = {
+type QuoteComparison = {
   request: {
     id: string;
     title: string;
@@ -178,10 +186,15 @@ export type QuoteComparison = {
   quotes: ComparisonQuote[];
 };
 
-export type ShareLink = {
+type ShareLink = {
   supplierRequestId: string;
   supplierId: string;
   businessName?: string;
+  url: string;
+  expiresAt: string;
+};
+
+type SupplierApplicationLink = {
   url: string;
   expiresAt: string;
 };
@@ -259,6 +272,7 @@ export function RequestDetail({
   const [request, setRequest] = useState<ProcurementRequestDetail | null>(initialRequest ?? null);
   const [comparison, setComparison] = useState<QuoteComparison | null>(initialComparison ?? null);
   const [shareLinks, setShareLinks] = useState<ShareLink[]>([]);
+  const [applicationLink, setApplicationLink] = useState<SupplierApplicationLink | null>(null);
   const [loading, setLoading] = useState(!initialRequest);
   const [working, setWorking] = useState('');
   const [error, setError] = useState('');
@@ -266,7 +280,7 @@ export function RequestDetail({
   const [editingDraft, setEditingDraft] = useState(false);
   const [refreshingQuotes, setRefreshingQuotes] = useState(false);
   const [awardMode, setAwardMode] = useState<'WHOLE' | 'SPLIT'>('WHOLE');
-  const [wholeQuoteId, setWholeQuoteId] = useState('');
+  const [wholeSupplierRequestId, setWholeSupplierRequestId] = useState('');
   const [splitAllocations, setSplitAllocations] = useState<Record<string, SplitAllocation[]>>({});
   const [rationale, setRationale] = useState('');
   const initialLoadStarted = useRef(false);
@@ -345,11 +359,18 @@ export function RequestDetail({
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expectedVersion: request.version }),
       });
       if (!response.ok) throw new Error(await problemMessage(response, 'We could not open this request.'));
-      const result = (await response.json()) as { request: ProcurementRequestDetail; links: ShareLink[] };
+      const result = (await response.json()) as {
+        request: ProcurementRequestDetail;
+        links: ShareLink[];
+        applicationLink?: SupplierApplicationLink;
+      };
       setRequest(result.request);
       setShareLinks(result.links);
-      setComparison({ request: { id: result.request.id, title: result.request.title, deliveryDate: result.request.deliveryDate.slice(0, 10), quoteDeadline: result.request.quoteDeadline, commercialTerms: result.request.commercialTerms, itemCount: result.request.items.length, items: result.request.items }, quotes: [] });
-      setNotice('Request opened. Copy and share each supplier link below.');
+      setApplicationLink(result.applicationLink ?? null);
+      setComparison({ request: { id: result.request.id, title: result.request.title, deliveryDate: result.request.deliveryDate.slice(0, 10), quoteDeadline: result.request.quoteDeadline, commercialTerms: result.request.commercialTerms, itemCount: result.request.items.items.length, items: result.request.items.items }, quotes: [] });
+      setNotice(result.applicationLink
+        ? 'Request opened. Share the private quote links and the new supplier application link below.'
+        : 'Request opened. Copy and share each supplier link below.');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'We could not open this request.');
     } finally {
@@ -395,6 +416,22 @@ export function RequestDetail({
     } catch {
       setError('Copy was blocked by the browser. Select and copy the link manually.');
     }
+  }
+
+  async function copyApplicationLink() {
+    if (!applicationLink) return;
+    try {
+      await navigator.clipboard.writeText(applicationLink.url);
+      setNotice('New supplier application link copied.');
+    } catch {
+      setError('Copy was blocked by the browser. Select and copy the link manually.');
+    }
+  }
+
+  function shareApplicationOnWhatsApp() {
+    if (!applicationLink) return;
+    const text = `Apply to quote for our restaurant: ${applicationLink.url}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
   }
 
   async function saveDownload(response: Response, fallbackFilename: string) {
@@ -453,17 +490,28 @@ export function RequestDetail({
   const splitPreview = useMemo(() => comparison
     ? calculateSplitAwardPreview({
         requestItems: comparison.request.items,
-        quotes: comparison.quotes,
+        quotes: comparison.quotes.map((quote) => ({
+          supplierRequestId: quote.supplierRequestId,
+          quoteRevision: quote.revision,
+          supplierName: quote.supplierName,
+          freightPaise: quote.freightPaise,
+          expired: quote.expired,
+          supplierActive: quote.supplierActive,
+          items: quote.items,
+        })),
         allocations: splitAllocations,
       })
     : null, [comparison, splitAllocations]);
-  const wholeQuote = comparison?.quotes.find(({ quoteId }) => quoteId === wholeQuoteId);
+  const wholeQuote = comparison?.quotes.find(
+    ({ supplierRequestId }) => supplierRequestId === wholeSupplierRequestId,
+  );
   const wholeReady = Boolean(
     wholeQuote &&
-    wholeQuote.comparable &&
+    wholeQuote.fullCoverage &&
+    wholeQuote.totalItemCount === comparison?.request.itemCount &&
+    wholeQuote.items.every(({ coverage }) => coverage === 'FULL') &&
     !wholeQuote.expired &&
-    wholeQuote.supplierActive !== false &&
-    wholeQuote.awardable !== false,
+    wholeQuote.supplierActive,
   );
   const awardReady = Boolean(
     rationale.trim() && (awardMode === 'WHOLE' ? wholeReady : splitPreview?.ready),
@@ -471,24 +519,24 @@ export function RequestDetail({
 
   function awardableLine(quote: ComparisonQuote, item: ComparisonItem) {
     return Boolean(
-      item.quoteItemId &&
       item.unitComparable &&
       item.normalizedAvailableQuantity &&
       item.normalizedUnitRatePaise &&
       item.gstBasisPoints !== null &&
       !quote.expired &&
-      quote.supplierActive !== false &&
-      quote.awardable !== false,
+      quote.supplierActive,
     );
   }
 
   function addSplitAllocation(requested: RequestItem, quote: ComparisonQuote, item: ComparisonItem) {
-    const quoteItemId = item.quoteItemId;
     const normalizedAvailableQuantity = item.normalizedAvailableQuantity;
-    if (!quoteItemId || !normalizedAvailableQuantity) return;
+    if (!normalizedAvailableQuantity) return;
     setSplitAllocations((current) => {
       const currentRows = current[requested.id] ?? [];
-      if (currentRows.some((allocation) => allocation.quoteItemId === quoteItemId)) return current;
+      if (currentRows.some((allocation) =>
+        allocation.supplierRequestId === quote.supplierRequestId &&
+        allocation.quoteRevision === quote.revision
+      )) return current;
       const coverage = splitPreview?.itemCoverage[requested.id];
       let amount: string;
       try {
@@ -503,27 +551,45 @@ export function RequestDetail({
         ...current,
         [requested.id]: [
           ...currentRows,
-          { quoteItemId, quantity: amount },
+          {
+            supplierRequestId: quote.supplierRequestId,
+            quoteRevision: quote.revision,
+            quantity: amount,
+          },
         ],
       };
     });
   }
 
-  function updateSplitQuantity(requestItemId: string, quoteItemId: string, quantity: string) {
+  function updateSplitQuantity(
+    requestItemId: string,
+    supplierRequestId: string,
+    quoteRevision: number,
+    quantity: string,
+  ) {
     if (!/^\d*(?:\.\d{0,3})?$/.test(quantity)) return;
     setSplitAllocations((current) => ({
       ...current,
       [requestItemId]: (current[requestItemId] ?? []).map((allocation) =>
-        allocation.quoteItemId === quoteItemId ? { ...allocation, quantity } : allocation,
+        allocation.supplierRequestId === supplierRequestId &&
+        allocation.quoteRevision === quoteRevision
+          ? { ...allocation, quantity }
+          : allocation,
       ),
     }));
   }
 
-  function removeSplitAllocation(requestItemId: string, quoteItemId: string) {
+  function removeSplitAllocation(
+    requestItemId: string,
+    supplierRequestId: string,
+    quoteRevision: number,
+  ) {
     setSplitAllocations((current) => ({
       ...current,
       [requestItemId]: (current[requestItemId] ?? []).filter(
-        (allocation) => allocation.quoteItemId !== quoteItemId,
+        (allocation) =>
+          allocation.supplierRequestId !== supplierRequestId ||
+          allocation.quoteRevision !== quoteRevision,
       ),
     }));
   }
@@ -541,7 +607,13 @@ export function RequestDetail({
     setError('');
     try {
       const body = awardMode === 'WHOLE'
-        ? { mode: 'WHOLE', expectedRequestVersion: request.version, supplierQuoteId: wholeQuoteId, rationale: rationale.trim() }
+        ? {
+            mode: 'WHOLE',
+            expectedRequestVersion: request.version,
+            supplierRequestId: wholeQuote!.supplierRequestId,
+            quoteRevision: wholeQuote!.revision,
+            rationale: rationale.trim(),
+          }
         : {
             mode: 'SPLIT', expectedRequestVersion: request.version, rationale: rationale.trim(),
             selections: splitPreview?.selections ?? [],
@@ -574,7 +646,7 @@ export function RequestDetail({
           <div className={styles.headerMeta}>
             <span className={styles[`status${request.status}`]}>{statusLabel[request.status]}</span>
             <span>Version {request.version}</span>
-            <span>{request.items.length} {request.items.length === 1 ? 'item' : 'items'}</span>
+            <span>{request.items.items.length} {request.items.items.length === 1 ? 'item' : 'items'}</span>
             <span>{request.supplierRequests.length} {request.supplierRequests.length === 1 ? 'supplier' : 'suppliers'}</span>
           </div>
         </div>
@@ -614,10 +686,22 @@ export function RequestDetail({
       {delivery.instructions && <aside className={styles.instructions}><strong>Delivery instructions</strong>{delivery.instructions}</aside>}
 
       <section className={styles.panel}>
-        <header><div><p className={styles.eyebrow}>Demand</p><h2>Requested items</h2></div><span>{request.items.length} total</span></header>
+        <header><div><p className={styles.eyebrow}>Demand</p><h2>Requested items</h2></div><span>{request.items.items.length} total</span></header>
         <div className={styles.itemTable}>
           <div className={styles.tableHeader}><span>Item</span><span>Quantity</span></div>
-          {request.items.map((item) => <div className={styles.itemRow} key={item.id}><strong>{item.name}</strong><span>{item.quantity} {unitLabel(item.unit)}</span></div>)}
+          {request.items.items.map((item) => (
+            <div className={styles.itemRow} key={item.id}>
+              <span>
+                <strong>{item.name}</strong>
+                {item.specification.referenceUrl ? (
+                  <a href={item.specification.referenceUrl} target="_blank" rel="noopener noreferrer">
+                    View food reference <ExternalLink aria-hidden="true" />
+                  </a>
+                ) : null}
+              </span>
+              <span>{item.quantity} {unitLabel(item.unit)}</span>
+            </div>
+          ))}
         </div>
         {request.commercialTerms && <div className={styles.terms}><strong>Terms shared with suppliers</strong><p>{request.commercialTerms}</p></div>}
       </section>
@@ -695,14 +779,14 @@ export function RequestDetail({
                 <button
                   type="button"
                   disabled={Boolean(working)}
-                  key={`${supplier.supplierId}:${supplier.quoteId}`}
+                  key={`${supplier.supplierRequestId}:${supplier.quoteRevision}`}
                   onClick={() => void download(
                     `/api/awards/${encodeURIComponent(committedAward.id)}/purchase-orders/${encodeURIComponent(supplier.supplierId)}`,
                     `Purchase order for ${supplier.supplierName}`,
                     'quoteplate-purchase-order.pdf',
                   )}
                 >
-                  <span><strong>Purchase order · {supplier.supplierName}</strong><small>PDF · award-time prices and terms</small></span>
+                  <span><strong>Purchase order · {supplier.supplierName}</strong><small>PDF · prices and terms saved when awarded</small></span>
                   <Download aria-hidden="true" />
                 </button>
               ))}
@@ -713,6 +797,20 @@ export function RequestDetail({
 
       <section className={styles.panel}>
         <header><div><p className={styles.eyebrow}>Supplier progress</p><h2>Private quote links</h2></div><Users aria-hidden="true" /></header>
+        {applicationLink && (
+          <div className={styles.applicationInvite}>
+            <div>
+              <strong>New supplier application link</strong>
+              <p>Share this with suppliers you do not already work with. You must approve each applicant before they can send a quote.</p>
+              <code>{applicationLink.url}</code>
+              <small>Available until {displayDate(applicationLink.expiresAt, true)}</small>
+            </div>
+            <span>
+              <button type="button" onClick={() => void copyApplicationLink()}><Clipboard aria-hidden="true" />Copy</button>
+              <button type="button" onClick={shareApplicationOnWhatsApp}><MessageCircle aria-hidden="true" />WhatsApp</button>
+            </span>
+          </div>
+        )}
         <div className={styles.grantList}>
           {request.supplierRequests.map((grant) => {
             const quote = quoteByGrant.get(grant.id);
@@ -764,22 +862,21 @@ export function RequestDetail({
             <>
               <div className={styles.quoteCards}>
                 {comparison.quotes.map((quote) => (
-                  <article key={quote.quoteId}>
-                    <div className={styles.quoteTop}><span><strong>{quote.supplierName}</strong><small>Revision {quote.revision}</small></span><i className={quote.comparable ? styles.comparable : styles.incomplete}>{quote.comparable ? 'Full quote' : 'Check coverage'}</i></div>
+                  <article key={quote.supplierRequestId}>
+                    <div className={styles.quoteTop}><span><strong>{quote.supplierName}</strong><small>Revision {quote.revision}</small></span><i className={quote.fullCoverage ? styles.comparable : styles.incomplete}>{quote.fullCoverage ? 'Full quote' : 'Check coverage'}</i></div>
                     <strong className={styles.quoteTotal}>{formatInr(quote.totalPaise)}</strong>
                     <div className={styles.quoteBreakdown}><span>Before GST {formatInr(quote.subtotalPaise)}</span><span>GST {formatInr(quote.gstPaise)}</span><span>Freight {formatInr(quote.freightPaise)}</span></div>
                     <div className={styles.quoteFacts}><span>{quote.coveredItemCount}/{quote.totalItemCount} items</span><span>Delivery {displayDate(quote.deliveryDate)}</span><span>Valid to {displayDate(quote.validUntil)}</span></div>
                     {quote.commercialTerms && <p>{quote.commercialTerms}</p>}
                     {quote.substitutions.length > 0 && <p className={styles.substitution}>{quote.substitutions.length} substitution {quote.substitutions.length === 1 ? 'noted' : 'notes'}</p>}
-                    {(quote.expired || quote.deliveryFit === 'AFTER_REQUESTED_DATE' || quote.missingTerms || quote.supplierActive === false || (quote.awardIssues?.length ?? 0) > 0) && (
+                    {(quote.expired || quote.deliveryFit === 'AFTER_REQUESTED_DATE' || quote.missingTerms || !quote.supplierActive) && (
                       <div className={styles.quoteWarnings}>
                         <AlertTriangle aria-hidden="true" />
                         <ul>
                           {quote.expired && <li>Quote validity has ended.</li>}
                           {quote.deliveryFit === 'AFTER_REQUESTED_DATE' && <li>Delivery is later than requested.</li>}
                           {quote.missingTerms && <li>Payment terms were not supplied.</li>}
-                          {quote.supplierActive === false && <li>Supplier is inactive and cannot receive an award.</li>}
-                          {(quote.awardIssues ?? []).map((issue) => <li key={issue}>{issue}</li>)}
+                          {!quote.supplierActive && <li>Supplier is inactive and cannot receive an award.</li>}
                         </ul>
                       </div>
                     )}
@@ -788,13 +885,13 @@ export function RequestDetail({
               </div>
               <div className={styles.comparisonWrap}>
                 <table>
-                  <thead><tr><th>Requested item</th>{comparison.quotes.map((quote) => <th key={quote.quoteId}>{quote.supplierName}</th>)}</tr></thead>
+                  <thead><tr><th>Requested item</th>{comparison.quotes.map((quote) => <th key={quote.supplierRequestId}>{quote.supplierName}</th>)}</tr></thead>
                   <tbody>{comparison.request.items.map((requested) => (
                     <tr key={requested.id}>
                       <th><strong>{requested.name}</strong><small>{requested.quantity} {unitLabel(requested.unit)}</small></th>
                       {comparison.quotes.map((quote) => {
                         const item = quote.items.find(({ requestItemId }) => requestItemId === requested.id);
-                        return <td key={quote.quoteId}>{item?.unitComparable && item.normalizedUnitRatePaise ? <><strong>{formatInr(item.normalizedUnitRatePaise)} / {unitLabel(requested.unit)}</strong><small>{item.coverage === 'PARTIAL' ? `${item.normalizedAvailableQuantity} ${unitLabel(requested.unit)} available` : 'Full requested quantity available'}</small><small>{item.gstBasisPoints === null ? 'GST not supplied' : `${item.gstBasisPoints / 100}% GST${item.taxInclusive ? ' included' : ''}`}</small>{item.substitution && <em>{item.substitution}</em>}</> : <span className={styles.unavailable}>{item?.coverage === 'UNIT_MISMATCH' ? 'Unit mismatch' : 'Not quoted'}</span>}</td>;
+                        return <td key={quote.supplierRequestId}>{item?.unitComparable && item.normalizedUnitRatePaise ? <><strong>{formatInr(item.normalizedUnitRatePaise)} / {unitLabel(requested.unit)}</strong><small>{item.coverage === 'PARTIAL' ? `${item.normalizedAvailableQuantity} ${unitLabel(requested.unit)} available` : 'Full requested quantity available'}</small><small>{item.gstBasisPoints === null ? 'GST not supplied' : `${item.gstBasisPoints / 100}% GST${item.taxInclusive ? ' included' : ''}`}</small>{item.substitution && <em>{item.substitution}</em>}</> : <span className={styles.unavailable}>{item?.coverage === 'UNIT_MISMATCH' ? 'Unit mismatch' : item?.coverage === 'NOT_REQUESTED' ? 'Not requested from supplier' : 'Not quoted'}</span>}</td>;
                       })}
                     </tr>
                   ))}</tbody>
@@ -804,21 +901,26 @@ export function RequestDetail({
               {request.status === 'OPEN' && (
                 <div className={styles.awardBox}>
                   <div><p className={styles.eyebrow}>Human decision</p><h3>Record the award</h3><p>QuotePlate shows the facts. Your restaurant chooses the supplier.</p></div>
-                  <div className={styles.awardModes}>
-                    <button type="button" className={awardMode === 'WHOLE' ? styles.selectedMode : ''} onClick={() => setAwardMode('WHOLE')}>Whole request</button>
-                    <button type="button" className={awardMode === 'SPLIT' ? styles.selectedMode : ''} onClick={() => setAwardMode('SPLIT')}>Split by item</button>
+                  <div aria-label="Award method" className={styles.awardModes} role="group">
+                    <button aria-pressed={awardMode === 'WHOLE'} type="button" className={awardMode === 'WHOLE' ? styles.selectedMode : ''} onClick={() => setAwardMode('WHOLE')}>Whole request</button>
+                    <button aria-pressed={awardMode === 'SPLIT'} type="button" className={awardMode === 'SPLIT' ? styles.selectedMode : ''} onClick={() => setAwardMode('SPLIT')}>Split by item</button>
                   </div>
                   {awardMode === 'WHOLE' ? (
                     <div className={styles.awardChoices}>{comparison.quotes.map((quote) => {
-                      const eligible = quote.comparable && !quote.expired && quote.supplierActive !== false && quote.awardable !== false;
+                      const eligible =
+                        quote.fullCoverage &&
+                        quote.totalItemCount === comparison.request.itemCount &&
+                        quote.items.every(({ coverage }) => coverage === 'FULL') &&
+                        !quote.expired &&
+                        quote.supplierActive;
                       return (
-                        <label className={wholeQuoteId === quote.quoteId ? styles.selectedChoice : styles.awardChoice} key={quote.quoteId}>
-                          <input type="radio" name="whole-award" disabled={!eligible} checked={wholeQuoteId === quote.quoteId} onChange={() => setWholeQuoteId(quote.quoteId)} />
+                        <label className={wholeSupplierRequestId === quote.supplierRequestId ? styles.selectedChoice : styles.awardChoice} key={quote.supplierRequestId}>
+                          <input type="radio" name="whole-award" disabled={!eligible} checked={wholeSupplierRequestId === quote.supplierRequestId} onChange={() => setWholeSupplierRequestId(quote.supplierRequestId)} />
                           <span>
                             <strong>{quote.supplierName}</strong>
-                            <small>{eligible ? `${formatInr(quote.totalPaise)} · full landed total` : quote.supplierActive === false ? 'Supplier is inactive' : quote.expired ? 'Quote validity has ended' : 'Complete comparable coverage required'}</small>
+                            <small>{eligible ? `${formatInr(quote.totalPaise)} · full landed total` : !quote.supplierActive ? 'Supplier is inactive' : quote.expired ? 'Quote validity has ended' : 'Complete comparable coverage required'}</small>
                           </span>
-                          {wholeQuoteId === quote.quoteId && <CheckCircle2 aria-hidden="true" />}
+                          {wholeSupplierRequestId === quote.supplierRequestId && <CheckCircle2 aria-hidden="true" />}
                         </label>
                       );
                     })}</div>
@@ -839,19 +941,25 @@ export function RequestDetail({
                             </span>
                           </header>
                           {allocations.map((allocation) => {
-                            const selected = candidates.find(({ item }) => item.quoteItemId === allocation.quoteItemId);
+                            const selected = candidates.find(({ quote }) =>
+                              quote.supplierRequestId === allocation.supplierRequestId &&
+                              quote.revision === allocation.quoteRevision
+                            );
                             if (!selected) return null;
                             return (
-                              <div className={styles.allocationRow} key={allocation.quoteItemId}>
+                              <div className={styles.allocationRow} key={`${allocation.supplierRequestId}:${allocation.quoteRevision}`}>
                                 <span><strong>{selected.quote.supplierName}</strong><small>{formatInr(selected.item.normalizedUnitRatePaise!)} / {unitLabel(requested.unit)} · up to {selected.item.normalizedAvailableQuantity} {unitLabel(requested.unit)}</small></span>
-                                <label><span>Quantity</span><input aria-label={`${requested.name} quantity from ${selected.quote.supplierName}`} inputMode="decimal" value={allocation.quantity} onChange={(event) => updateSplitQuantity(requested.id, allocation.quoteItemId, event.target.value)} /></label>
-                                <button type="button" aria-label={`Remove ${selected.quote.supplierName} from ${requested.name}`} onClick={() => removeSplitAllocation(requested.id, allocation.quoteItemId)}><Trash2 aria-hidden="true" /></button>
+                                <label><span>Quantity</span><input aria-label={`${requested.name} quantity from ${selected.quote.supplierName}`} inputMode="decimal" value={allocation.quantity} onChange={(event) => updateSplitQuantity(requested.id, allocation.supplierRequestId, allocation.quoteRevision, event.target.value)} /></label>
+                                <button type="button" aria-label={`Remove ${selected.quote.supplierName} from ${requested.name}`} onClick={() => removeSplitAllocation(requested.id, allocation.supplierRequestId, allocation.quoteRevision)}><Trash2 aria-hidden="true" /></button>
                               </div>
                             );
                           })}
                           <div className={styles.availableSuppliers}>
-                            {candidates.filter(({ item }) => !allocations.some(({ quoteItemId }) => quoteItemId === item.quoteItemId)).map(({ quote, item }) => (
-                              <button type="button" disabled={coverage?.valid} key={item.quoteItemId} onClick={() => addSplitAllocation(requested, quote, item)}>
+                            {candidates.filter(({ quote }) => !allocations.some((allocation) =>
+                              allocation.supplierRequestId === quote.supplierRequestId &&
+                              allocation.quoteRevision === quote.revision
+                            )).map(({ quote, item }) => (
+                              <button type="button" disabled={coverage?.valid} key={`${quote.supplierRequestId}:${quote.revision}`} onClick={() => addSplitAllocation(requested, quote, item)}>
                                 <Plus aria-hidden="true" />{quote.supplierName}<small>{item.normalizedAvailableQuantity} {unitLabel(requested.unit)} available</small>
                               </button>
                             ))}
@@ -898,9 +1006,12 @@ export function RequestDetail({
                       <div className={styles.awardLineHeader}><span>Item and supplier</span><span>Quantity</span><span>Rate</span><span>GST</span><span>Line total</span></div>
                       {award.lines.map((line) => {
                         const supplier = suppliers.get(line.supplierId);
+                        const description = supplier?.lines.find(
+                          ({ requestItemId }) => requestItemId === line.requestItemId,
+                        );
                         return (
-                          <div className={styles.awardLine} key={line.id}>
-                            <span><strong>{line.requestItemName}</strong><small>{supplier?.supplierName ?? 'Supplier snapshot'}</small></span>
+                          <div className={styles.awardLine} key={`${line.requestItemId}:${line.supplierRequestId}:${line.quoteRevision}`}>
+                            <span><strong>{description?.itemName ?? 'Requested item'}</strong><small>{supplier?.supplierName ?? 'Supplier snapshot'}</small></span>
                             <span>{line.quantity} {unitLabel(line.unit)}</span>
                             <span>{formatInr(line.unitRatePaise)} / {unitLabel(line.unit)}</span>
                             <span>{line.gstBasisPoints / 100}%</span>
@@ -911,9 +1022,9 @@ export function RequestDetail({
                     </div>
                     <div className={styles.awardSuppliers}>
                       {award.suppliers.map((supplier) => (
-                        <article key={`${supplier.supplierId}:${supplier.quoteId}`}>
+                        <article key={`${supplier.supplierRequestId}:${supplier.quoteRevision}`}>
                           <strong>{supplier.supplierName}</strong>
-                          <span>Quote revision {supplier.revision}</span>
+                          <span>Quote revision {supplier.quoteRevision}</span>
                           <span>Freight {formatInr(supplier.freightPaise)}</span>
                           <span>Delivery {displayDate(supplier.deliveryDate)}</span>
                           {supplier.gstin && <span>GSTIN {supplier.gstin}</span>}

@@ -27,6 +27,12 @@ describe('supplier CSV exchange', () => {
           '27AAPFU0939F1ZV',
           'Delivery before 7 am',
           'true',
+          'SELECTED_NEW',
+          'VEGETABLES|DAIRY',
+          'FRUITS',
+          'SPICES_SEASONINGS',
+          'tomato::Tomato|potato::Potato',
+          'paneer::Paneer',
         ]
           .map((value) => `"${value}"`)
           .join(','),
@@ -49,6 +55,21 @@ describe('supplier CSV exchange', () => {
           gstin: '27AAPFU0939F1ZV',
           notes: 'Delivery before 7 am',
           isActive: true,
+          relationshipType: 'SELECTED_NEW',
+          capabilities: {
+            v: 1,
+            categories: [
+              { category: 'VEGETABLES', tier: 'CAPABLE', rank: 1 },
+              { category: 'DAIRY', tier: 'CAPABLE', rank: 2 },
+              { category: 'FRUITS', tier: 'PREFERRED', rank: 1 },
+              { category: 'SPICES_SEASONINGS', tier: 'BACKUP', rank: 1 },
+            ],
+            items: [
+              { itemKey: 'tomato', itemName: 'Tomato', tier: 'PREFERRED', rank: 1 },
+              { itemKey: 'potato', itemName: 'Potato', tier: 'PREFERRED', rank: 2 },
+              { itemKey: 'paneer', itemName: 'Paneer', tier: 'BACKUP', rank: 1 },
+            ],
+          },
         },
       },
     ]);
@@ -57,7 +78,7 @@ describe('supplier CSV exchange', () => {
   it('accepts a UTF-8 BOM and quoted commas through csv-parse', () => {
     expect(
       parseSupplierCsv(
-        `\uFEFF${header}\r\n"Coastal Foods","Anita, Sales",,,,,Mumbai,Maharashtra,400001,,,`,
+        `\uFEFF${header}\r\n"Coastal Foods","Anita, Sales",,,,,Mumbai,Maharashtra,400001,,,,,,,,,`,
       )[0],
     ).toEqual(
       expect.objectContaining({
@@ -81,12 +102,26 @@ describe('supplier CSV exchange', () => {
     }
   });
 
+  it.each([
+    ['applicant relationship', 'APPLICANT', '', '', '', '', ''],
+    ['unknown category', 'CURRENT', 'NOT_A_CATEGORY', '', '', '', ''],
+    ['category repeated across tiers', 'CURRENT', 'FRUITS', 'FRUITS', '', '', ''],
+    ['malformed item preference', 'CURRENT', '', '', '', 'Tomato', ''],
+  ])('rejects %s', (_label, relationship, categories, preferred, backup, items, backupItems) => {
+    const csv = [
+      'business_name,relationship_type,categories,preferred_categories,backup_categories,preferred_items,backup_items',
+      ['Vendor', relationship, categories, preferred, backup, items, backupItems]
+        .map((value) => `"${value}"`).join(','),
+    ].join('\n');
+    expect(() => parseSupplierCsv(csv)).toThrow(SupplierCsvError);
+  });
+
   it('reports row validation and within-file duplicate contacts without returning rows', () => {
     const csv = [
       header,
-      'Vendor One,,9876543210,,SALES@VENDOR.IN,,,,,,,true',
-      'Vendor Two,,+91 98765 43210,,sales@vendor.in,,,,,,,true',
-      'Vendor Three,,bad,,not-an-email,,,Maharashtra,012345,INVALID,,true',
+      'Vendor One,,9876543210,,SALES@VENDOR.IN,,,,,,,true,,,,,,',
+      'Vendor Two,,+91 98765 43210,,sales@vendor.in,,,,,,,true,,,,,,',
+      'Vendor Three,,bad,,not-an-email,,,Maharashtra,012345,INVALID,,true,,,,,,',
     ].join('\n');
 
     let caught: unknown;
@@ -124,7 +159,7 @@ describe('supplier CSV exchange', () => {
       header,
       ...Array.from(
         { length: SUPPLIER_CSV_LIMITS.rows + 1 },
-        (_, index) => `Vendor ${index + 1}${','.repeat(11)}`,
+        (_, index) => `Vendor ${index + 1}${','.repeat(SUPPLIER_CSV_HEADERS.length - 1)}`,
       ),
     ].join('\n');
     expect(() => parseSupplierCsv(tooManyRows)).toThrow(
@@ -135,7 +170,7 @@ describe('supplier CSV exchange', () => {
       header,
       ...Array.from(
         { length: 75 },
-        (_, index) => `,Contact ${index + 1}${','.repeat(10)}`,
+        (_, index) => `,Contact ${index + 1}${','.repeat(SUPPLIER_CSV_HEADERS.length - 2)}`,
       ),
     ].join('\n');
     try {
@@ -248,6 +283,8 @@ describe('supplier CSV exchange', () => {
         gstin: '27AAPFU0939F1ZV',
         notes: '  =cmd',
         isActive: false,
+        relationshipType: 'CURRENT' as const,
+        capabilities: { v: 1 as const, categories: [], items: [] },
       },
     ]);
 
@@ -277,6 +314,14 @@ describe('supplier CSV exchange', () => {
       gstin: '27AAPFU0939F1ZV',
       notes: "'=keep this literal apostrophe",
       isActive: true,
+      relationshipType: 'SELECTED_NEW' as const,
+      capabilities: {
+        v: 1 as const,
+        categories: [{ category: 'FRUITS' as const, tier: 'PREFERRED' as const, rank: 1 }],
+        items: [{
+          itemKey: 'mango', itemName: '=Mango', tier: 'PREFERRED' as const, rank: 1,
+        }],
+      },
     };
 
     const exported = serializeSuppliersCsv([supplier]);

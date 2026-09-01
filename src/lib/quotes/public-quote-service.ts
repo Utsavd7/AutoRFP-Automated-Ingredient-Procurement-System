@@ -1,8 +1,4 @@
-import {
-  Prisma,
-  type ProcurementUnit,
-  type PrismaClient,
-} from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 
 import { writeAuditEvent } from '@/lib/audit/write-event';
 import {
@@ -10,38 +6,39 @@ import {
   withTenant,
 } from '@/lib/db/tenant-transaction';
 import {
-  calculateGst,
-  multiplyPaise,
-  parseInrToPaise,
-} from '@/lib/domain/money';
-import {
-  assertMaximum,
-  formatScaledDecimal,
-  MAX_DECIMAL_18_3_SCALED,
-  MAX_SIGNED_BIGINT,
-  parseUnsignedFixed,
-} from '@/lib/domain/validation';
+  type RequestItemsV1,
+  RequestDocumentValidationError,
+  type RequestSourcingV1,
+  resolveItemSourcing,
+  validateRequestDocuments,
+} from '@/lib/procurement/request-document';
 import { prisma } from '@/lib/prisma';
+import {
+  appendQuoteRevision,
+  latestQuoteRevision,
+  PUBLIC_QUOTE_MAX_ITEMS,
+  PublicQuoteDocumentSizeError,
+  PublicQuoteRevisionConflictError,
+  PublicQuoteRevisionLimitError,
+  PublicQuoteStorageCorruptionError,
+  PublicQuoteValidationError,
+  type QuoteRequestItem,
+  validateQuoteRevisionsDocument,
+} from '@/lib/quotes/quote-revisions';
 import { createPrismaPublicSupplierGrantRepository } from '@/lib/security/public-grant';
 import { consumeDigestRateLimit } from '@/lib/security/rate-limit';
 import { digestOpaqueToken } from '@/lib/security/tokens';
 
+export {
+  PUBLIC_QUOTE_MAX_ITEMS,
+  PublicQuoteDocumentSizeError,
+  PublicQuoteRevisionConflictError,
+  PublicQuoteRevisionLimitError,
+  PublicQuoteStorageCorruptionError,
+  PublicQuoteValidationError,
+};
+
 export const PUBLIC_QUOTE_BODY_BYTES = 1_024 * 1_024;
-export const PUBLIC_QUOTE_MAX_ITEMS = 250;
-export const PUBLIC_QUOTE_MAX_REVISIONS = 10;
-export const PUBLIC_QUOTE_TENANT_ITEM_LIMIT = 100_000;
-
-type ValidationErrors = Record<string, string[]>;
-
-export class PublicQuoteValidationError extends Error {
-  readonly code = 'INVALID_PUBLIC_QUOTE';
-  readonly status = 422;
-
-  constructor(readonly errors: ValidationErrors) {
-    super('The supplier quote contains invalid or unbounded fields.');
-    this.name = 'PublicQuoteValidationError';
-  }
-}
 
 export class PublicQuoteUnavailableError extends Error {
   readonly code = 'PUBLIC_QUOTE_UNAVAILABLE';
@@ -50,48 +47,6 @@ export class PublicQuoteUnavailableError extends Error {
   constructor() {
     super('This supplier link is invalid or no longer available.');
     this.name = 'PublicQuoteUnavailableError';
-  }
-}
-
-export class PublicQuoteRevisionConflictError extends Error {
-  readonly code = 'QUOTE_REVISION_CONFLICT';
-  readonly status = 409;
-
-  constructor() {
-    super('A newer quote was already submitted. Review it before trying again.');
-    this.name = 'PublicQuoteRevisionConflictError';
-  }
-}
-
-export class PublicQuoteRevisionLimitError extends Error {
-  readonly code = 'QUOTE_REVISION_LIMIT';
-  readonly status = 409;
-
-  constructor() {
-    super('This supplier link has reached its quote revision limit. Ask the restaurant for a new request.');
-    this.name = 'PublicQuoteRevisionLimitError';
-  }
-}
-
-export class PublicQuoteCapacityError extends Error {
-  readonly code = 'QUOTE_STORAGE_LIMIT';
-  readonly status = 409;
-
-  constructor() {
-    super(
-      'This restaurant has reached its current quote storage limit. Contact QuotePlate before collecting more quotes.',
-    );
-    this.name = 'PublicQuoteCapacityError';
-  }
-}
-
-export class PublicQuoteReadLimitError extends Error {
-  readonly code = 'QUOTE_READ_RATE_LIMIT';
-  readonly status = 429;
-
-  constructor(readonly retryAfterSeconds: number) {
-    super('Wait before refreshing this supplier quote again.');
-    this.name = 'PublicQuoteReadLimitError';
   }
 }
 
@@ -105,448 +60,74 @@ export class PublicQuoteSubmissionLimitError extends Error {
   }
 }
 
-export function assertPublicQuoteTenantItemCapacity(
-  existingItems: number,
-  incomingItems: number,
-) {
-  if (
-    !Number.isSafeInteger(existingItems) ||
-    existingItems < 0 ||
-    !Number.isSafeInteger(incomingItems) ||
-    incomingItems < 1
-  ) {
-    throw new TypeError('Quote item capacity input is invalid.');
-  }
-  if (existingItems + incomingItems > PUBLIC_QUOTE_TENANT_ITEM_LIMIT) {
-    throw new PublicQuoteCapacityError();
-  }
-}
-
-export function nextPublicQuoteRevision(currentRevision: number) {
-  if (!Number.isSafeInteger(currentRevision) || currentRevision < 0) {
-    throw new TypeError('Current quote revision is invalid.');
-  }
-  if (currentRevision >= PUBLIC_QUOTE_MAX_REVISIONS) {
-    throw new PublicQuoteRevisionLimitError();
-  }
-  return currentRevision + 1;
-}
-
-export type PublicQuoteRequestItem = {
+type SupplierForEligibility = {
   id: string;
-  name: string;
-  quantity: string;
-  unit: ProcurementUnit;
+  applicationRequestId: string | null;
 };
 
-export type ValidPublicQuoteItem = {
-  requestItemId: string;
-  noQuote: boolean;
-  availableQuantity: string | null;
-  unit: ProcurementUnit | null;
-  unitRatePaise: bigint | null;
-  gstBasisPoints: number | null;
-  taxInclusive: boolean;
-  substitution: string | null;
-  subtotalPaise: bigint;
-  gstPaise: bigint;
-  totalPaise: bigint;
-};
-
-export type ValidPublicQuoteSubmission = {
-  expectedLatestRevision: number;
-  deliveryDate: Date;
-  validUntil: Date;
-  freightPaise: bigint;
-  commercialTerms: string | null;
-  notes: string | null;
-  items: ValidPublicQuoteItem[];
-  subtotalPaise: bigint;
-  gstPaise: bigint;
-  totalPaise: bigint;
-};
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function addError(errors: ValidationErrors, path: string, message: string) {
-  (errors[path] ??= []).push(message);
-}
-
-function rejectUnknownKeys(
-  value: Record<string, unknown>,
-  allowed: readonly string[],
-  errors: ValidationErrors,
-  path = '',
-) {
-  for (const key of Object.keys(value)) {
-    if (!allowed.includes(key)) {
-      addError(errors, path ? `${path}.${key}` : key, 'This field is not allowed.');
-    }
-  }
-}
-
-function byteLength(value: string) {
-  return new TextEncoder().encode(value).byteLength;
-}
-
-function boundedOptionalText(
-  value: unknown,
-  path: string,
-  maximumBytes: number,
-  errors: ValidationErrors,
-) {
-  if (value === null || value === undefined || value === '') return null;
-  if (typeof value !== 'string') {
-    addError(errors, path, 'Use text or leave this field blank.');
-    return null;
-  }
-  const normalized = value.trim();
-  if (!normalized) return null;
-  if (byteLength(normalized) > maximumBytes) {
-    addError(errors, path, `This field must not exceed ${maximumBytes} bytes.`);
-  }
-  if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(normalized)) {
-    addError(errors, path, 'This field contains unsupported control characters.');
-  }
-  return normalized;
-}
-
-function parseDateOnly(value: unknown, path: string, errors: ValidationErrors) {
-  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    addError(errors, path, 'Use a valid date in YYYY-MM-DD format.');
-    return { text: '', date: new Date(Number.NaN) };
-  }
-  const [year, month, day] = value.split('-').map(Number);
-  const date = new Date(Date.UTC(year!, month! - 1, day!));
-  if (
-    date.getUTCFullYear() !== year ||
-    date.getUTCMonth() !== month! - 1 ||
-    date.getUTCDate() !== day
-  ) {
-    addError(errors, path, 'Use a valid date in YYYY-MM-DD format.');
-  }
-  return { text: value, date };
-}
-
-function indiaDate(now: Date) {
-  const india = new Date(now.getTime() + 330 * 60 * 1_000);
-  return india.toISOString().slice(0, 10);
-}
-
-function invalidNumber(
-  errors: ValidationErrors,
-  path: string,
-  message: string,
-) {
-  addError(errors, path, message);
-  return BigInt(0);
-}
-
-export function validatePublicQuoteSubmission(
-  input: unknown,
-  requestItems: PublicQuoteRequestItem[],
-  now = new Date(),
-): ValidPublicQuoteSubmission {
-  const errors: ValidationErrors = Object.create(null) as ValidationErrors;
-  if (!isRecord(input)) {
-    throw new PublicQuoteValidationError({
-      quote: ['Provide a supplier quote object.'],
-    });
-  }
-  rejectUnknownKeys(
-    input,
-    [
-      'expectedLatestRevision',
-      'deliveryDate',
-      'validUntil',
-      'freightInr',
-      'commercialTerms',
-      'notes',
-      'items',
-    ],
-    errors,
-  );
-
-  const expectedLatestRevision =
-    Number.isInteger(input.expectedLatestRevision) &&
-    Number(input.expectedLatestRevision) >= 0 &&
-    Number(input.expectedLatestRevision) < 2_147_483_647
-      ? Number(input.expectedLatestRevision)
-      : (addError(
-          errors,
-          'expectedLatestRevision',
-          'Expected revision must be a non-negative integer.',
-        ),
-        0);
-
-  const deliveryDate = parseDateOnly(input.deliveryDate, 'deliveryDate', errors);
-  const validUntil = parseDateOnly(input.validUntil, 'validUntil', errors);
-  const currentIndiaDate = indiaDate(now);
-  if (deliveryDate.text && deliveryDate.text < currentIndiaDate) {
-    addError(errors, 'deliveryDate', 'Delivery date cannot be in the past.');
-  }
-  if (validUntil.text && validUntil.text < currentIndiaDate) {
-    addError(errors, 'validUntil', 'Quote validity cannot end in the past.');
-  }
-
-  let freightPaise = BigInt(0);
-  try {
-    freightPaise = parseInrToPaise(input.freightInr as never);
-  } catch {
-    invalidNumber(
-      errors,
-      'freightInr',
-      'Enter freight in rupees with up to two decimal places.',
+export function eligibleQuoteRequestItems(input: {
+  requestId: string;
+  items: RequestItemsV1;
+  sourcing: RequestSourcingV1;
+  supplier: SupplierForEligibility;
+}): QuoteRequestItem[] {
+  return input.items.items.flatMap((item) => {
+    const selection = resolveItemSourcing(
+      input.sourcing,
+      item.sourcingOverride,
     );
-  }
-  const commercialTerms = boundedOptionalText(
-    input.commercialTerms,
-    'commercialTerms',
-    2_000,
-    errors,
-  );
-  const notes = boundedOptionalText(input.notes, 'notes', 4_000, errors);
-
-  const trustedItems = new Map(requestItems.map((item) => [item.id, item]));
-  if (
-    requestItems.length === 0 ||
-    requestItems.length > PUBLIC_QUOTE_MAX_ITEMS ||
-    trustedItems.size !== requestItems.length
-  ) {
-    throw new Error('Supplier request items are not valid for quote collection.');
-  }
-  const rawItems = Array.isArray(input.items) ? input.items : [];
-  if (
-    !Array.isArray(input.items) ||
-    rawItems.length !== requestItems.length ||
-    rawItems.length > PUBLIC_QUOTE_MAX_ITEMS
-  ) {
-    addError(errors, 'items', 'Provide one response for every requested item.');
-  }
-
-  const rawById = new Map<string, Record<string, unknown>>();
-  rawItems.forEach((raw, index) => {
-    if (!isRecord(raw)) {
-      addError(errors, `items.${index}`, 'Provide an item response.');
-      return;
+    const explicitlyCurrent =
+      selection.modes.includes('CURRENT') &&
+      selection.currentSupplierIds.includes(input.supplier.id);
+    const explicitlySelected =
+      selection.modes.includes('SELECTED_NEW') &&
+      selection.selectedNewSupplierIds.includes(input.supplier.id);
+    const verifiedApplication =
+      input.supplier.applicationRequestId === input.requestId &&
+      selection.modes.includes('VERIFIED_NEW') &&
+      selection.acceptVerifiedApplications;
+    if (!explicitlyCurrent && !explicitlySelected && !verifiedApplication) {
+      return [];
     }
-    const id =
-      typeof raw.requestItemId === 'string' ? raw.requestItemId.trim() : '';
-    if (!id || !trustedItems.has(id)) {
-      addError(errors, `items.${index}.requestItemId`, 'This requested item is not available.');
-      return;
-    }
-    if (rawById.has(id)) {
-      addError(errors, `items.${index}.requestItemId`, 'Respond to each item once.');
-      return;
-    }
-    rawById.set(id, raw);
+    return [
+      {
+        id: item.id,
+        itemKey: item.itemKey,
+        name: item.name,
+        quantity: item.quantity,
+        unit: item.unit,
+        specification: item.specification,
+      },
+    ];
   });
-
-  const items = requestItems.map<ValidPublicQuoteItem>((requestItem, index) => {
-    const raw = rawById.get(requestItem.id);
-    if (!raw) {
-      addError(errors, `items.${index}`, 'This requested item needs a response.');
-      return {
-        requestItemId: requestItem.id,
-        noQuote: true,
-        availableQuantity: null,
-        unit: null,
-        unitRatePaise: null,
-        gstBasisPoints: null,
-        taxInclusive: false,
-        substitution: null,
-        subtotalPaise: BigInt(0),
-        gstPaise: BigInt(0),
-        totalPaise: BigInt(0),
-      };
-    }
-
-    if (raw.noQuote === true) {
-      rejectUnknownKeys(raw, ['requestItemId', 'noQuote'], errors, `items.${index}`);
-      return {
-        requestItemId: requestItem.id,
-        noQuote: true,
-        availableQuantity: null,
-        unit: null,
-        unitRatePaise: null,
-        gstBasisPoints: null,
-        taxInclusive: false,
-        substitution: null,
-        subtotalPaise: BigInt(0),
-        gstPaise: BigInt(0),
-        totalPaise: BigInt(0),
-      };
-    }
-
-    rejectUnknownKeys(
-      raw,
-      [
-        'requestItemId',
-        'noQuote',
-        'availableQuantity',
-        'unitRateInr',
-        'gstPercent',
-        'taxInclusive',
-        'substitution',
-      ],
-      errors,
-      `items.${index}`,
-    );
-    if (raw.noQuote !== false) {
-      addError(errors, `items.${index}.noQuote`, 'Choose whether you can quote this item.');
-    }
-    if (typeof raw.taxInclusive !== 'boolean') {
-      addError(errors, `items.${index}.taxInclusive`, 'Choose whether GST is included.');
-    }
-
-    let availableMilli = BigInt(0);
-    let requestedMilli = BigInt(0);
-    try {
-      availableMilli = parseUnsignedFixed(raw.availableQuantity as never, {
-        label: 'Available quantity',
-        scale: 3,
-        maximumScaled: MAX_DECIMAL_18_3_SCALED,
-        allowZero: false,
-      });
-      requestedMilli = parseUnsignedFixed(requestItem.quantity, {
-        label: 'Requested quantity',
-        scale: 3,
-        maximumScaled: MAX_DECIMAL_18_3_SCALED,
-        allowZero: false,
-      });
-      if (availableMilli > requestedMilli) {
-        addError(
-          errors,
-          `items.${index}.availableQuantity`,
-          'Available quantity cannot exceed the requested quantity.',
-        );
-      }
-    } catch {
-      addError(
-        errors,
-        `items.${index}.availableQuantity`,
-        'Enter an available quantity with up to three decimal places.',
-      );
-    }
-
-    let unitRatePaise = BigInt(0);
-    try {
-      unitRatePaise = parseInrToPaise(raw.unitRateInr as never);
-    } catch {
-      addError(
-        errors,
-        `items.${index}.unitRateInr`,
-        'Enter a unit rate in rupees with up to two decimal places.',
-      );
-    }
-
-    let gstBasisPoints = 0;
-    try {
-      gstBasisPoints = Number(
-        parseUnsignedFixed(raw.gstPercent as never, {
-          label: 'GST percent',
-          scale: 2,
-          maximumScaled: BigInt(10_000),
-          allowZero: true,
-        }),
-      );
-    } catch {
-      addError(
-        errors,
-        `items.${index}.gstPercent`,
-        'Enter a GST percentage from 0 to 100.',
-      );
-    }
-
-    const availableQuantity = formatScaledDecimal(availableMilli, 3);
-    let lineAmount = BigInt(0);
-    let gst = { netPaise: BigInt(0), gstPaise: BigInt(0), grossPaise: BigInt(0) };
-    try {
-      lineAmount = multiplyPaise(unitRatePaise, availableQuantity);
-      gst = calculateGst({
-        amountPaise: lineAmount,
-        gstBasisPoints,
-        inclusive: raw.taxInclusive === true,
-      });
-    } catch {
-      addError(errors, `items.${index}`, 'This line total is outside the supported range.');
-    }
-
-    return {
-      requestItemId: requestItem.id,
-      noQuote: false,
-      availableQuantity,
-      unit: requestItem.unit,
-      unitRatePaise,
-      gstBasisPoints,
-      taxInclusive: raw.taxInclusive === true,
-      substitution: boundedOptionalText(
-        raw.substitution,
-        `items.${index}.substitution`,
-        500,
-        errors,
-      ),
-      subtotalPaise: gst.netPaise,
-      gstPaise: gst.gstPaise,
-      totalPaise: gst.grossPaise,
-    };
-  });
-
-  let subtotalPaise = BigInt(0);
-  let gstPaise = BigInt(0);
-  let totalPaise = BigInt(0);
-  try {
-    subtotalPaise = items.reduce(
-      (sum, item) => assertMaximum(sum + item.subtotalPaise, MAX_SIGNED_BIGINT, 'Quote subtotal'),
-      BigInt(0),
-    );
-    gstPaise = items.reduce(
-      (sum, item) => assertMaximum(sum + item.gstPaise, MAX_SIGNED_BIGINT, 'Quote GST'),
-      BigInt(0),
-    );
-    const itemTotal = items.reduce(
-      (sum, item) => assertMaximum(sum + item.totalPaise, MAX_SIGNED_BIGINT, 'Quote total'),
-      BigInt(0),
-    );
-    totalPaise = assertMaximum(itemTotal + freightPaise, MAX_SIGNED_BIGINT, 'Landed total');
-  } catch {
-    addError(errors, 'items', 'The quote total is outside the supported range.');
-  }
-
-  if (Object.keys(errors).length > 0) {
-    throw new PublicQuoteValidationError(errors);
-  }
-  return {
-    expectedLatestRevision,
-    deliveryDate: deliveryDate.date,
-    validUntil: validUntil.date,
-    freightPaise,
-    commercialTerms,
-    notes,
-    items,
-    subtotalPaise,
-    gstPaise,
-    totalPaise,
-  };
 }
 
 type PublicQuoteClient = Pick<PrismaClient, '$queryRaw' | '$transaction'> &
   TenantTransactionHost;
 
-type LockedPublicGrant = {
+type ResolvedGrant = {
+  tenantId: string;
+  supplierRequestId: string;
+  tokenDigest: string;
+};
+
+type LiveGrantRow = {
   supplierRequestId: string;
   requestId: string;
+  supplierId: string;
+  applicationRequestId: string | null;
   restaurantName: string;
   supplierName: string;
   title: string;
   deliveryDetails: Prisma.JsonValue;
+  requestItems: Prisma.JsonValue;
+  requestSourcing: Prisma.JsonValue;
   deliveryDate: Date;
   quoteDeadline: Date;
   commercialTerms: string | null;
   viewedAt: Date | null;
+  quoteRevision: number;
+  quoteRevisions: Prisma.JsonValue;
   databaseNow: Date;
 };
 
@@ -557,7 +138,7 @@ function unavailable(): never {
 async function resolveGrant(
   token: unknown,
   client: PublicQuoteClient,
-) {
+): Promise<ResolvedGrant> {
   if (typeof token !== 'string') unavailable();
   let tokenDigest: string;
   try {
@@ -572,84 +153,88 @@ async function resolveGrant(
   return { ...grant, tokenDigest };
 }
 
-async function lockLiveGrant(
+async function lockedLiveGrantRow(
   transaction: Prisma.TransactionClient,
-  input: {
-    tenantId: string;
-    supplierRequestId: string;
-    tokenDigest: string;
-  },
+  input: ResolvedGrant,
 ) {
-  const [tenant] = await transaction.$queryRaw<
-    Array<{ tenantId: string }>
-  >(Prisma.sql`
-    SELECT tenant."id" AS "tenantId"
-    FROM "Tenant" AS tenant
-    WHERE tenant."id" = ${input.tenantId}
-    FOR UPDATE
-  `);
-  if (!tenant) unavailable();
-
-  const [request] = await transaction.$queryRaw<
-    Array<{ requestId: string }>
-  >(Prisma.sql`
-    SELECT request."id" AS "requestId"
-    FROM "ProcurementRequest" AS request
-    WHERE request."tenantId" = ${input.tenantId}
-      AND request."id" = (
-        SELECT supplier_request."requestId"
-        FROM "SupplierRequest" AS supplier_request
-        WHERE supplier_request."tenantId" = ${input.tenantId}
-          AND supplier_request."id" = ${input.supplierRequestId}
-      )
-    FOR UPDATE
-  `);
-  if (!request) unavailable();
-
-  const [grant] = await transaction.$queryRaw<
-    Array<{
-      supplierRequestId: string;
-      supplierId: string;
-    }>
-  >(Prisma.sql`
+  const [row] = await transaction.$queryRaw<LiveGrantRow[]>(Prisma.sql`
+    WITH locked_supplier_request AS MATERIALIZED (
+      SELECT supplier_request.*
+      FROM "SupplierRequest" AS supplier_request
+      WHERE supplier_request."tenantId" = ${input.tenantId}
+        AND supplier_request."id" = ${input.supplierRequestId}
+        AND supplier_request."tokenDigest" = ${input.tokenDigest}
+      FOR UPDATE OF supplier_request
+    ),
+    quote_clock AS MATERIALIZED (
+      SELECT pg_catalog.clock_timestamp() AS "databaseNow"
+      FROM locked_supplier_request
+      LIMIT 1
+    )
     SELECT
       supplier_request."id" AS "supplierRequestId",
-      supplier_request."supplierId"
-    FROM "SupplierRequest" AS supplier_request
-    WHERE supplier_request."tenantId" = ${input.tenantId}
-      AND supplier_request."id" = ${input.supplierRequestId}
-      AND supplier_request."requestId" = ${request.requestId}
-      AND supplier_request."tokenDigest" = ${input.tokenDigest}
-    FOR UPDATE
+      request."id" AS "requestId",
+      supplier."id" AS "supplierId",
+      supplier."applicationRequestId",
+      tenant."name" AS "restaurantName",
+      supplier."businessName" AS "supplierName",
+      request."title",
+      request."deliveryDetails",
+      request."items" AS "requestItems",
+      request."sourcing" AS "requestSourcing",
+      request."deliveryDate",
+      request."quoteDeadline",
+      request."commercialTerms",
+      supplier_request."viewedAt",
+      supplier_request."quoteRevision",
+      supplier_request."quoteRevisions",
+      quote_clock."databaseNow"
+    FROM locked_supplier_request AS supplier_request
+    JOIN quote_clock ON true
+    JOIN "ProcurementRequest" AS request
+      ON request."tenantId" = supplier_request."tenantId"
+     AND request."id" = supplier_request."requestId"
+    JOIN "Supplier" AS supplier
+      ON supplier."tenantId" = supplier_request."tenantId"
+     AND supplier."id" = supplier_request."supplierId"
+    JOIN "Tenant" AS tenant
+      ON tenant."id" = supplier_request."tenantId"
+    WHERE supplier_request."revokedAt" IS NULL
+      AND supplier_request."expiresAt" > quote_clock."databaseNow"
+      AND request."status"::TEXT = 'OPEN'
+      AND request."quoteDeadline" > quote_clock."databaseNow"
+      AND supplier."isActive" = true
+      AND tenant."isActive" = true
   `);
-  if (!grant) unavailable();
+  if (!row) unavailable();
+  return row;
+}
 
-  const [supplier] = await transaction.$queryRaw<
-    Array<{ supplierId: string }>
-  >(Prisma.sql`
-    SELECT supplier."id" AS "supplierId"
-    FROM "Supplier" AS supplier
-    WHERE supplier."tenantId" = ${input.tenantId}
-      AND supplier."id" = ${grant.supplierId}
-    FOR UPDATE
-  `);
-  if (!supplier) unavailable();
-
-  const [liveGrant] = await transaction.$queryRaw<LockedPublicGrant[]>(Prisma.sql`
+async function liveGrantRow(
+  transaction: Prisma.TransactionClient,
+  input: ResolvedGrant,
+) {
+  const [row] = await transaction.$queryRaw<LiveGrantRow[]>(Prisma.sql`
     WITH quote_clock AS MATERIALIZED (
       SELECT pg_catalog.clock_timestamp() AS "databaseNow"
     )
     SELECT
       supplier_request."id" AS "supplierRequestId",
       request."id" AS "requestId",
+      supplier."id" AS "supplierId",
+      supplier."applicationRequestId",
       tenant."name" AS "restaurantName",
       supplier."businessName" AS "supplierName",
       request."title",
       request."deliveryDetails",
+      request."items" AS "requestItems",
+      request."sourcing" AS "requestSourcing",
       request."deliveryDate",
       request."quoteDeadline",
       request."commercialTerms",
       supplier_request."viewedAt",
+      supplier_request."quoteRevision",
+      supplier_request."quoteRevisions",
       quote_clock."databaseNow"
     FROM quote_clock
     JOIN "SupplierRequest" AS supplier_request ON true
@@ -662,8 +247,7 @@ async function lockLiveGrant(
     JOIN "Tenant" AS tenant
       ON tenant."id" = supplier_request."tenantId"
     WHERE supplier_request."tenantId" = ${input.tenantId}
-      AND supplier_request."id" = ${grant.supplierRequestId}
-      AND supplier_request."requestId" = ${request.requestId}
+      AND supplier_request."id" = ${input.supplierRequestId}
       AND supplier_request."tokenDigest" = ${input.tokenDigest}
       AND supplier_request."revokedAt" IS NULL
       AND supplier_request."expiresAt" > quote_clock."databaseNow"
@@ -672,116 +256,134 @@ async function lockLiveGrant(
       AND supplier."isActive" = true
       AND tenant."isActive" = true
   `);
-  if (!liveGrant) unavailable();
-  return liveGrant;
+  if (!row) unavailable();
+  return row;
 }
 
-function dateOnly(value: Date) {
-  return value.toISOString().slice(0, 10);
-}
-
-function quoteItemDto(item: {
-  requestItemId: string;
-  noQuote: boolean;
-  availableQuantity: Prisma.Decimal | null;
-  unit: ProcurementUnit | null;
-  unitRatePaise: bigint | null;
-  gstBasisPoints: number | null;
-  taxInclusive: boolean;
-  substitution: string | null;
-  subtotalPaise: bigint;
-  gstPaise: bigint;
-  totalPaise: bigint;
-}) {
-  return {
-    requestItemId: item.requestItemId,
-    noQuote: item.noQuote,
-    availableQuantity: item.availableQuantity?.toString() ?? null,
-    unit: item.unit,
-    unitRatePaise: item.unitRatePaise?.toString() ?? null,
-    gstBasisPoints: item.gstBasisPoints,
-    taxInclusive: item.taxInclusive,
-    substitution: item.substitution,
-    subtotalPaise: item.subtotalPaise.toString(),
-    gstPaise: item.gstPaise.toString(),
-    totalPaise: item.totalPaise.toString(),
-  };
-}
-
-function quoteDto(quote: {
-  revision: number;
-  subtotalPaise: bigint;
-  gstPaise: bigint;
-  freightPaise: bigint;
-  totalPaise: bigint;
-  deliveryDate: Date;
-  validUntil: Date;
-  commercialTerms: string | null;
-  notes: string | null;
-  submittedAt: Date;
-  items: Array<Parameters<typeof quoteItemDto>[0]>;
-}) {
-  return {
-    revision: quote.revision,
-    subtotalPaise: quote.subtotalPaise.toString(),
-    gstPaise: quote.gstPaise.toString(),
-    freightPaise: quote.freightPaise.toString(),
-    totalPaise: quote.totalPaise.toString(),
-    deliveryDate: dateOnly(quote.deliveryDate),
-    validUntil: dateOnly(quote.validUntil),
-    commercialTerms: quote.commercialTerms,
-    notes: quote.notes,
-    submittedAt: quote.submittedAt.toISOString(),
-    items: quote.items.map(quoteItemDto),
-  };
-}
-
-async function requestItems(
-  transaction: Prisma.TransactionClient,
-  tenantId: string,
-  requestId: string,
-) {
-  const items = await transaction.requestItem.findMany({
-    where: { tenantId, requestId },
-    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-    select: { id: true, name: true, quantity: true, unit: true },
+function liveDocuments(row: LiveGrantRow) {
+  let documents: ReturnType<typeof validateRequestDocuments>;
+  try {
+    documents = validateRequestDocuments(row.requestItems, row.requestSourcing);
+  } catch (error) {
+    if (error instanceof RequestDocumentValidationError) {
+      throw new PublicQuoteStorageCorruptionError();
+    }
+    throw error;
+  }
+  const items = eligibleQuoteRequestItems({
+    requestId: row.requestId,
+    items: documents.items,
+    sourcing: documents.sourcing,
+    supplier: {
+      id: row.supplierId,
+      applicationRequestId: row.applicationRequestId,
+    },
   });
-  if (items.length === 0 || items.length > PUBLIC_QUOTE_MAX_ITEMS) unavailable();
-  return items;
+  if (items.length === 0) unavailable();
+  const quoteRevisions = validateQuoteRevisionsDocument(
+    row.quoteRevisions,
+    items,
+  );
+  if (
+    !Number.isSafeInteger(row.quoteRevision) ||
+    row.quoteRevision < 0 ||
+    row.quoteRevision !== quoteRevisions.revisions.length
+  ) {
+    throw new PublicQuoteStorageCorruptionError();
+  }
+  return { items, quoteRevisions };
 }
 
-async function latestQuote(
-  transaction: Prisma.TransactionClient,
-  tenantId: string,
-  supplierRequestId: string,
-) {
-  return transaction.supplierQuote.findFirst({
-    where: { tenantId, supplierRequestId },
-    orderBy: { revision: 'desc' },
-    include: { items: { orderBy: { requestItemId: 'asc' } } },
-  });
+function validDate(value: Date) {
+  if (!(value instanceof Date) || Number.isNaN(value.getTime())) {
+    throw new PublicQuoteStorageCorruptionError();
+  }
+  return value;
 }
 
-function requestDto(
-  grant: LockedPublicGrant,
-  items: Awaited<ReturnType<typeof requestItems>>,
-  quote: Awaited<ReturnType<typeof latestQuote>>,
+function publicRequestDto(
+  row: LiveGrantRow,
+  items: QuoteRequestItem[],
+  latestQuote: ReturnType<typeof latestQuoteRevision>,
 ) {
   return {
-    restaurantName: grant.restaurantName,
-    supplierName: grant.supplierName,
-    title: grant.title,
-    deliveryDetails: grant.deliveryDetails,
-    deliveryDate: dateOnly(grant.deliveryDate),
-    quoteDeadline: grant.quoteDeadline.toISOString(),
-    commercialTerms: grant.commercialTerms,
+    restaurantName: row.restaurantName,
+    supplierName: row.supplierName,
+    title: row.title,
+    deliveryDetails: row.deliveryDetails,
+    deliveryDate: validDate(row.deliveryDate).toISOString().slice(0, 10),
+    quoteDeadline: validDate(row.quoteDeadline).toISOString(),
+    commercialTerms: row.commercialTerms,
     items: items.map((item) => ({
       id: item.id,
+      itemKey: item.itemKey,
       name: item.name,
-      quantity: item.quantity.toString(),
+      quantity: item.quantity,
       unit: item.unit,
+      specification: item.specification,
     })),
-    latestQuote: quote ? quoteDto(quote) : null,
+    latestQuote,
+  };
+}
+
+const QUOTE_ENVELOPE_KEYS = new Set([
+  'expectedLatestRevision',
+  'deliveryDate',
+  'validUntil',
+  'minimumOrder',
+  'freightInr',
+  'commercialTerms',
+  'notes',
+  'items',
+]);
+
+function quoteEnvelope(value: unknown) {
+  if (
+    value === null ||
+    typeof value !== 'object' ||
+    Array.isArray(value) ||
+    Object.getPrototypeOf(value) !== Object.prototype
+  ) {
+    throw new PublicQuoteValidationError({
+      quote: ['Provide a plain supplier quote object.'],
+    });
+  }
+  const record = value as Record<string, unknown>;
+  for (const key of Reflect.ownKeys(record)) {
+    const descriptor = typeof key === 'string'
+      ? Object.getOwnPropertyDescriptor(record, key)
+      : undefined;
+    if (
+      typeof key !== 'string' ||
+      !QUOTE_ENVELOPE_KEYS.has(key) ||
+      !descriptor?.enumerable ||
+      !('value' in descriptor)
+    ) {
+      throw new PublicQuoteValidationError({
+        quote: ['The quote contains an unsupported field.'],
+      });
+    }
+  }
+  if (
+    !Number.isSafeInteger(record.expectedLatestRevision) ||
+    Number(record.expectedLatestRevision) < 0 ||
+    Number(record.expectedLatestRevision) > 2_147_483_647
+  ) {
+    throw new PublicQuoteValidationError({
+      expectedLatestRevision: ['Expected revision must be a non-negative integer.'],
+    });
+  }
+  return {
+    expectedLatestRevision: Number(record.expectedLatestRevision),
+    submission: {
+      deliveryDate: record.deliveryDate,
+      validUntil: record.validUntil,
+      minimumOrder: record.minimumOrder,
+      freightInr: record.freightInr,
+      commercialTerms: record.commercialTerms,
+      notes: record.notes,
+      items: record.items,
+    },
   };
 }
 
@@ -790,45 +392,16 @@ export async function getPublicQuoteRequest(
   client: PublicQuoteClient = prisma,
 ) {
   const resolved = await resolveGrant(input.token, client);
-  const readAttempt = await consumeDigestRateLimit(
-    {
-      scope: 'supplier-quote-read-token',
-      subjectDigest: resolved.tokenDigest,
-      limit: 120,
-      windowMs: 15 * 60 * 1_000,
-      now: new Date(),
-    },
-    client,
-  );
-  if (!readAttempt.allowed) {
-    throw new PublicQuoteReadLimitError(readAttempt.retryAfterSeconds);
-  }
   return withTenant(
     resolved.tenantId,
     async (transaction) => {
-      const grant = await lockLiveGrant(transaction, resolved);
-      const items = await requestItems(
-        transaction,
-        resolved.tenantId,
-        grant.requestId,
+      const row = await liveGrantRow(transaction, resolved);
+      const documents = liveDocuments(row);
+      return publicRequestDto(
+        row,
+        documents.items,
+        latestQuoteRevision(documents.quoteRevisions),
       );
-      const quote = await latestQuote(
-        transaction,
-        resolved.tenantId,
-        resolved.supplierRequestId,
-      );
-      if (!grant.viewedAt) {
-        await transaction.supplierRequest.update({
-          where: {
-            tenantId_id: {
-              tenantId: resolved.tenantId,
-              id: resolved.supplierRequestId,
-            },
-          },
-          data: { viewedAt: grant.databaseNow },
-        });
-      }
-      return requestDto(grant, items, quote);
     },
     client,
   );
@@ -857,99 +430,44 @@ export async function submitPublicSupplierQuote(
   return withTenant(
     resolved.tenantId,
     async (transaction) => {
-      const grant = await lockLiveGrant(transaction, resolved);
-      const items = await requestItems(
-        transaction,
-        resolved.tenantId,
-        grant.requestId,
+      const row = await lockedLiveGrantRow(transaction, resolved);
+      const documents = liveDocuments(row);
+      const envelope = quoteEnvelope(input.quote);
+      const quoteRevisions = appendQuoteRevision(
+        documents.quoteRevisions,
+        envelope.submission,
+        {
+          requestItems: documents.items,
+          expectedLatestRevision: envelope.expectedLatestRevision,
+          storedLatestRevision: row.quoteRevision,
+          databaseNow: validDate(row.databaseNow),
+        },
       );
-      const valid = validatePublicQuoteSubmission(
-        input.quote,
-        items.map((item) => ({
-          id: item.id,
-          name: item.name,
-          quantity: item.quantity.toString(),
-          unit: item.unit,
-        })),
-        grant.databaseNow,
-      );
-      const previous = await transaction.supplierQuote.findFirst({
+      const latest = latestQuoteRevision(quoteRevisions);
+      if (!latest) throw new PublicQuoteStorageCorruptionError();
+      const updated = await transaction.supplierRequest.updateMany({
         where: {
           tenantId: resolved.tenantId,
-          supplierRequestId: resolved.supplierRequestId,
+          id: resolved.supplierRequestId,
+          quoteRevision: row.quoteRevision,
         },
-        orderBy: { revision: 'desc' },
-        select: { revision: true },
-      });
-      const currentRevision = previous?.revision ?? 0;
-      if (valid.expectedLatestRevision !== currentRevision) {
-        throw new PublicQuoteRevisionConflictError();
-      }
-      const revision = nextPublicQuoteRevision(currentRevision);
-      const existingItemCount = await transaction.supplierQuoteItem.count({
-        where: { tenantId: resolved.tenantId },
-      });
-      assertPublicQuoteTenantItemCapacity(existingItemCount, valid.items.length);
-      const quoteRecord = await transaction.supplierQuote.create({
         data: {
-          tenantId: resolved.tenantId,
-          supplierRequestId: resolved.supplierRequestId,
-          revision,
-          subtotalPaise: valid.subtotalPaise,
-          gstPaise: valid.gstPaise,
-          freightPaise: valid.freightPaise,
-          totalPaise: valid.totalPaise,
-          deliveryDate: valid.deliveryDate,
-          validUntil: valid.validUntil,
-          commercialTerms: valid.commercialTerms,
-          notes: valid.notes,
-          submittedAt: grant.databaseNow,
+          quoteRevision: latest.revision,
+          quoteRevisions: quoteRevisions as unknown as Prisma.InputJsonValue,
+          ...(!row.viewedAt ? { viewedAt: row.databaseNow } : {}),
         },
       });
-      await transaction.supplierQuoteItem.createMany({
-        data: valid.items.map((item) => ({
-          tenantId: resolved.tenantId,
-          quoteId: quoteRecord.id,
-          requestItemId: item.requestItemId,
-          noQuote: item.noQuote,
-          availableQuantity: item.availableQuantity,
-          unit: item.unit,
-          unitRatePaise: item.unitRatePaise,
-          gstBasisPoints: item.gstBasisPoints,
-          taxInclusive: item.taxInclusive,
-          substitution: item.substitution,
-          subtotalPaise: item.subtotalPaise,
-          gstPaise: item.gstPaise,
-          totalPaise: item.totalPaise,
-        })),
-      });
-      const created = await transaction.supplierQuote.findUniqueOrThrow({
-        where: {
-          tenantId_id: {
-            tenantId: resolved.tenantId,
-            id: quoteRecord.id,
-          },
-        },
-        include: { items: { orderBy: { requestItemId: 'asc' } } },
-      });
+      if (updated.count !== 1) throw new PublicQuoteRevisionConflictError();
       await writeAuditEvent(transaction, {
         tenantId: resolved.tenantId,
         action: 'quote.submitted',
-        entityId: created.id,
-        metadata: { revision, itemCount: valid.items.length },
+        entityId: resolved.supplierRequestId,
+        metadata: {
+          revision: latest.revision,
+          itemCount: documents.items.length,
+        },
       });
-      if (!grant.viewedAt) {
-        await transaction.supplierRequest.update({
-          where: {
-            tenantId_id: {
-              tenantId: resolved.tenantId,
-              id: resolved.supplierRequestId,
-            },
-          },
-          data: { viewedAt: grant.databaseNow },
-        });
-      }
-      return quoteDto(created);
+      return latest;
     },
     client,
   );

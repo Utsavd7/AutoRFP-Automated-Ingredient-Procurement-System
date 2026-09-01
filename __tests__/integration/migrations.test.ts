@@ -5,7 +5,19 @@ import { PrismaClient } from '@prisma/client';
 
 import { withMigratedPostgres, withPostgres } from './setup/postgres';
 
-const expectedTables = [
+const compactTables = [
+  'AuditEvent',
+  'Award',
+  'Menu',
+  'ProcurementRequest',
+  'RateLimitBucket',
+  'Supplier',
+  'SupplierRequest',
+  'Tenant',
+  'User',
+];
+
+const legacyTables = [
   'AuditEvent',
   'Award',
   'AwardLine',
@@ -24,6 +36,8 @@ const expectedTables = [
   'Tenant',
   'User',
 ];
+
+const compactMigration = '20260831000100_compact_nine_table_schema' as const;
 
 test('deploys every migration to an empty PostgreSQL database without schema drift', async () => {
   await withMigratedPostgres(async (databaseUrl) => {
@@ -51,7 +65,7 @@ test('deploys every migration to an empty PostgreSQL database without schema dri
       `;
 
       expect(tables.map(({ tablename }) => tablename).sort()).toEqual([
-        ...expectedTables,
+        ...compactTables,
         '_prisma_migrations',
       ].sort());
       expect(migrations).toEqual([
@@ -115,6 +129,11 @@ test('deploys every migration to an empty PostgreSQL database without schema dri
           finished_at: expect.any(Date),
           rolled_back_at: null,
         }),
+        expect.objectContaining({
+          migration_name: compactMigration,
+          finished_at: expect.any(Date),
+          rolled_back_at: null,
+        }),
       ]);
     } finally {
       await prisma.$disconnect();
@@ -150,7 +169,7 @@ test('early owner guards accept inherited bypass capability without provider use
       await admin.$executeRawUnsafe(
         'CREATE SCHEMA autorfp_private AUTHORIZATION neon_launch_owner',
       );
-      for (const table of expectedTables) {
+      for (const table of legacyTables) {
         await admin.$executeRawUnsafe(
           `ALTER TABLE public."${table}" OWNER TO neon_launch_owner`,
         );
@@ -197,7 +216,7 @@ test('forced-RLS migration runs as a managed Postgres owner without true superus
       await admin.$executeRawUnsafe(
         `GRANT CREATE ON DATABASE "${database_name.replaceAll('"', '""')}" TO managed_migration_owner`,
       );
-      for (const table of expectedTables) {
+      for (const table of legacyTables) {
         await admin.$executeRawUnsafe(
           `ALTER TABLE public."${table}" OWNER TO managed_migration_owner`,
         );
@@ -278,6 +297,9 @@ test('all migrations run as a managed Postgres database owner without true super
         '20260827000800_award_snapshot_capacity',
         '20260827000900_minimal_launch_columns',
         '20260827001000_backup_role',
+        '20260827001100_minimal_rate_limit_bucket',
+        '20260827001200_current_user_credentials',
+        compactMigration,
       ] as const) {
         await applyMigrationAs(migration, managedOwnerUrl.toString());
       }
@@ -323,6 +345,236 @@ test('all migrations run as a managed Postgres database owner without true super
           rolbypassrls: true,
         },
       ]);
+      const [functionOwners] = await admin.$queryRaw<
+        Array<{
+          function_count: bigint;
+          owners_bypass_rls: boolean;
+          owned_by_migration_role: boolean;
+        }>
+      >`
+        SELECT COUNT(*) AS function_count,
+               bool_and(owner.rolsuper OR owner.rolbypassrls)
+                 AS owners_bypass_rls,
+               bool_and(owner.rolname = 'managed_database_owner')
+                 AS owned_by_migration_role
+        FROM pg_catalog.pg_proc AS procedure
+        JOIN pg_catalog.pg_namespace AS namespace
+          ON namespace.oid = procedure.pronamespace
+        JOIN pg_catalog.pg_roles AS owner ON owner.oid = procedure.proowner
+        WHERE namespace.nspname = 'autorfp_private'
+      `;
+      expect(functionOwners).toEqual({
+        function_count: BigInt(7),
+        owners_bypass_rls: true,
+        owned_by_migration_role: true,
+      });
+    } finally {
+      await admin.$disconnect();
+    }
+  });
+});
+
+test('compact replacement empirically rejects inherited-only RLS bypass', async () => {
+  const sql = readFileSync(
+    path.resolve(
+      __dirname,
+      `../../prisma/migrations/${compactMigration}/migration.sql`,
+    ),
+    'utf8',
+  );
+  const guardStart = sql.indexOf('DO $compact_schema_guard$');
+  const bypassError = sql.indexOf(
+    'Compact schema migration requires a row-security-bypassing owner',
+  );
+  const firstTableRead = sql.indexOf('FROM public."Tenant"');
+  const guardEnd = sql.indexOf('$compact_schema_guard$;', guardStart);
+  const firstDestructive = sql.search(/\n(?:REVOKE|DROP|ALTER)\s/);
+
+  expect(sql).toMatch(/^BEGIN;\s+DO \$compact_schema_guard\$/);
+  expect(guardStart).toBeGreaterThan('BEGIN;'.length);
+  expect(bypassError).toBeGreaterThan(guardStart);
+  expect(firstTableRead).toBeGreaterThan(bypassError);
+  expect(sql.slice(guardStart, guardEnd)).not.toMatch(
+    /ALTER ROLE|DISABLE ROW LEVEL SECURITY/,
+  );
+  expect(sql.slice(guardStart, guardEnd)).toContain('pg_temp.autorfp_rls_probe');
+  expect(sql.slice(guardStart, guardEnd)).toContain('ON COMMIT DROP');
+  expect(sql.slice(guardStart, guardEnd)).toContain('FORCE ROW LEVEL SECURITY');
+  expect(sql.slice(guardStart, guardEnd)).toContain("'USAGE'");
+  expect(firstDestructive).toBeGreaterThan(guardStart);
+
+  await withPostgres(async ({ databaseUrl, migrateTo, applyMigrationAs }) => {
+    await migrateTo('20260827001200_current_user_credentials');
+    const prisma = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
+    const bypassRole = 'compact_provider_bypass';
+    const inheritedRole = 'compact_inherited_bypass_owner';
+    const inheritedPassword = 'compact-inherited-bypass-password';
+    const setOnlyRole = 'compact_set_only_owner';
+    const setOnlyPassword = 'compact-set-only-owner-password';
+    const transferOwnership = (role: string) => prisma.$executeRawUnsafe(`DO $transfer_compact_ownership$
+      DECLARE target RECORD;
+      BEGIN
+        EXECUTE pg_catalog.format(
+          'GRANT CREATE ON DATABASE %I TO ${role}', current_database()
+        );
+        FOR target IN
+          SELECT pg_catalog.format(
+            'ALTER TABLE public.%I OWNER TO ${role}', tablename
+          ) AS statement
+          FROM pg_catalog.pg_tables WHERE schemaname = 'public'
+        LOOP EXECUTE target.statement; END LOOP;
+        FOR target IN
+          SELECT pg_catalog.format(
+            'ALTER TYPE public.%I OWNER TO ${role}', type.typname
+          ) AS statement
+          FROM pg_catalog.pg_type AS type
+          JOIN pg_catalog.pg_namespace AS namespace
+            ON namespace.oid = type.typnamespace
+          WHERE namespace.nspname = 'public' AND type.typtype = 'e'
+        LOOP EXECUTE target.statement; END LOOP;
+        FOR target IN
+          SELECT pg_catalog.format(
+            'ALTER FUNCTION %s OWNER TO ${role}', procedure.oid::REGPROCEDURE
+          ) AS statement
+          FROM pg_catalog.pg_proc AS procedure
+          JOIN pg_catalog.pg_namespace AS namespace
+            ON namespace.oid = procedure.pronamespace
+          WHERE namespace.nspname = 'autorfp_private'
+        LOOP EXECUTE target.statement; END LOOP;
+        ALTER SCHEMA autorfp_private OWNER TO ${role};
+        ALTER SCHEMA public OWNER TO ${role};
+      END
+    $transfer_compact_ownership$`);
+
+    try {
+      await prisma.tenant.create({
+        data: {
+          id: 'guarded-tenant',
+          name: 'Guarded Kitchen',
+          addressLine: '1 Safe Road',
+          city: 'Mumbai',
+          state: 'Maharashtra',
+          pin: '400001',
+          phone: '9000000001',
+        },
+      });
+
+      await expect(
+        applyMigrationAs(compactMigration, databaseUrl),
+      ).rejects.toThrow(
+        'Compact schema migration requires an empty pre-launch database',
+      );
+
+      for (const statement of [
+        `CREATE ROLE ${bypassRole} NOLOGIN BYPASSRLS`,
+        `CREATE ROLE ${inheritedRole} LOGIN INHERIT NOBYPASSRLS PASSWORD '${inheritedPassword}'`,
+        `CREATE ROLE ${setOnlyRole} LOGIN NOINHERIT NOBYPASSRLS PASSWORD '${setOnlyPassword}'`,
+        `GRANT ${bypassRole} TO ${inheritedRole}`,
+        `GRANT ${bypassRole} TO ${setOnlyRole}`,
+      ]) await prisma.$executeRawUnsafe(statement);
+
+      const membership = await prisma.$queryRawUnsafe<
+        Array<{ role: string; usable: boolean }>
+      >(`
+        SELECT member.rolname AS role,
+               pg_catalog.pg_has_role(member.oid, bypass.oid, 'USAGE') AS usable
+        FROM pg_catalog.pg_roles AS member
+        CROSS JOIN pg_catalog.pg_roles AS bypass
+        WHERE member.rolname IN ('${inheritedRole}', '${setOnlyRole}')
+          AND bypass.rolname = '${bypassRole}'
+        ORDER BY member.rolname
+      `);
+      expect(membership).toEqual([
+        { role: inheritedRole, usable: true },
+        { role: setOnlyRole, usable: false },
+      ]);
+
+      await transferOwnership(inheritedRole);
+      const inheritedUrl = new URL(databaseUrl);
+      inheritedUrl.username = inheritedRole;
+      inheritedUrl.password = inheritedPassword;
+      const inheritedOwner = new PrismaClient({
+        datasources: { db: { url: inheritedUrl.toString() } },
+      });
+      try {
+        await expect(inheritedOwner.$queryRaw<Array<{ id: string }>>`
+          SELECT "id" FROM public."Tenant" WHERE "id" = 'guarded-tenant'
+        `).resolves.toEqual([]);
+      } finally {
+        await inheritedOwner.$disconnect();
+      }
+      await expect(
+        applyMigrationAs(compactMigration, inheritedUrl.toString()),
+      ).rejects.toThrow(
+        'Compact schema migration requires a row-security-bypassing owner',
+      );
+
+      await transferOwnership(setOnlyRole);
+      const setOnlyUrl = new URL(databaseUrl);
+      setOnlyUrl.username = setOnlyRole;
+      setOnlyUrl.password = setOnlyPassword;
+      await expect(
+        applyMigrationAs(compactMigration, setOnlyUrl.toString()),
+      ).rejects.toThrow(
+        'Compact schema migration requires a row-security-bypassing owner',
+      );
+
+      const tables = await prisma.$queryRaw<Array<{ tablename: string }>>`
+        SELECT tablename FROM pg_catalog.pg_tables
+        WHERE schemaname = 'public' ORDER BY tablename
+      `;
+      expect(tables.map(({ tablename }) => tablename)).toEqual(legacyTables);
+      const rows = await prisma.$queryRaw<Array<{ name: string }>>`
+        SELECT "name" FROM public."Tenant"
+        WHERE "id" = 'guarded-tenant'
+      `;
+      expect(rows).toEqual([{ name: 'Guarded Kitchen' }]);
+    } finally {
+      await prisma.$disconnect();
+    }
+  });
+});
+
+test('minimal-column migration retains its non-bypass table-owner regression', async () => {
+  await withPostgres(async ({ databaseUrl, migrateTo, applyMigrationAs }) => {
+    await migrateTo('20260827000800_award_snapshot_capacity');
+    const admin = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
+    const role = 'minimal_columns_owner';
+    const password = 'minimal-columns-owner-password';
+
+    try {
+      for (const statement of [
+        `INSERT INTO "Tenant" ("id", "name", "addressLine", "city", "state", "pin", "phone", "updatedAt") VALUES ('tenant-owner-test', 'Owner Test Kitchen', '2 Market Road', 'Mumbai', 'Maharashtra', '400002', '9000000002', CURRENT_TIMESTAMP)`,
+        `INSERT INTO "Menu" ("id", "tenantId", "name", "updatedAt") VALUES ('menu-owner-test', 'tenant-owner-test', 'Owner test menu', CURRENT_TIMESTAMP)`,
+        `INSERT INTO "Recipe" ("id", "tenantId", "menuId", "name", "position", "retiredAt") VALUES ('recipe-owner-active', 'tenant-owner-test', 'menu-owner-test', 'Current dish', 0, NULL), ('recipe-owner-retired', 'tenant-owner-test', 'menu-owner-test', 'Old dish', 1, CURRENT_TIMESTAMP)`,
+        `INSERT INTO "Ingredient" ("id", "tenantId", "recipeId", "name", "quantity", "unit", "position") VALUES ('ingredient-owner-retired', 'tenant-owner-test', 'recipe-owner-retired', 'Rice', 1.000, 'KILOGRAM', 0)`,
+      ]) await admin.$executeRawUnsafe(statement);
+      await admin.$executeRawUnsafe(`
+        CREATE ROLE ${role} LOGIN PASSWORD '${password}'
+          NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS
+      `);
+      await admin.$executeRawUnsafe(`GRANT USAGE ON SCHEMA public TO ${role}`);
+      for (const table of ['Recipe', 'RequestItem', 'Supplier']) {
+        await admin.$executeRawUnsafe(`ALTER TABLE "${table}" OWNER TO ${role}`);
+      }
+
+      const ownerUrl = new URL(databaseUrl);
+      ownerUrl.username = role;
+      ownerUrl.password = password;
+      await applyMigrationAs(
+        '20260827000900_minimal_launch_columns',
+        ownerUrl.toString(),
+      );
+
+      const recipes = await admin.$queryRaw<Array<{ id: string }>>`
+        SELECT "id" FROM "Recipe" ORDER BY "id"
+      `;
+      expect(recipes).toEqual([{ id: 'recipe-owner-active' }]);
+      const retiredIngredients = await admin.$queryRaw<Array<{ count: bigint }>>`
+        SELECT COUNT(*) AS count FROM "Ingredient"
+        WHERE "id" = 'ingredient-owner-retired'
+      `;
+      expect(retiredIngredients).toEqual([{ count: BigInt(0) }]);
     } finally {
       await admin.$disconnect();
     }

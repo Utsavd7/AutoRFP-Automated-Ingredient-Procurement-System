@@ -281,6 +281,7 @@
   color: var(--ink-label);
   font-size: 0.78rem;
 }
+.quoteItem header a { width:fit-content; margin-top:.35rem; color:var(--copper-text); font-size:.76rem; font-weight:750; text-underline-offset:.18rem; }
 
 .noQuote,
 .lineFields .checkField {

@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import { formatInr } from '@/lib/domain/money';
 import styles from './reporting.module.css';
 
-export type FactualInsights = {
+type FactualInsights = {
   generatedAt: string;
   capped: boolean;
   summary: {
@@ -31,11 +31,27 @@ export type FactualInsights = {
     maximumSupplierName: string;
     observedVariancePercent: string | null;
   }>;
+  historyGuidance: Array<{
+    itemKey: string;
+    itemName: string;
+    unit: string;
+    lastOrderedQuantity: string | null;
+    lastOrderedAt: string | null;
+    lastSupplierNames: string[];
+    seasonalNotice: string | null;
+    unusualQuantityNotice: string | null;
+  }>;
   notes: string[];
 };
 
 function unitLabel(unit: string) {
   return ({ KILOGRAM: 'kg', GRAM: 'g', LITRE: 'L', MILLILITRE: 'ml', PIECE: 'piece', PACK: 'pack', CASE: 'case', CRATE: 'crate' } as Record<string, string>)[unit] ?? unit.toLowerCase();
+}
+
+function shortDate(value: string) {
+  return new Intl.DateTimeFormat('en-IN', {
+    day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata',
+  }).format(new Date(value));
 }
 
 async function problem(response: Response) {
@@ -102,6 +118,24 @@ export function InsightsWorkspace({ initialData }: { initialData?: FactualInsigh
               </div>
             )}
           </section>
+          {data.historyGuidance.length > 0 && (
+            <section className={`${styles.panel} ${styles.guidancePanel}`}>
+              <header><div><p>From your own records</p><h2>Previous buying guidance</h2></div><span>{data.historyGuidance.length} items</span></header>
+              <div className={styles.guidanceGrid}>
+                {data.historyGuidance.map((item) => (
+                  <article key={`${item.itemKey}:${item.unit}`}>
+                    <strong>{item.itemName}</strong>
+                    {item.lastOrderedQuantity && item.lastOrderedAt ? (
+                      <p>Last ordered {item.lastOrderedQuantity} {unitLabel(item.unit)} on {shortDate(item.lastOrderedAt)}</p>
+                    ) : <p>No previous award for this item yet.</p>}
+                    {item.lastSupplierNames.length > 0 && <small>Previously supplied by {item.lastSupplierNames.join(', ')}</small>}
+                    {item.seasonalNotice && <em>{item.seasonalNotice}</em>}
+                    {item.unusualQuantityNotice && <em>{item.unusualQuantityNotice}</em>}
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
           <aside className={styles.method}><strong>How to read this</strong>{data.notes.map((note) => <p key={note}>{note}</p>)}</aside>
         </>
       ) : data ? (

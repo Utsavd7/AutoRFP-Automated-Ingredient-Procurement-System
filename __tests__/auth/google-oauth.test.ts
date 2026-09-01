@@ -58,12 +58,12 @@ describe('Google OAuth identity resolution', () => {
     expect(repo.createOwnerIdentity).toHaveBeenCalledWith({
       ...onboarding,
       email: 'asha@example.com',
-      provider: 'google',
-      providerAccountId: 'google-sub-123',
+      googleSubject: 'google-sub-123',
     });
+    expect(repo.findIdentity).toHaveBeenCalledWith('google-sub-123');
   });
 
-  it('matches a returning user only by stable provider account ID', async () => {
+  it('matches a returning user only by the stable Google subject', async () => {
     const repo = repository({
       findIdentity: jest.fn().mockResolvedValue(activeOwner),
     });
@@ -78,6 +78,7 @@ describe('Google OAuth identity resolution', () => {
         repo,
       ),
     ).resolves.toEqual(activeOwner);
+    expect(repo.findIdentity).toHaveBeenCalledWith('google-sub-123');
     expect(repo.findUserByEmail).not.toHaveBeenCalled();
     expect(repo.createOwnerIdentity).not.toHaveBeenCalled();
   });

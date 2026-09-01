@@ -11,24 +11,24 @@ import {
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import {
+  PROCUREMENT_CATEGORIES,
+  type ProcurementCategory,
+} from '@/lib/domain/procurement-categories';
+import type {
+  IngredientSuggestionDto,
+  MenuCleanupProposal,
+  MenuDocumentV1,
+} from '@/lib/menu/menu-document';
+
 import styles from './menu-editor.module.css';
 
 type Unit = 'KILOGRAM' | 'GRAM' | 'LITRE' | 'MILLILITRE' | 'PIECE' | 'PACK' | 'CASE' | 'CRATE';
 
-type IngredientDraft = {
-  id?: string;
-  name: string;
-  quantity: string;
-  unit: Unit;
-};
+type DishDraft = MenuDocumentV1['dishes'][number];
+type IngredientDraft = DishDraft['ingredients'][number];
 
-type DishDraft = {
-  id?: string;
-  name: string;
-  ingredients: IngredientDraft[];
-};
-
-export type ReviewedMenu = {
+type ReviewedMenu = {
   id: string;
   name: string;
   status: 'DRAFT' | 'APPROVED';
@@ -36,7 +36,9 @@ export type ReviewedMenu = {
   sourceText: string | null;
   approvedAt: string | null;
   updatedAt: string;
-  recipes: DishDraft[];
+  document: MenuDocumentV1;
+  cleanupProposals?: MenuCleanupProposal[];
+  ingredientSuggestionsByDishId?: Record<string, IngredientSuggestionDto[]>;
 };
 
 const unitOptions: Array<{ value: Unit; label: string }> = [
@@ -50,19 +52,87 @@ const unitOptions: Array<{ value: Unit; label: string }> = [
   { value: 'CRATE', label: 'crate' },
 ];
 
-const newIngredient = (): IngredientDraft => ({ name: '', quantity: '', unit: 'KILOGRAM' });
-const newDish = (): DishDraft => ({ name: '', ingredients: [newIngredient()] });
+const categoryOptions = Object.entries(PROCUREMENT_CATEGORIES) as Array<
+  [ProcurementCategory, string]
+>;
+
+function documentId(prefix: 'd' | 'i') {
+  return `${prefix}${crypto.randomUUID().replaceAll('-', '').slice(0, 23)}`;
+}
+
+const newIngredient = (): IngredientDraft => {
+  const id = documentId('i');
+  return {
+    id,
+    itemKey: `item-${id}`,
+    name: '',
+    quantity: '',
+    unit: 'KILOGRAM',
+    specification: { v: 1, category: 'OTHER' },
+  };
+};
+
+const newDish = (): DishDraft => ({
+  id: documentId('d'),
+  name: '',
+  position: 0,
+  ingredients: [newIngredient()],
+});
 
 function normalizeMenu(menu: ReviewedMenu): ReviewedMenu {
   return {
     ...menu,
-    recipes: menu.recipes.map((dish) => ({
-      ...dish,
-      ingredients: dish.ingredients.map((ingredient) => ({
-        ...ingredient,
-        quantity: String(ingredient.quantity),
+    document: {
+      ...menu.document,
+      dishes: menu.document.dishes.map((dish) => ({
+        ...dish,
+        ingredients: dish.ingredients.map((ingredient) => ({
+          ...ingredient,
+          quantity: String(ingredient.quantity),
+        })),
       })),
-    })),
+    },
+  };
+}
+
+export function applyMenuCleanupProposal(
+  document: MenuDocumentV1,
+  proposal: MenuCleanupProposal,
+): MenuDocumentV1 {
+  if (proposal.kind === 'MERGE_DUPLICATE_DISH') {
+    return {
+      ...document,
+      dishes: document.dishes
+        .filter(({ id }) => id !== proposal.dishId)
+        .map((dish, position) => ({ ...dish, position })),
+    };
+  }
+  return {
+    ...document,
+    dishes: document.dishes.map((dish) => {
+      if (dish.id !== proposal.dishId) return dish;
+      if (proposal.ingredientId === null) {
+        return dish.name === proposal.before ? { ...dish, name: proposal.after } : dish;
+      }
+      if (proposal.kind === 'MERGE_DUPLICATE_ITEM') {
+        return {
+          ...dish,
+          ingredients: dish.ingredients.filter(({ id }) => id !== proposal.ingredientId),
+        };
+      }
+      return {
+        ...dish,
+        ingredients: dish.ingredients.map((ingredient) => {
+          if (ingredient.id !== proposal.ingredientId) return ingredient;
+          if (proposal.kind === 'NORMALIZE_UNIT') {
+            return { ...ingredient, unit: proposal.after as IngredientDraft['unit'] };
+          }
+          return ingredient.name === proposal.before
+            ? { ...ingredient, name: proposal.after }
+            : ingredient;
+        }),
+      };
+    }),
   };
 }
 
@@ -88,7 +158,7 @@ export function MenuEditor({
   const router = useRouter();
   const [menu, setMenu] = useState<ReviewedMenu | null>(initialMenu ? normalizeMenu(initialMenu) : null);
   const [name, setName] = useState(initialMenu?.name ?? '');
-  const [dishes, setDishes] = useState<DishDraft[]>(initialMenu ? normalizeMenu(initialMenu).recipes : []);
+  const [dishes, setDishes] = useState<DishDraft[]>(initialMenu ? normalizeMenu(initialMenu).document.dishes : []);
   const [loading, setLoading] = useState(!initialMenu);
   const [saving, setSaving] = useState(false);
   const [approving, setApproving] = useState(false);
@@ -107,7 +177,7 @@ export function MenuEditor({
       const loaded = normalizeMenu(result.menu);
       setMenu(loaded);
       setName(loaded.name);
-      setDishes(loaded.recipes);
+      setDishes(loaded.document.dishes);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'We could not load this menu.');
     } finally {
@@ -147,6 +217,39 @@ export function MenuEditor({
     setDishes((current) => current.filter((_, index) => index !== dishIndex));
   }
 
+  function addSuggestedIngredient(dishIndex: number, suggestion: IngredientSuggestionDto) {
+    if (suggestion.kind !== 'INGREDIENT') return;
+    setDishes((current) => current.map((dish, currentDishIndex) => {
+      if (currentDishIndex !== dishIndex) return dish;
+      if (dish.ingredients.some(({ itemKey }) => itemKey === suggestion.itemKey)) return dish;
+      return {
+        ...dish,
+        ingredients: [
+          ...dish.ingredients,
+          {
+            id: documentId('i'),
+            itemKey: suggestion.itemKey,
+            name: suggestion.name,
+            quantity: suggestion.quantity,
+            unit: suggestion.unit,
+            specification: suggestion.specification,
+          },
+        ],
+      };
+    }));
+  }
+
+  function applyCleanupProposal(proposal: MenuCleanupProposal) {
+    setDishes((current) => applyMenuCleanupProposal(
+      { ...menu!.document, dishes: current },
+      proposal,
+    ).dishes);
+    setMenu((current) => current ? {
+      ...current,
+      cleanupProposals: (current.cleanupProposals ?? []).filter(({ id }) => id !== proposal.id),
+    } : current);
+  }
+
   const complete = Boolean(
     name.trim() &&
     dishes.length > 0 &&
@@ -158,7 +261,7 @@ export function MenuEditor({
   );
 
   async function saveDraft() {
-    if (!menu || saving || !name.trim()) return null;
+    if (!menu || saving || !complete) return null;
     setSaving(true);
     setError('');
     setNotice('');
@@ -171,14 +274,19 @@ export function MenuEditor({
           expectedVersion: menu.version,
           name: name.trim(),
           sourceText: menu.sourceText,
-          dishes: dishes.map((dish) => ({
-            name: dish.name,
-            ingredients: dish.ingredients.map((ingredient) => ({
-              name: ingredient.name,
-              quantity: ingredient.quantity,
-              unit: ingredient.unit,
+          document: {
+            ...menu.document,
+            dishes: dishes.map((dish, dishIndex) => ({
+              ...dish,
+              name: dish.name.trim(),
+              position: dishIndex,
+              ingredients: dish.ingredients.map((ingredient) => ({
+                ...ingredient,
+                name: ingredient.name.trim(),
+                quantity: ingredient.quantity.trim(),
+              })),
             })),
-          })),
+          },
         }),
       });
       if (!response.ok) {
@@ -188,9 +296,12 @@ export function MenuEditor({
       }
       const result = (await response.json()) as { menu: ReviewedMenu };
       const saved = normalizeMenu(result.menu);
-      setMenu(saved);
+      setMenu({
+        ...saved,
+        ingredientSuggestionsByDishId: menu.ingredientSuggestionsByDishId,
+      });
       setName(saved.name);
-      setDishes(saved.recipes);
+      setDishes(saved.document.dishes);
       setNotice('Draft saved.');
       return saved;
     } catch (caught) {
@@ -222,7 +333,7 @@ export function MenuEditor({
       const approved = normalizeMenu(result.menu);
       setMenu(approved);
       setName(approved.name);
-      setDishes(approved.recipes);
+      setDishes(approved.document.dishes);
       setNotice('Menu approved and ready for procurement.');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'We could not approve this menu.');
@@ -263,7 +374,7 @@ export function MenuEditor({
             {menu.status === 'APPROVED' ? <CheckCircle2 aria-hidden="true" /> : null}
             {menu.status === 'APPROVED' ? 'Approved' : 'Draft'} · v{menu.version}
           </span>
-          <button className={styles.secondaryButton} type="button" disabled={saving || approving} onClick={() => void saveDraft()}>
+          <button className={styles.secondaryButton} type="button" disabled={!complete || saving || approving} onClick={() => void saveDraft()}>
             <Save aria-hidden="true" /> {saving ? 'Saving…' : 'Save draft'}
           </button>
           <button className={styles.primaryButton} type="button" disabled={!complete || saving || approving} onClick={() => void approve()}>
@@ -279,6 +390,23 @@ export function MenuEditor({
       {error && <div className={styles.error} role="alert">{error}</div>}
       {Object.keys(fieldErrors).length > 0 && (
         <div className={styles.error} role="alert">Check the highlighted menu details and try again.</div>
+      )}
+
+      {(menu.cleanupProposals?.length ?? 0) > 0 && (
+        <section className={styles.cleanupPanel} aria-label="Suggested menu cleanup">
+          <header>
+            <div><p className={styles.eyebrow}>Suggested cleanup</p><h2>Small changes to review</h2></div>
+            <span>{menu.cleanupProposals!.length} found</span>
+          </header>
+          <div>
+            {menu.cleanupProposals!.map((proposal) => (
+              <article key={proposal.id}>
+                <span><strong>{proposal.before}</strong><small>Change to {proposal.after}</small></span>
+                <button type="button" onClick={() => applyCleanupProposal(proposal)}>Use change</button>
+              </article>
+            ))}
+          </div>
+        </section>
       )}
 
       <section className={styles.dishes} aria-label="Menu dishes">
@@ -301,7 +429,7 @@ export function MenuEditor({
               </button>
             </header>
             <div className={styles.ingredientHeader} aria-hidden="true">
-              <span>Ingredient</span><span>Quantity</span><span>Unit</span><span />
+              <span>Ingredient</span><span>Quantity</span><span>Unit</span><span>Category</span><span />
             </div>
             <div className={styles.ingredients}>
               {dish.ingredients.map((ingredient, ingredientIndex) => (
@@ -337,12 +465,60 @@ export function MenuEditor({
                     </select>
                     <ChevronDown aria-hidden="true" />
                   </label>
+                  <label className={styles.unitSelect}>
+                    <span>Category</span>
+                    <select
+                      aria-label={`${ingredient.name || 'Ingredient'} category`}
+                      value={ingredient.specification.category}
+                      onChange={(event) => changeIngredient(dishIndex, ingredientIndex, {
+                        specification: {
+                          ...ingredient.specification,
+                          category: event.target.value as ProcurementCategory,
+                        },
+                      })}
+                    >
+                      {categoryOptions.map(([category, label]) => (
+                        <option value={category} key={category}>{label}</option>
+                      ))}
+                    </select>
+                    <ChevronDown aria-hidden="true" />
+                  </label>
+                  <label className={styles.referenceField}>
+                    <span>Food photo or product link, optional</span>
+                    <input
+                      aria-label={`${ingredient.name || 'Ingredient'} food reference link`}
+                      type="url"
+                      inputMode="url"
+                      placeholder="https://example.com/item"
+                      value={ingredient.specification.referenceUrl ?? ''}
+                      onChange={(event) => changeIngredient(dishIndex, ingredientIndex, {
+                        specification: {
+                          ...ingredient.specification,
+                          referenceUrl: event.target.value || null,
+                        },
+                      })}
+                    />
+                  </label>
                   <button type="button" aria-label={`Remove ${ingredient.name || 'ingredient'}`} onClick={() => removeIngredient(dishIndex, ingredientIndex)}>
                     <Trash2 aria-hidden="true" />
                   </button>
                 </div>
               ))}
             </div>
+            {(menu.ingredientSuggestionsByDishId?.[dish.id] ?? []).some(({ kind }) => kind === 'INGREDIENT') && (
+              <div className={styles.suggestions}>
+                <span>Quick add</span>
+                {(menu.ingredientSuggestionsByDishId?.[dish.id] ?? [])
+                  .filter((suggestion) => suggestion.kind === 'INGREDIENT')
+                  .filter((suggestion) => !dish.ingredients.some(({ itemKey }) => itemKey === suggestion.itemKey))
+                  .map((suggestion) => (
+                    <button type="button" key={suggestion.id} onClick={() => addSuggestedIngredient(dishIndex, suggestion)}>
+                      <Plus aria-hidden="true" />
+                      <span><strong>{suggestion.name}</strong><small>{suggestion.quantity} {unitOptions.find(({ value }) => value === suggestion.unit)?.label ?? suggestion.unit} · {suggestion.sourceLabel}</small></span>
+                    </button>
+                  ))}
+              </div>
+            )}
             <button
               className={styles.addRow}
               type="button"
@@ -359,7 +535,7 @@ export function MenuEditor({
 
       <footer className={styles.stickyActions}>
         <span>{dishes.length} {dishes.length === 1 ? 'dish' : 'dishes'} · {dishes.reduce((sum, dish) => sum + dish.ingredients.length, 0)} {dishes.reduce((sum, dish) => sum + dish.ingredients.length, 0) === 1 ? 'ingredient' : 'ingredients'}</span>
-        <button className={styles.secondaryButton} type="button" disabled={saving || approving} onClick={() => void saveDraft()}>
+        <button className={styles.secondaryButton} type="button" disabled={!complete || saving || approving} onClick={() => void saveDraft()}>
           {saving ? 'Saving…' : 'Save draft'}
         </button>
         <button className={styles.primaryButton} type="button" disabled={!complete || saving || approving} onClick={() => void approve()}>

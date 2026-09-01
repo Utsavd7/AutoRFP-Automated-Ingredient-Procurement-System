@@ -1,4 +1,5 @@
 import { problemResponse } from '@/lib/api/problem';
+import { privateNoStoreResponse } from '@/lib/api/private-response';
 import {
   InvalidJsonBodyError,
   readBoundedJson,
@@ -10,10 +11,11 @@ import { SupplierCsvError } from '@/lib/suppliers/csv';
 import {
   SupplierConflictError,
   SupplierNotFoundError,
+  SupplierVerificationConflictError,
 } from '@/lib/suppliers/supplier-service';
 import { SupplierValidationError } from '@/lib/suppliers/supplier-schema';
 
-export const SUPPLIER_REQUEST_BODY_BYTES = 64 * 1_024;
+export const SUPPLIER_REQUEST_BODY_BYTES = 128 * 1_024;
 
 type AccountContext = NonNullable<
   Awaited<ReturnType<typeof requireAccountContext>>
@@ -43,28 +45,41 @@ export function isProblemResponse(value: unknown): value is Response {
 
 export function supplierError(error: unknown): Response {
   if (error instanceof SupplierNotFoundError) {
-    return problemResponse(404, 'Supplier not found', 'The supplier is unavailable.');
+    return privateNoStoreResponse(
+      problemResponse(404, 'Supplier not found', 'The supplier is unavailable.'),
+    );
   }
   if (error instanceof SupplierValidationError) {
-    return problemResponse(422, 'Invalid supplier', error.message, {
+    return privateNoStoreResponse(problemResponse(422, 'Invalid supplier', error.message, {
       errors: error.errors,
-    });
+    }));
   }
   if (error instanceof SupplierConflictError) {
-    return problemResponse(409, 'Supplier already exists', error.message, {
+    return privateNoStoreResponse(problemResponse(409, 'Supplier already exists', error.message, {
       errors: error.errors,
-    });
+    }));
+  }
+  if (error instanceof SupplierVerificationConflictError) {
+    return privateNoStoreResponse(problemResponse(
+      409,
+      'Supplier application already decided',
+      error.message,
+    ));
   }
   if (error instanceof SupplierCsvError) {
-    return problemResponse(
+    return privateNoStoreResponse(problemResponse(
       error.status,
       error.status === 413 ? 'Supplier CSV too large' : 'Invalid supplier CSV',
       error.message,
       { errorCount: error.errorCount, errors: error.errors },
-    );
+    ));
   }
   if (error instanceof AuthorizationError) {
-    return problemResponse(403, 'Forbidden', 'You cannot access this supplier.');
+    return privateNoStoreResponse(
+      problemResponse(403, 'Forbidden', 'You cannot access this supplier.'),
+    );
   }
   throw error;
 }
+
+export const privateSupplierResponse = privateNoStoreResponse;

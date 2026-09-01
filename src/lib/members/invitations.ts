@@ -1,4 +1,5 @@
 import { Prisma, type PrismaClient, type UserRole } from '@prisma/client';
+
 import { writeAuditEvent } from '@/lib/audit/write-event';
 import { AuthorizationError, requireOwner } from '@/lib/auth/guards';
 import { assertRuntimeDatabaseRole } from '@/lib/db/runtime-role';
@@ -38,6 +39,11 @@ export class InvitationError extends Error {
   }
 }
 
+export type InvitationActor = {
+  userId: string;
+  tenantId: string;
+};
+
 type CreateRecord = {
   actor: InvitationActor;
   email: string;
@@ -74,11 +80,6 @@ export type InvitationRepository = {
   }): Promise<void>;
 };
 
-export type InvitationActor = {
-  userId: string;
-  tenantId: string;
-};
-
 type InvitationClient = Pick<PrismaClient, '$queryRaw' | '$transaction'> &
   TenantTransactionHost;
 
@@ -89,18 +90,22 @@ type LockedActor = {
   isActive: boolean;
 };
 
-type LockedInvitation = {
+type LockedInvitedUser = {
   id: string;
   tenantId: string;
   email: string;
   role: UserRole;
-  expiresAt: Date;
-  acceptedAt: Date | null;
-  revokedAt: Date | null;
+  invitationExpiresAt: Date | null;
+  invitationAcceptedAt: Date | null;
+  invitationRevokedAt: Date | null;
 };
 
 function forbidden(): never {
   throw new InvitationError('FORBIDDEN', 403, 'Forbidden.');
+}
+
+function emailUnavailable(message = 'This email cannot be invited.'): never {
+  throw new InvitationError('EMAIL_UNAVAILABLE', 409, message);
 }
 
 async function lockOwner(
@@ -121,6 +126,8 @@ async function lockOwner(
     FROM "User"
     WHERE "id" = ${actor.userId}
       AND "tenantId" = ${actor.tenantId}
+      AND "accountState" = 'ACTIVE'
+      AND "isActive" = true
     FOR UPDATE
   `;
   if (!currentActor) forbidden();
@@ -159,72 +166,97 @@ export function createPrismaInvitationRepository(
   client: InvitationClient,
 ): InvitationRepository {
   return {
-    create(input) {
-      return withTenant(
-        input.actor.tenantId,
-        async (transaction) => {
-          const actor = await lockOwner(transaction, input.actor);
-          const [existingAccount] = await transaction.$queryRaw<
-            Array<{ exists: boolean }>
-          >`
-            SELECT autorfp_private.autorfp_user_email_exists(${input.email})
-              AS "exists"
-          `;
-          if (existingAccount?.exists) {
-            throw new InvitationError(
-              'EMAIL_UNAVAILABLE',
-              409,
-              'This email cannot be invited.',
-            );
-          }
-          const replaced = await transaction.invitation.findMany({
-            where: {
-              tenantId: actor.tenantId,
-              email: input.email,
-              acceptedAt: null,
-              revokedAt: null,
-            },
-            select: { id: true },
-          });
-          await transaction.invitation.updateMany({
-            where: {
-              tenantId: actor.tenantId,
-              email: input.email,
-              acceptedAt: null,
-              revokedAt: null,
-            },
-            data: { revokedAt: input.now },
-          });
-          for (const previous of replaced) {
+    async create(input) {
+      try {
+        return await withTenant(
+          input.actor.tenantId,
+          async (transaction) => {
+            const actor = await lockOwner(transaction, input.actor);
+            const existing = await transaction.user.findFirst({
+              where: { tenantId: actor.tenantId, email: input.email },
+              select: {
+                id: true,
+                accountState: true,
+                passwordHash: true,
+                googleSubject: true,
+                invitationAcceptedAt: true,
+                invitationRevokedAt: true,
+              },
+            });
+
+            let invited: { id: string };
+            if (existing) {
+              const reusable =
+                existing.accountState !== 'ACTIVE' &&
+                existing.passwordHash === null &&
+                existing.googleSubject === null &&
+                existing.invitationAcceptedAt === null;
+              if (!reusable) emailUnavailable();
+              if (
+                existing.accountState === 'INVITED' &&
+                existing.invitationRevokedAt === null
+              ) {
+                await writeAuditEvent(transaction, {
+                  tenantId: actor.tenantId,
+                  actorUserId: actor.id,
+                  action: 'member.invitation-revoked',
+                  entityId: existing.id,
+                });
+              }
+              invited = await transaction.user.update({
+                where: { id: existing.id },
+                data: {
+                  name: input.email,
+                  role: input.role,
+                  accountState: 'INVITED',
+                  isActive: false,
+                  invitationTokenDigest: input.tokenDigest,
+                  invitationExpiresAt: input.expiresAt,
+                  invitationAcceptedAt: null,
+                  invitationRevokedAt: null,
+                  invitedByUserId: actor.id,
+                },
+                select: { id: true },
+              });
+            } else {
+              const [existingAccount] = await transaction.$queryRaw<
+                Array<{ exists: boolean }>
+              >`
+                SELECT autorfp_private.autorfp_user_email_exists(${input.email})
+                  AS "exists"
+              `;
+              if (existingAccount?.exists) emailUnavailable();
+              invited = await transaction.user.create({
+                data: {
+                  tenantId: actor.tenantId,
+                  name: input.email,
+                  email: input.email,
+                  role: input.role,
+                  accountState: 'INVITED',
+                  isActive: false,
+                  invitationTokenDigest: input.tokenDigest,
+                  invitationExpiresAt: input.expiresAt,
+                  invitedByUserId: actor.id,
+                },
+                select: { id: true },
+              });
+            }
+
             await writeAuditEvent(transaction, {
               tenantId: actor.tenantId,
               actorUserId: actor.id,
-              action: 'member.invitation-revoked',
-              entityId: previous.id,
+              action: 'member.invited',
+              entityId: invited.id,
+              metadata: { role: input.role },
             });
-          }
-          const invitation = await transaction.invitation.create({
-            data: {
-              tenantId: actor.tenantId,
-              email: input.email,
-              role: input.role,
-              tokenDigest: input.tokenDigest,
-              expiresAt: input.expiresAt,
-              invitedByUserId: actor.id,
-            },
-            select: { id: true },
-          });
-          await writeAuditEvent(transaction, {
-            tenantId: actor.tenantId,
-            actorUserId: actor.id,
-            action: 'member.invited',
-            entityId: invitation.id,
-            metadata: { role: input.role },
-          });
-          return invitation;
-        },
-        client,
-      );
+            return invited;
+          },
+          client,
+        );
+      } catch (error) {
+        if (userEmailUniqueConflict(error)) emailUnavailable();
+        throw error;
+      }
     },
 
     async resolve(input) {
@@ -267,66 +299,60 @@ export function createPrismaInvitationRepository(
             `;
             if (!tenant) return null;
 
-            const [invitation] = await transaction.$queryRaw<LockedInvitation[]>`
+            const [invited] = await transaction.$queryRaw<LockedInvitedUser[]>`
               SELECT
-                "id", "tenantId", "email", "role", "expiresAt",
-                "acceptedAt", "revokedAt"
-              FROM "Invitation"
+                "id", "tenantId", "email", "role", "invitationExpiresAt",
+                "invitationAcceptedAt", "invitationRevokedAt"
+              FROM "User"
               WHERE "tenantId" = ${input.tenantId}
-                AND "tokenDigest" = ${input.tokenDigest}::CHAR(64)
-                AND "expiresAt" > statement_timestamp()
+                AND "invitationTokenDigest" = ${input.tokenDigest}::CHAR(64)
+                AND "accountState" = 'INVITED'
+                AND "isActive" = false
+                AND "invitationAcceptedAt" IS NULL
+                AND "invitationRevokedAt" IS NULL
+                AND "invitationExpiresAt" > statement_timestamp()
               FOR UPDATE
             `;
-            if (
-              !invitation ||
-              invitation.email !== input.email ||
-              invitation.acceptedAt !== null ||
-              invitation.revokedAt !== null
-            ) {
-              return null;
-            }
+            if (!invited || invited.email !== input.email) return null;
 
-            const [consumed] = await transaction.$queryRaw<
-              Array<{ acceptedAt: Date }>
+            const [accepted] = await transaction.$queryRaw<
+              Array<{ id: string; tenantId: string; role: UserRole }>
             >`
-              UPDATE "Invitation"
-              SET "acceptedAt" = statement_timestamp()
-              WHERE "id" = ${invitation.id}
-                AND "acceptedAt" IS NULL
-                AND "revokedAt" IS NULL
-                AND "expiresAt" > statement_timestamp()
-              RETURNING "acceptedAt"
+              UPDATE "User"
+              SET
+                "name" = ${input.name},
+                "passwordHash" = ${input.passwordHash},
+                "accountState" = 'ACTIVE',
+                "isActive" = true,
+                "invitationTokenDigest" = NULL,
+                "invitationAcceptedAt" = statement_timestamp(),
+                "updatedAt" = statement_timestamp()
+              WHERE "id" = ${invited.id}
+                AND "tenantId" = ${input.tenantId}
+                AND "invitationTokenDigest" = ${input.tokenDigest}::CHAR(64)
+                AND "accountState" = 'INVITED'
+                AND "isActive" = false
+                AND "invitationAcceptedAt" IS NULL
+                AND "invitationRevokedAt" IS NULL
+                AND "invitationExpiresAt" > statement_timestamp()
+              RETURNING "id", "tenantId", "role"
             `;
-            if (!consumed) return null;
+            if (!accepted) return null;
 
-            const user = await transaction.user.create({
-              data: {
-                tenantId: invitation.tenantId,
-                name: input.name,
-                email: input.email,
-                passwordHash: input.passwordHash,
-                role: invitation.role,
-              },
-              select: { id: true, tenantId: true },
-            });
             await writeAuditEvent(transaction, {
-              tenantId: invitation.tenantId,
-              actorUserId: user.id,
+              tenantId: accepted.tenantId,
+              actorUserId: accepted.id,
               action: 'member.joined',
-              entityId: user.id,
-              metadata: { role: invitation.role },
+              entityId: accepted.id,
+              metadata: { role: accepted.role },
             });
-            return { userId: user.id, tenantId: user.tenantId };
+            return { userId: accepted.id, tenantId: accepted.tenantId };
           },
           client,
         );
       } catch (error) {
         if (userEmailUniqueConflict(error)) {
-          throw new InvitationError(
-            'EMAIL_UNAVAILABLE',
-            409,
-            'This email cannot join another workspace.',
-          );
+          emailUnavailable('This email cannot join another workspace.');
         }
         throw error;
       }
@@ -337,31 +363,38 @@ export function createPrismaInvitationRepository(
         input.actor.tenantId,
         async (transaction) => {
           const actor = await lockOwner(transaction, input.actor);
-          const [invitation] = await transaction.$queryRaw<LockedInvitation[]>`
+          const [invited] = await transaction.$queryRaw<LockedInvitedUser[]>`
             SELECT
-              "id", "tenantId", "email", "role", "expiresAt",
-              "acceptedAt", "revokedAt"
-            FROM "Invitation"
+              "id", "tenantId", "email", "role", "invitationExpiresAt",
+              "invitationAcceptedAt", "invitationRevokedAt"
+            FROM "User"
             WHERE "id" = ${input.invitationId}
               AND "tenantId" = ${actor.tenantId}
+              AND "accountState" = 'INVITED'
+              AND "isActive" = false
             FOR UPDATE
           `;
           if (
-            !invitation ||
-            invitation.acceptedAt !== null ||
-            invitation.revokedAt !== null
+            !invited ||
+            invited.invitationAcceptedAt !== null ||
+            invited.invitationRevokedAt !== null
           ) {
             unavailable();
           }
-          await transaction.invitation.update({
-            where: { id: invitation.id },
-            data: { revokedAt: input.now },
+          await transaction.user.update({
+            where: { id: invited.id },
+            data: {
+              accountState: 'DEACTIVATED',
+              isActive: false,
+              invitationTokenDigest: null,
+              invitationRevokedAt: input.now,
+            },
           });
           await writeAuditEvent(transaction, {
             tenantId: actor.tenantId,
             actorUserId: actor.id,
             action: 'member.invitation-revoked',
-            entityId: invitation.id,
+            entityId: invited.id,
           });
         },
         client,
@@ -410,7 +443,7 @@ export async function createInvitation(
 
   const token = createOpaqueToken('member-invitation');
   const expiresAt = new Date(now.getTime() + INVITATION_LIFETIME_MS);
-  const invitation = await repository.create({
+  const invited = await repository.create({
     actor: input.actor,
     email,
     role,
@@ -420,7 +453,7 @@ export async function createInvitation(
   });
 
   return {
-    id: invitation.id,
+    id: invited.id,
     token: token.raw,
     email,
     role,

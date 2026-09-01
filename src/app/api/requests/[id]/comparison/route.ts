@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { privateNoStoreResponse as privateResponse } from '@/lib/api/private-response';
 import { problemResponse } from '@/lib/api/problem';
+import { AwardDocumentStorageCorruptionError } from '@/lib/awards/award-document';
 import { AuthorizationError } from '@/lib/auth/guards';
 import {
   getQuoteComparison,
@@ -36,6 +37,15 @@ export async function GET(_request: Request, context: ComparisonRouteContext) {
     if (error instanceof AuthorizationError) {
       return privateResponse(
         problemResponse(403, 'Forbidden', 'You cannot access this comparison.'),
+      );
+    }
+    if (error instanceof AwardDocumentStorageCorruptionError) {
+      return privateResponse(
+        problemResponse(
+          503,
+          'Comparison unavailable',
+          'The committed award data could not be verified.',
+        ),
       );
     }
     throw error;

@@ -1,3 +1,10 @@
+import {
+  emptySupplierCapabilities,
+  type SupplierCapabilitiesV1,
+  SupplierCapabilitiesValidationError,
+  validateSupplierCapabilities,
+} from '@/lib/suppliers/supplier-capabilities';
+
 export const SUPPLIER_LIMITS = {
   businessNameBytes: 160,
   contactNameBytes: 120,
@@ -25,6 +32,8 @@ export type SupplierCreateInput = {
   gstin: string | null;
   notes: string | null;
   isActive: boolean;
+  relationshipType: 'CURRENT' | 'SELECTED_NEW';
+  capabilities: SupplierCapabilitiesV1;
 };
 
 export type SupplierUpdateInput = Partial<SupplierCreateInput>;
@@ -35,6 +44,27 @@ export type SupplierListInput = {
   limit: number;
   cursor: string | undefined;
 };
+
+export type SupplierLifecycleState = {
+  relationshipType: 'CURRENT' | 'SELECTED_NEW' | 'APPLICANT';
+  verificationStatus: 'UNVERIFIED' | 'PENDING' | 'VERIFIED' | 'REJECTED';
+  applicationRequestId: string | null;
+  verifiedAt: Date | null;
+  verifiedByUserId: string | null;
+  isActive: boolean;
+};
+
+export type SupplierVerificationDecision = 'APPROVE' | 'REJECT';
+
+const SUPPLIER_FIELDS = new Set([
+  'businessName', 'contactName', 'phone', 'whatsappNumber', 'email',
+  'addressLine', 'city', 'state', 'pin', 'gstin', 'notes', 'isActive',
+  'relationshipType', 'capabilities',
+]);
+const LIFECYCLE_FIELDS = new Set([
+  'relationshipType', 'verificationStatus', 'applicationRequestId',
+  'verifiedAt', 'verifiedByUserId', 'isActive',
+]);
 
 export class SupplierValidationError extends Error {
   readonly code = 'INVALID_SUPPLIER';
@@ -47,7 +77,25 @@ export class SupplierValidationError extends Error {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
+  return value !== null && typeof value === 'object' && !Array.isArray(value) &&
+    Object.getPrototypeOf(value) === Object.prototype;
+}
+
+function rejectUnknownKeys(
+  input: Record<string, unknown>,
+  allowed: ReadonlySet<string>,
+  errors: SupplierErrors,
+) {
+  for (const key of Reflect.ownKeys(input)) {
+    if (typeof key !== 'string' || !allowed.has(key)) {
+      errors[String(key)] = ['This supplier field cannot be set here.'];
+      continue;
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(input, key);
+    if (!descriptor?.enumerable || !('value' in descriptor)) {
+      errors[key] = ['Supplier fields must be enumerable data properties.'];
+    }
+  }
 }
 
 function byteLength(value: string) {
@@ -185,6 +233,28 @@ function optionalActive(value: unknown, errors: SupplierErrors) {
   return value;
 }
 
+function optionalRelationshipType(value: unknown, errors: SupplierErrors) {
+  if (value === undefined) return undefined;
+  if (value !== 'CURRENT' && value !== 'SELECTED_NEW') {
+    errors.relationshipType = [
+      'Relationship type must be CURRENT or SELECTED_NEW.',
+    ];
+    return undefined;
+  }
+  return value;
+}
+
+function optionalCapabilities(value: unknown, errors: SupplierErrors) {
+  if (value === undefined) return undefined;
+  try {
+    return validateSupplierCapabilities(value);
+  } catch (error) {
+    if (!(error instanceof SupplierCapabilitiesValidationError)) throw error;
+    errors.capabilities = [error.message];
+    return undefined;
+  }
+}
+
 function validateFields(input: Record<string, unknown>, requireBusinessName: boolean) {
   const errors: SupplierErrors = {};
   const result: SupplierUpdateInput = {};
@@ -239,6 +309,14 @@ function validateFields(input: Record<string, unknown>, requireBusinessName: boo
     const active = optionalActive(input.isActive, errors);
     if (active !== undefined) result.isActive = active;
   }
+  if (Object.prototype.hasOwnProperty.call(input, 'relationshipType')) {
+    const relationshipType = optionalRelationshipType(input.relationshipType, errors);
+    if (relationshipType !== undefined) result.relationshipType = relationshipType;
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'capabilities')) {
+    const capabilities = optionalCapabilities(input.capabilities, errors);
+    if (capabilities !== undefined) result.capabilities = capabilities;
+  }
 
   if (Object.keys(errors).length > 0) throw new SupplierValidationError(errors);
   return result;
@@ -247,6 +325,11 @@ function validateFields(input: Record<string, unknown>, requireBusinessName: boo
 export function validateSupplierCreateInput(input: unknown): SupplierCreateInput {
   if (!isRecord(input)) {
     throw new SupplierValidationError({ body: ['Expected a JSON object.'] });
+  }
+  const unknownErrors: SupplierErrors = {};
+  rejectUnknownKeys(input, SUPPLIER_FIELDS, unknownErrors);
+  if (Object.keys(unknownErrors).length > 0) {
+    throw new SupplierValidationError(unknownErrors);
   }
   const valid = validateFields(input, true);
   return {
@@ -262,12 +345,19 @@ export function validateSupplierCreateInput(input: unknown): SupplierCreateInput
     gstin: valid.gstin ?? null,
     notes: valid.notes ?? null,
     isActive: valid.isActive ?? true,
+    relationshipType: valid.relationshipType ?? 'CURRENT',
+    capabilities: valid.capabilities ?? emptySupplierCapabilities(),
   };
 }
 
 export function validateSupplierUpdateInput(input: unknown): SupplierUpdateInput {
   if (!isRecord(input)) {
     throw new SupplierValidationError({ body: ['Expected a JSON object.'] });
+  }
+  const unknownErrors: SupplierErrors = {};
+  rejectUnknownKeys(input, SUPPLIER_FIELDS, unknownErrors);
+  if (Object.keys(unknownErrors).length > 0) {
+    throw new SupplierValidationError(unknownErrors);
   }
   const valid = validateFields(input, false);
   if (Object.keys(valid).length === 0) {
@@ -276,6 +366,74 @@ export function validateSupplierUpdateInput(input: unknown): SupplierUpdateInput
     });
   }
   return valid;
+}
+
+function validLifecycleId(value: unknown) {
+  return typeof value === 'string' && value.length > 0 && value.length <= 200 &&
+    value.trim() === value && !/[\u0000-\u001f\u007f]/.test(value);
+}
+
+export function validateSupplierLifecycleState(input: unknown): SupplierLifecycleState {
+  if (!isRecord(input)) {
+    throw new SupplierValidationError({ lifecycle: ['Expected a lifecycle object.'] });
+  }
+  const errors: SupplierErrors = {};
+  rejectUnknownKeys(input, LIFECYCLE_FIELDS, errors);
+  const state = input as unknown as SupplierLifecycleState;
+  if (typeof state.isActive !== 'boolean') {
+    errors.isActive = ['Active status must be true or false.'];
+  }
+  const hasApplication = state.applicationRequestId !== null &&
+    validLifecycleId(state.applicationRequestId);
+  const hasVerification = state.verifiedAt instanceof Date &&
+    !Number.isNaN(state.verifiedAt.getTime()) && validLifecycleId(state.verifiedByUserId);
+  const hasNoVerification = state.verifiedAt === null && state.verifiedByUserId === null;
+
+  if (state.relationshipType === 'APPLICANT') {
+    if (
+      (state.verificationStatus !== 'PENDING' && state.verificationStatus !== 'REJECTED') ||
+      state.isActive !== false || !hasApplication || !hasNoVerification
+    ) {
+      errors.lifecycle = [
+        'Applicants must be inactive PENDING or REJECTED records linked to an application request.',
+      ];
+    }
+  } else if (
+    state.relationshipType === 'CURRENT' || state.relationshipType === 'SELECTED_NEW'
+  ) {
+    if (
+      state.verificationStatus !== 'VERIFIED' || !hasVerification ||
+      (state.relationshipType === 'CURRENT' && state.applicationRequestId !== null) ||
+      (state.applicationRequestId !== null && !hasApplication)
+    ) {
+      errors.lifecycle = [
+        'Direct suppliers must be verified with a reviewer and review time.',
+      ];
+    }
+  } else {
+    errors.relationshipType = ['Supplier relationship type is not supported.'];
+  }
+  if (Object.keys(errors).length > 0) throw new SupplierValidationError(errors);
+  return state;
+}
+
+export function validateSupplierVerificationDecision(
+  input: unknown,
+): SupplierVerificationDecision {
+  if (!isRecord(input)) {
+    throw new SupplierValidationError({ body: ['Expected a JSON object.'] });
+  }
+  const keys = Reflect.ownKeys(input);
+  if (
+    keys.length !== 1 || keys[0] !== 'decision' ||
+    !Object.getOwnPropertyDescriptor(input, 'decision')?.enumerable ||
+    (input.decision !== 'APPROVE' && input.decision !== 'REJECT')
+  ) {
+    throw new SupplierValidationError({
+      decision: ['Decision must be APPROVE or REJECT.'],
+    });
+  }
+  return input.decision;
 }
 
 function boundedQueryText(

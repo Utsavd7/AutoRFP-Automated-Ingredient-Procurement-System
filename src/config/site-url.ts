@@ -4,6 +4,8 @@ const SOCIAL_IMAGE_PATH = "/brand/social-card.png";
 type SiteUrlEnvironment = {
   NODE_ENV?: string;
   NEXTAUTH_URL?: string;
+  URL?: string;
+  DEPLOY_PRIME_URL?: string;
   VERCEL_PROJECT_PRODUCTION_URL?: string;
   VERCEL_URL?: string;
 };
@@ -14,13 +16,15 @@ function deploymentUrl(host: string) {
 
 export function resolveSiteMetadataUrls(env: SiteUrlEnvironment = process.env) {
   const configuredUrl = env.NEXTAUTH_URL?.trim();
-  const vercelHost = (
-    env.VERCEL_PROJECT_PRODUCTION_URL
+  const deploymentHost = (
+    env.URL
+    ?? env.DEPLOY_PRIME_URL
+    ?? env.VERCEL_PROJECT_PRODUCTION_URL
     ?? env.VERCEL_URL
   )?.trim();
   const metadataBase = new URL(
     configuredUrl
-      ?? (vercelHost ? deploymentUrl(vercelHost) : LOCAL_SITE_URL),
+      ?? (deploymentHost ? deploymentUrl(deploymentHost) : LOCAL_SITE_URL),
   );
 
   return {

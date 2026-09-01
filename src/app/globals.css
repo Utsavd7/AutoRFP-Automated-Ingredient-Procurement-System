@@ -819,7 +819,7 @@ textarea {
   max-width: 31rem;
   margin: 0;
   color: color-mix(in srgb, var(--ink) 65%, transparent);
-  font-size: 0.76rem;
+  font-size: 0.88rem;
   line-height: 1.65;
 }
 
@@ -856,7 +856,7 @@ textarea {
 }
 
 .security-section__points h3 { margin: 0 0 0.5rem; font-size: 0.87rem; }
-.security-section__points p { max-width: 30rem; margin: 0; color: color-mix(in srgb, var(--stone) 66%, transparent); font-size: 0.76rem; line-height: 1.68; }
+.security-section__points p { max-width: 30rem; margin: 0; color: color-mix(in srgb, var(--stone) 72%, transparent); font-size: 0.88rem; line-height: 1.68; }
 
 .public-cta {
   display: grid;
@@ -1158,8 +1158,11 @@ textarea {
 .legal-copy p + p { margin-top: 1rem; }
 
 @media (max-width: 900px) {
-  .public-header__inner { grid-template-columns: 1fr auto; }
-  .public-nav { display: none; }
+  .public-header__inner { grid-template-columns: 1fr auto; gap: 0.25rem 0.75rem; padding-block: 0.35rem; }
+  .public-brand-link { grid-column: 1; grid-row: 1; }
+  .public-header__actions { grid-column: 2; grid-row: 1; }
+  .public-nav { grid-column: 1 / -1; grid-row: 2; justify-content: flex-start; overflow-x: auto; scrollbar-width: none; }
+  .public-nav::-webkit-scrollbar { display: none; }
   .public-hero { grid-template-columns: 1fr; min-height: auto; gap: 4rem; }
   .public-hero__copy { max-width: 42rem; }
   .decision-preview { width: min(100%, 46rem); margin-left: auto; }
@@ -1186,7 +1189,7 @@ textarea {
 @media (max-width: 620px) {
   .public-container,
   .tour-step { width: min(100% - 1.25rem, 76rem); }
-  .public-header__inner { min-height: 4.2rem; gap: 0.5rem; }
+  .public-header__inner { min-height: 4.2rem; gap: 0.15rem 0.5rem; }
   .public-header__actions { gap: 0; }
   .public-text-action { padding-inline: 0.55rem; }
   .public-button--small { display: none; }

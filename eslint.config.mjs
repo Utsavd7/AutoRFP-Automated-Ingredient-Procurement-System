@@ -14,6 +14,7 @@ const eslintConfig = defineConfig([
     ".worktrees/**",
     "out/**",
     "build/**",
+    "public/ocr/**",
     "tmp/**",
     "test.js",
     "next-env.d.ts",

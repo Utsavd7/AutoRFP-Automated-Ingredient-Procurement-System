@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { ProcurementWorkspace } from '@/components/procurement/ProcurementWorkspace';
@@ -22,7 +24,8 @@ describe('procurement workspace', () => {
             awardedAt: null,
             createdAt: '2026-08-28T08:00:00.000Z',
             updatedAt: '2026-08-28T08:00:00.000Z',
-            _count: { items: 14, supplierRequests: 4 },
+            itemCount: 14,
+            supplierCount: 4,
           },
         ]}
         initialError=""
@@ -34,9 +37,21 @@ describe('procurement workspace', () => {
     expect(html).toContain('14 items');
     expect(html).toContain('4 suppliers');
     expect(html).toContain('Open');
+    expect(html).toContain('Quote by');
+    expect(html).toContain('Delivery');
     expect(html).toContain('New request');
     expect(html).not.toContain('savings');
     expect(html).not.toContain('AI');
+  });
+
+  it('keeps both dates labelled when the desktop table heading is hidden', () => {
+    const css = fs.readFileSync(
+      path.resolve(__dirname, '../../src/components/procurement/procurement-workspace.module.css'),
+      'utf8',
+    );
+
+    expect(css).toMatch(/@media\(max-width:44rem\)[\s\S]*\.requestRow>\.date:first-of-type\{display:flex/);
+    expect(css).toMatch(/\.mobileLabel/);
   });
 
   it('has a useful empty state', () => {

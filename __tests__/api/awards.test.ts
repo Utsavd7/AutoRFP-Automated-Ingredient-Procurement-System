@@ -1,5 +1,6 @@
 import { POST as createAwardRoute } from '@/app/api/requests/[id]/award/route';
 import { GET as comparisonRoute } from '@/app/api/requests/[id]/comparison/route';
+import { AwardDocumentStorageCorruptionError } from '@/lib/awards/award-document';
 import {
   AwardConflictError,
   AwardNotFoundError,
@@ -76,7 +77,7 @@ describe('comparison and award API', () => {
   it('loads a private no-store factual comparison for the current tenant', async () => {
     jest.mocked(getQuoteComparison).mockResolvedValue({
       request: { id: 'request-a' },
-      quotes: [{ quoteId: 'quote-a' }],
+      quotes: [{ supplierRequestId: 'supplier-request-a', revision: 2 }],
     } as never);
 
     const response = await comparisonRoute(
@@ -92,7 +93,7 @@ describe('comparison and award API', () => {
     expect(response.headers.get('cache-control')).toBe('private, no-store');
     await expect(response.json()).resolves.toMatchObject({
       request: { id: 'request-a' },
-      quotes: [{ quoteId: 'quote-a' }],
+      quotes: [{ supplierRequestId: 'supplier-request-a', revision: 2 }],
     });
   });
 
@@ -105,11 +106,9 @@ describe('comparison and award API', () => {
     const body = {
       mode: 'WHOLE',
       expectedRequestVersion: 2,
-      supplierQuoteId: 'quote-a',
+      supplierRequestId: 'supplier-request-a',
+      quoteRevision: 2,
       rationale: 'Complete landed quote with delivery on time.',
-      tenantId: 'tenant-b',
-      awardedByUserId: 'owner-b',
-      totalPaise: '1',
     };
 
     const response = await createAwardRoute(jsonRequest(body), context as never);
@@ -144,6 +143,20 @@ describe('comparison and award API', () => {
     expect(missingComparison.status).toBe(404);
     expect(missingComparison.headers.get('cache-control')).toBe('private, no-store');
 
+    jest.mocked(getQuoteComparison).mockRejectedValueOnce(
+      new AwardDocumentStorageCorruptionError(),
+    );
+    const corruptComparison = await comparisonRoute(
+      new Request('http://localhost/api/requests/request-a/comparison'),
+      context as never,
+    );
+    expect(corruptComparison.status).toBe(503);
+    expect(corruptComparison.headers.get('cache-control')).toBe('private, no-store');
+    await expect(corruptComparison.json()).resolves.toMatchObject({
+      title: 'Comparison unavailable',
+      status: 503,
+    });
+
     jest.mocked(createAward)
       .mockRejectedValueOnce(new AwardValidationError({ mode: ['Choose WHOLE or SPLIT.'] }))
       .mockRejectedValueOnce(new AwardNotFoundError())
@@ -164,16 +177,17 @@ describe('comparison and award API', () => {
     });
   });
 
-  it('maps an oversized trusted supplier snapshot to a bounded domain error', async () => {
-    jest.mocked(createAward).mockRejectedValueOnce(
-      new AwardSnapshotTooLargeError(),
-    );
+  it('maps oversized or corrupt committed documents without exposing stored content', async () => {
+    jest.mocked(createAward)
+      .mockRejectedValueOnce(new AwardSnapshotTooLargeError())
+      .mockRejectedValueOnce(new AwardDocumentStorageCorruptionError());
 
     const response = await createAwardRoute(
       jsonRequest({
         mode: 'WHOLE',
         expectedRequestVersion: 2,
-        supplierQuoteId: 'quote-a',
+        supplierRequestId: 'supplier-request-a',
+        quoteRevision: 2,
         rationale: 'Human decision.',
       }),
       context as never,
@@ -185,8 +199,27 @@ describe('comparison and award API', () => {
     expect(response.headers.get('x-content-type-options')).toBe('nosniff');
     await expect(response.json()).resolves.toMatchObject({
       title: 'Award snapshot is too large',
-      detail: 'The selected supplier records exceed the supported award size.',
+      detail: 'The committed award documents exceed the supported size.',
     });
+
+    const corrupt = await createAwardRoute(
+      jsonRequest({
+        mode: 'WHOLE',
+        expectedRequestVersion: 2,
+        supplierRequestId: 'supplier-request-a',
+        quoteRevision: 2,
+        rationale: 'Human decision.',
+      }),
+      context as never,
+    );
+    expect(corrupt.status).toBe(503);
+    expect(corrupt.headers.get('cache-control')).toBe('private, no-store');
+    const corruptBody = await corrupt.json();
+    expect(corruptBody).toEqual(expect.objectContaining({
+      title: 'Award data unavailable',
+      status: 503,
+    }));
+    expect(JSON.stringify(corruptBody)).not.toContain('Stored award documents');
   });
 
   it('bounds and strictly parses award JSON before invoking the service', async () => {

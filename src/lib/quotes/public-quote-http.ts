@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { privateNoStoreResponse } from '@/lib/api/private-response';
 import { problemResponse } from '@/lib/api/problem';
 import {
   InvalidJsonBodyError,
@@ -9,8 +10,7 @@ import {
 import {
   getPublicQuoteRequest,
   PUBLIC_QUOTE_BODY_BYTES,
-  PublicQuoteCapacityError,
-  PublicQuoteReadLimitError,
+  PublicQuoteDocumentSizeError,
   PublicQuoteRevisionConflictError,
   PublicQuoteRevisionLimitError,
   PublicQuoteSubmissionLimitError,
@@ -28,19 +28,15 @@ import {
 type PublicQuoteDependencies = {
   load: typeof getPublicQuoteRequest;
   submit: typeof submitPublicSupplierQuote;
-  readRateLimit?: PublicClientRateLimit;
   submissionClientRateLimit?: PublicClientRateLimit;
   now?: () => Date;
   production?: boolean;
 };
 
-const consumeReadRateLimit = publicClientRateLimit('quote-read');
 const consumeSubmissionClientRateLimit = publicClientRateLimit('quote-submit');
 
 function privacyHeaders(response: NextResponse) {
-  response.headers.set('Cache-Control', 'private, no-store');
-  response.headers.set('Referrer-Policy', 'no-referrer');
-  return response;
+  return privateNoStoreResponse(response);
 }
 
 function sessionToken(request: Request) {
@@ -95,13 +91,6 @@ function errorResponse(error: unknown, production: boolean) {
       ),
     );
   }
-  if (error instanceof PublicQuoteReadLimitError) {
-    const response = privacyHeaders(
-      problemResponse(429, 'Too many requests', error.message),
-    );
-    response.headers.set('Retry-After', String(error.retryAfterSeconds));
-    return response;
-  }
   if (error instanceof PublicQuoteSubmissionLimitError) {
     const response = privacyHeaders(
       problemResponse(429, 'Too many quote submissions', error.message),
@@ -110,9 +99,9 @@ function errorResponse(error: unknown, production: boolean) {
     return response;
   }
   if (
-    error instanceof PublicQuoteCapacityError ||
     error instanceof PublicQuoteRevisionConflictError ||
-    error instanceof PublicQuoteRevisionLimitError
+    error instanceof PublicQuoteRevisionLimitError ||
+    error instanceof PublicQuoteDocumentSizeError
   ) {
     return privacyHeaders(
       problemResponse(409, 'Quote changed', error.message),
@@ -143,7 +132,6 @@ export function createPublicQuoteHandlers(
   },
 ) {
   const production = dependencies.production ?? false;
-  const readRateLimit = dependencies.readRateLimit ?? consumeReadRateLimit;
   const submissionClientRateLimit =
     dependencies.submissionClientRateLimit ?? consumeSubmissionClientRateLimit;
   const now = dependencies.now ?? (() => new Date());
@@ -153,18 +141,6 @@ export function createPublicQuoteHandlers(
       const token = sessionToken(request);
       if (!token) return unavailableResponse(production);
       try {
-        const attempt = await readRateLimit({ request, now: now() });
-        if (!attempt.allowed) {
-          const response = privacyHeaders(
-            problemResponse(
-              429,
-              'Too many requests',
-              'Wait before refreshing this supplier quote.',
-            ),
-          );
-          response.headers.set('Retry-After', String(attempt.retryAfterSeconds));
-          return response;
-        }
         const result = await dependencies.load({ token });
         return privacyHeaders(NextResponse.json(result));
       } catch (error) {

@@ -37,6 +37,7 @@ describe('public quote access exchange', () => {
     expect(response.status).toBe(201);
     expect(response.headers.get('cache-control')).toBe('private, no-store');
     expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff');
     expect(response.headers.get('set-cookie')).toContain(
       `quoteplate_supplier_session=${token}`,
     );

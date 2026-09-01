@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { privateNoStoreResponse } from '@/lib/api/private-response';
 import { problemResponse } from '@/lib/api/problem';
 import {
   InvalidJsonBodyError,
@@ -29,9 +30,7 @@ type AccessDependencies = {
 const consumeAccessClientRateLimit = publicClientRateLimit('quote-access');
 
 function privacyHeaders(response: NextResponse) {
-  response.headers.set('Cache-Control', 'private, no-store');
-  response.headers.set('Referrer-Policy', 'no-referrer');
-  return response;
+  return privateNoStoreResponse(response);
 }
 
 function clearSupplierSession(response: NextResponse, production: boolean) {
@@ -145,15 +144,8 @@ export function createPublicQuoteAccessHandler(
       }
 
       await dependencies.exchange({ token: body.token, now: currentTime });
-      const response = NextResponse.json(
-        { ok: true },
-        {
-          status: 201,
-          headers: {
-            'Cache-Control': 'private, no-store',
-            'Referrer-Policy': 'no-referrer',
-          },
-        },
+      const response = privacyHeaders(
+        NextResponse.json({ ok: true }, { status: 201 }),
       );
       response.cookies.set(SUPPLIER_SESSION_COOKIE, body.token, {
         httpOnly: true,

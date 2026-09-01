@@ -12,10 +12,10 @@ export type RateLimitScope =
   | 'auth-workspace-create-email'
   | 'member-invitation-accept'
   | 'member-invitation-accept-client'
+  | 'supplier-application'
+  | 'supplier-application-client'
   | 'supplier-request'
   | 'supplier-quote-access-client'
-  | 'supplier-quote-read-client'
-  | 'supplier-quote-read-token'
   | 'supplier-quote-submit-client'
   | 'supplier-quote-submit';
 

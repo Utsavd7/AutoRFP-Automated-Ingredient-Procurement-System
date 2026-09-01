@@ -2,7 +2,10 @@ import { randomBytes } from 'node:crypto';
 
 import { PrismaClient } from '@prisma/client';
 
-import { listProcurementHistory } from '@/lib/reporting/reporting-service';
+import {
+  getFactualInsights,
+  listProcurementHistory,
+} from '@/lib/reporting/reporting-service';
 
 import { withMigratedPostgres } from './setup/postgres';
 import {
@@ -144,6 +147,9 @@ test('history exposes bounded quote revisions and allow-listed activity through 
         actor: { tenantId: a.tenantId, userId: a.userId },
         limit: 25,
       }, app);
+      const insights = await getFactualInsights({
+        actor: { tenantId: a.tenantId, userId: a.userId },
+      }, app);
 
       expect(history.requests).toEqual([
         expect.objectContaining({
@@ -163,6 +169,15 @@ test('history exposes bounded quote revisions and allow-listed activity through 
         /private-b|Private City|Unissued private draft|private-snapshot@example\.test|9999999999|supplierSnapshots/,
       );
       expect(history.recentActivity.every((event) => !Object.hasOwn(event, 'metadata'))).toBe(true);
+      expect(insights.summary).toMatchObject({
+        requestSampleSize: 1,
+        supplierRequestsSent: 1,
+        supplierResponses: 1,
+        awardedRequestCount: 1,
+        totalAwardedPaise: '84502',
+      });
+      expect(insights.capped).toBe(false);
+      expect(JSON.stringify(insights)).not.toMatch(/private-b|Private City/);
     } finally {
       await app?.$disconnect();
       await admin.$disconnect();

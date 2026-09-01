@@ -11,6 +11,7 @@ import {
   PublicQuoteValidationError,
   type QuoteRequestItem,
   type QuoteRevisionsV1,
+  validateStoredQuoteRevision,
 } from '@/lib/quotes/quote-revisions';
 
 const databaseNow = new Date('2026-08-28T10:00:00.123Z');
@@ -142,6 +143,25 @@ function databaseJson<T>(value: T): T {
 }
 
 describe('QuoteRevisionsV1', () => {
+  it('validates a bounded standalone stored revision without loading its history', () => {
+    const first = append();
+    const second = append(first, submission(), {
+      expectedLatestRevision: 1,
+      storedLatestRevision: 1,
+    });
+
+    expect(validateStoredQuoteRevision(
+      databaseJson(second.revisions[1]),
+      2,
+      requestItems,
+    )).toEqual(second.revisions[1]);
+    expect(() => validateStoredQuoteRevision(
+      databaseJson(second.revisions[1]),
+      1,
+      requestItems,
+    )).toThrow(PublicQuoteStorageCorruptionError);
+  });
+
   it('canonicalizes exact INR, quantity, GST, totals, supplied facts, and request order', () => {
     const document = append();
 

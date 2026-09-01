@@ -6,6 +6,7 @@ import { AuthorizationError } from '@/lib/auth/guards';
 import { requireAccountContext } from '@/lib/server-account';
 import {
   getSupplierSuggestions,
+  SupplierSuggestionsCapacityError,
   SupplierSuggestionsNotFoundError,
 } from '@/lib/suggestions/supplier-suggestions';
 
@@ -24,6 +25,13 @@ export async function GET(_request: Request, context: SuggestionsContext) {
     });
     return privateResponse(NextResponse.json(suggestions));
   } catch (error) {
+    if (error instanceof SupplierSuggestionsCapacityError) {
+      return privateResponse(problemResponse(
+        error.status,
+        'Supplier suggestions need a smaller directory',
+        error.message,
+      ));
+    }
     if (error instanceof SupplierSuggestionsNotFoundError) {
       return privateResponse(problemResponse(
         404,

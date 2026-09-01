@@ -16,6 +16,7 @@ import {
 
 export const SUPPLIER_SUGGESTION_LIMITS = {
   candidates: 50,
+  supplierScan: 500,
   perItem: 5,
   priorAwards: 50,
 } as const;
@@ -42,6 +43,17 @@ export class SupplierSuggestionsNotFoundError extends Error {
   constructor() {
     super('Procurement request not found.');
     this.name = 'SupplierSuggestionsNotFoundError';
+  }
+}
+
+export class SupplierSuggestionsCapacityError extends Error {
+  readonly status = 409;
+
+  constructor() {
+    super(
+      `Supplier suggestions support up to ${SUPPLIER_SUGGESTION_LIMITS.supplierScan} active verified suppliers. Archive unused suppliers before trying again.`,
+    );
+    this.name = 'SupplierSuggestionsCapacityError';
   }
 }
 
@@ -167,8 +179,8 @@ export async function getSupplierSuggestions(
           verificationStatus: 'VERIFIED',
           relationshipType: { in: ['CURRENT', 'SELECTED_NEW'] },
         },
-        orderBy: [{ businessName: 'asc' }, { id: 'asc' }],
-        take: SUPPLIER_SUGGESTION_LIMITS.candidates,
+        orderBy: { id: 'asc' },
+        take: SUPPLIER_SUGGESTION_LIMITS.supplierScan + 1,
         select: { id: true, businessName: true, capabilities: true },
       }),
       transaction.award.findMany({
@@ -183,6 +195,9 @@ export async function getSupplierSuggestions(
         },
       }),
     ]);
+    if (suppliers.length > SUPPLIER_SUGGESTION_LIMITS.supplierScan) {
+      throw new SupplierSuggestionsCapacityError();
+    }
     const items = validateRequestItems(request.items).items;
     return {
       requestId: request.id,

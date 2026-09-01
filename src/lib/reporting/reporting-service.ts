@@ -1,4 +1,4 @@
-import { type PrismaClient } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 
 import { validateAwardDocuments } from '@/lib/awards/award-document';
 import { AuthorizationError } from '@/lib/auth/guards';
@@ -8,7 +8,10 @@ import type { ProcurementUnit } from '@/lib/domain/quantity';
 import { formatScaledDecimal, MAX_DECIMAL_18_3_SCALED, parseUnsignedFixed } from '@/lib/domain/validation';
 import { prisma } from '@/lib/prisma';
 import { validateRequestItems } from '@/lib/procurement/request-document';
-import { latestQuoteRevision, validateQuoteRevisionsDocument } from '@/lib/quotes/quote-revisions';
+import {
+  validateQuoteRevisionsDocument,
+  validateStoredQuoteRevision,
+} from '@/lib/quotes/quote-revisions';
 import {
   buildHistoryGuidance,
   type ItemHistoryGuidance,
@@ -17,6 +20,7 @@ import {
 export const REPORTING_LIMITS = {
   historyPage: 50,
   insightRequests: 50,
+  insightSupplierRequests: 250,
   recentHistoryRecords: 25,
   cursorBytes: 1_024,
 } as const;
@@ -55,6 +59,14 @@ type InsightRequest = {
       }>;
     };
   }>;
+};
+
+type InsightSupplierRequestRow = {
+  id: string;
+  requestId: string;
+  businessName: string;
+  quoteRevision: number;
+  latestQuote: unknown;
 };
 
 function percentage(numerator: number, denominator: number) {
@@ -258,15 +270,8 @@ export async function getFactualInsights(
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         take: REPORTING_LIMITS.insightRequests + 1,
         select: {
+          id: true,
           items: true,
-          supplierRequests: {
-            orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-            select: {
-              id: true,
-              supplier: { select: { businessName: true } },
-              quoteRevisions: true,
-            },
-          },
         },
       }),
       transaction.award.aggregate({
@@ -289,8 +294,34 @@ export async function getFactualInsights(
       }),
       transaction.$queryRaw<Array<{ now: Date }>>`SELECT clock_timestamp() AS "now"`,
     ]);
-    const capped = requests.length > REPORTING_LIMITS.insightRequests;
-    if (capped) requests.pop();
+    const requestSampleCapped = requests.length > REPORTING_LIMITS.insightRequests;
+    if (requestSampleCapped) requests.pop();
+    const requestIds = requests.map(({ id }) => id);
+    const supplierRequestRows = requestIds.length === 0
+      ? []
+      : await transaction.$queryRaw<InsightSupplierRequestRow[]>(Prisma.sql`
+          SELECT supplier_request."id",
+                 supplier_request."requestId",
+                 supplier."businessName",
+                 supplier_request."quoteRevision",
+                 supplier_request."quoteRevisions"->'revisions'->-1 AS "latestQuote"
+          FROM "SupplierRequest" AS supplier_request
+          INNER JOIN "Supplier" AS supplier
+            ON supplier."tenantId" = supplier_request."tenantId"
+           AND supplier."id" = supplier_request."supplierId"
+          WHERE supplier_request."tenantId" = ${actor.tenantId}
+            AND supplier_request."requestId" IN (${Prisma.join(requestIds)})
+          ORDER BY supplier_request."requestId", supplier."businessName", supplier_request."id"
+          LIMIT ${REPORTING_LIMITS.insightSupplierRequests + 1}
+        `);
+    const supplierSampleCapped = supplierRequestRows.length > REPORTING_LIMITS.insightSupplierRequests;
+    if (supplierSampleCapped) supplierRequestRows.pop();
+    const supplierRequestsByRequest = new Map<string, InsightSupplierRequestRow[]>();
+    for (const row of supplierRequestRows) {
+      const values = supplierRequestsByRequest.get(row.requestId) ?? [];
+      values.push(row);
+      supplierRequestsByRequest.set(row.requestId, values);
+    }
     const generatedAt = clock[0]?.now;
     if (!(generatedAt instanceof Date) || Number.isNaN(generatedAt.getTime())) {
       throw new TypeError('PostgreSQL reporting clock is unavailable.');
@@ -305,13 +336,16 @@ export async function getFactualInsights(
           quantity: item.quantity,
           unit: item.unit,
         })),
-        supplierRequests: request.supplierRequests.map((supplierRequest) => {
-          const quote = latestQuoteRevision(validateQuoteRevisionsDocument(
-            supplierRequest.quoteRevisions,
-            items,
-          ));
+        supplierRequests: (supplierRequestsByRequest.get(request.id) ?? []).map((supplierRequest) => {
+          const quote = supplierRequest.quoteRevision > 0
+            ? validateStoredQuoteRevision(
+                supplierRequest.latestQuote,
+                supplierRequest.quoteRevision,
+                items,
+              )
+            : null;
           return {
-            supplierName: supplierRequest.supplier.businessName,
+            supplierName: supplierRequest.businessName,
             latestQuote: quote ? {
               id: `${supplierRequest.id}:${quote.revision}`,
               items: quote.items.map((item) => ({
@@ -335,7 +369,7 @@ export async function getFactualInsights(
       requests: parsedRequests,
       awardedRequestCount: awardTotals._count._all,
       totalAwardedPaise: awardTotals._sum.totalPaise?.toString() ?? '0',
-      capped,
+      capped: requestSampleCapped || supplierSampleCapped,
       generatedAt,
       historyGuidance: buildHistoryGuidance({
         items: parsedRequests.flatMap(({ items }) => items.map((item) => ({
@@ -413,9 +447,6 @@ export async function listProcurementHistory(
         deliveryDate: true, quoteDeadline: true, createdAt: true, openedAt: true, awardedAt: true,
         items: true,
         _count: { select: { supplierRequests: true } },
-        supplierRequests: {
-          select: { id: true, quoteRevision: true },
-        },
         award: {
           select: {
             id: true,
@@ -462,21 +493,44 @@ export async function listProcurementHistory(
     ]);
     const hasMore = requests.length > limit;
     if (hasMore) requests.pop();
+    const requestIds = requests.map(({ id }) => id);
+    const responseCounts = requestIds.length === 0
+      ? []
+      : await transaction.supplierRequest.groupBy({
+          by: ['requestId'],
+          where: {
+            tenantId: actor.tenantId,
+            requestId: { in: requestIds },
+            quoteRevision: { gt: 0 },
+          },
+          _count: { _all: true },
+          _sum: { quoteRevision: true },
+          orderBy: { requestId: 'asc' },
+          take: REPORTING_LIMITS.historyPage,
+        });
+    const responseCountsByRequest = new Map(responseCounts.map((entry) => [
+      entry.requestId,
+      {
+        respondingSupplierCount: entry._count._all,
+        quoteRevisionCount: entry._sum.quoteRevision ?? 0,
+      },
+    ]));
     const last = requests.at(-1);
     return {
-      requests: requests.map(({ items, supplierRequests, award, ...request }) => {
+      requests: requests.map(({ items, award, ...request }) => {
         const requestItems = validateRequestItems(items).items;
         const awardDocuments = award ? validateAwardDocuments(award) : null;
+        const counts = responseCountsByRequest.get(request.id) ?? {
+          respondingSupplierCount: 0,
+          quoteRevisionCount: 0,
+        };
         return {
           ...request,
           _count: {
             items: requestItems.length,
             supplierRequests: request._count.supplierRequests,
           },
-          respondingSupplierCount: supplierRequests.filter(({ quoteRevision }) =>
-            quoteRevision > 0).length,
-          quoteRevisionCount: supplierRequests.reduce((sum, supplierRequest) =>
-            sum + supplierRequest.quoteRevision, 0),
+          ...counts,
           award: award && awardDocuments ? {
             id: award.id,
             totalPaise: award.totalPaise.toString(),

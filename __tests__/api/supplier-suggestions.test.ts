@@ -2,6 +2,7 @@ import { GET } from '@/app/api/requests/[id]/suggestions/route';
 import { AuthorizationError } from '@/lib/auth/guards';
 import {
   getSupplierSuggestions,
+  SupplierSuggestionsCapacityError,
   SupplierSuggestionsNotFoundError,
 } from '@/lib/suggestions/supplier-suggestions';
 import { requireAccountContext } from '@/lib/server-account';
@@ -9,6 +10,7 @@ import { requireAccountContext } from '@/lib/server-account';
 jest.mock('@/lib/server-account', () => ({ requireAccountContext: jest.fn() }));
 jest.mock('@/lib/suggestions/supplier-suggestions', () => ({
   getSupplierSuggestions: jest.fn(),
+  SupplierSuggestionsCapacityError: jest.requireActual('@/lib/suggestions/supplier-suggestions').SupplierSuggestionsCapacityError,
   SupplierSuggestionsNotFoundError: jest.requireActual('@/lib/suggestions/supplier-suggestions').SupplierSuggestionsNotFoundError,
 }));
 
@@ -55,5 +57,21 @@ describe('supplier suggestions API', () => {
     for (const response of [missingSession, missingRequest, forbidden]) {
       expect(JSON.stringify(await response.json())).not.toContain('tenant-a');
     }
+  });
+
+  it('returns a bounded conflict when the supplier directory exceeds the safe scan limit', async () => {
+    jest.mocked(getSupplierSuggestions).mockRejectedValueOnce(
+      new SupplierSuggestionsCapacityError(),
+    );
+
+    const response = await GET(
+      new Request('http://localhost/api/requests/request-a/suggestions'),
+      context,
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual(expect.objectContaining({
+      title: 'Supplier suggestions need a smaller directory',
+    }));
   });
 });

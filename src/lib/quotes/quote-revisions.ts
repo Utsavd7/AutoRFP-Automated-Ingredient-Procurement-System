@@ -587,6 +587,21 @@ export function validateQuoteRevisionsDocument(
   };
 }
 
+export function validateStoredQuoteRevision(
+  input: unknown,
+  expectedRevision: number,
+  requestItems: QuoteRequestItem[],
+) {
+  trustedRequestItems(requestItems);
+  if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 1) storageFailure();
+  try {
+    assertBoundedJson(input, PUBLIC_QUOTE_DOCUMENT_BYTES, 'Quote revision');
+  } catch {
+    storageFailure();
+  }
+  return canonicalStoredRevision(input, expectedRevision, requestItems);
+}
+
 function parseSubmissionLine(
   input: unknown,
   requestItem: QuoteRequestItem,

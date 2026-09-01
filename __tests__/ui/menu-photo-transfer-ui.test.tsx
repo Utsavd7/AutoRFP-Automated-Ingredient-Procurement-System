@@ -84,6 +84,19 @@ describe('phone menu photo transfer UI contracts', () => {
     expect(capture).toContain("setLinkState('invalid')");
   });
 
+  it('scopes every asynchronous send update to its exact session and controller', () => {
+    const capture = readFileSync(
+      path.join(root, 'src/app/menu-capture/MenuCaptureClient.tsx'),
+      'utf8',
+    );
+
+    expect(capture).toContain(
+      'sessionRef.current === activeSession && controller.current === nextController',
+    );
+    expect(capture.match(/if \(!isCurrentSend\(\)\) return/g)).toHaveLength(3);
+    expect(capture).toContain('if (isCurrentSend()) {');
+  });
+
   it('promises automatic arrival without asking for sign-in or refresh', () => {
     const html = renderToStaticMarkup(
       <PhonePhotoTransfer

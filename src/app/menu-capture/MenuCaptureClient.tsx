@@ -128,6 +128,9 @@ export function MenuCaptureClient() {
     setBatchLocked(true);
     setSending(true);
     setError('');
+    const isCurrentSend = () => (
+      sessionRef.current === activeSession && controller.current === nextController
+    );
     try {
       await sendPhonePhotoBatch({
         files: photos.map(({ file }) => file),
@@ -135,15 +138,16 @@ export function MenuCaptureClient() {
         key: session.key,
         readDimensions: readBrowserImageDimensions,
         onProgress: ({ message }) => {
-          if (sessionRef.current === activeSession) setProgress(message);
+          if (!isCurrentSend()) return;
+          setProgress(message);
         },
         signal: nextController.signal,
       });
-      if (sessionRef.current !== activeSession) return;
+      if (!isCurrentSend()) return;
       setSent(true);
       setProgress('');
     } catch (caught) {
-      if (sessionRef.current !== activeSession) return;
+      if (!isCurrentSend()) return;
       if (caught instanceof DOMException && caught.name === 'AbortError') return;
       if (caught instanceof PhotoTransferClientError && caught.status === 410) {
         setLinkState('invalid');
@@ -153,8 +157,10 @@ export function MenuCaptureClient() {
         ? caught.message
         : 'The photos could not be sent. Check your connection and try again.');
     } finally {
-      if (controller.current === nextController) controller.current = null;
-      setSending(false);
+      if (isCurrentSend()) {
+        controller.current = null;
+        setSending(false);
+      }
     }
   }
 

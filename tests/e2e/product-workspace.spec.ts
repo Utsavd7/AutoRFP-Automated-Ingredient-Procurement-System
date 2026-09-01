@@ -165,6 +165,90 @@ test('sends a menu photo from the public mobile capture page without sign-in', a
   await expect(page.getByRole('heading', { name: 'This code is no longer ready' })).toBeVisible();
 });
 
+test('keeps a rescanned phone send isolated from stale aborted cleanup', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const staleToken = 'stale-network-mocked-token';
+  const freshToken = 'fresh-network-mocked-token';
+  const encodedKey = Buffer.alloc(32, 7).toString('base64url');
+  let markFreshUploadStarted!: () => void;
+  let finishFreshUpload!: () => void;
+  const freshUploadStarted = new Promise<void>((resolve) => { markFreshUploadStarted = resolve; });
+  const freshUploadMayFinish = new Promise<void>((resolve) => { finishFreshUpload = resolve; });
+
+  await page.route('**/api/menu-photo-transfer/upload', async (route) => {
+    const request = route.request();
+    if (
+      request.method() === 'PUT'
+      && request.headers().authorization === `Bearer ${freshToken}`
+    ) {
+      markFreshUploadStarted();
+      await freshUploadMayFinish;
+    }
+    await route.fulfill({
+      status: request.method() === 'PUT' ? 201 : 200,
+      contentType: 'application/json',
+      body: JSON.stringify(request.method() === 'PUT'
+        ? { uploaded: true, index: 0 }
+        : { status: 'complete', expiresAt: Date.now() + 60_000, files: [] }),
+    });
+  });
+
+  await page.goto(`/menu-capture#token=${staleToken}&key=${encodedKey}`);
+  await expect(page.getByRole('heading', { name: 'Take or choose up to 10 photos' })).toBeVisible();
+  await page.evaluate((token) => {
+    const originalFetch = window.fetch.bind(window);
+    const raceWindow = window as typeof window & {
+      stalePhoneSendStarted?: boolean;
+      releaseStalePhoneSend?: () => void;
+    };
+    window.fetch = (input, init) => {
+      if (new Headers(init?.headers).get('Authorization') !== `Bearer ${token}`) {
+        return originalFetch(input, init);
+      }
+      raceWindow.stalePhoneSendStarted = true;
+      return new Promise<Response>((_resolve, reject) => {
+        raceWindow.releaseStalePhoneSend = () => {
+          reject(new DOMException('The stale send was aborted.', 'AbortError'));
+        };
+      });
+    };
+  }, staleToken);
+
+  const photo = {
+    name: 'menu.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      'base64',
+    ),
+  };
+  await page.getByLabel('Take photos or choose images').setInputFiles(photo);
+  await page.getByRole('button', { name: 'Done' }).click();
+  await expect.poll(() => page.evaluate(() => (
+    window as typeof window & { stalePhoneSendStarted?: boolean }
+  ).stalePhoneSendStarted)).toBe(true);
+
+  await page.evaluate(({ key, token }) => {
+    window.location.hash = `token=${token}&key=${key}`;
+  }, { key: encodedKey, token: freshToken });
+  await expect(page).toHaveURL(/\/menu-capture$/);
+  await expect(page.getByRole('heading', { name: 'Take or choose up to 10 photos' })).toBeVisible();
+  await page.getByLabel('Take photos or choose images').setInputFiles(photo);
+  await page.getByRole('button', { name: 'Done' }).click();
+  await freshUploadStarted;
+
+  await page.evaluate(() => {
+    (window as typeof window & { releaseStalePhoneSend?: () => void })
+      .releaseStalePhoneSend?.();
+  });
+  await page.waitForTimeout(100);
+  await expect(page.getByRole('button', { name: 'Sending…' })).toBeDisabled();
+  await expect(page.getByLabel('Sending photo progress')).toBeVisible();
+
+  finishFreshUpload();
+  await expect(page.getByRole('heading', { name: 'Photos sent' })).toBeVisible();
+});
+
 test('uses the approved QuotePlate product shell and exposes every core workspace', async ({
   page,
 }) => {

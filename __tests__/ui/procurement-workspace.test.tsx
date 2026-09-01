@@ -22,7 +22,8 @@ describe('procurement workspace', () => {
             awardedAt: null,
             createdAt: '2026-08-28T08:00:00.000Z',
             updatedAt: '2026-08-28T08:00:00.000Z',
-            _count: { items: 14, supplierRequests: 4 },
+            itemCount: 14,
+            supplierCount: 4,
           },
         ]}
         initialError=""

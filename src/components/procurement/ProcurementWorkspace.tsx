@@ -19,7 +19,8 @@ export type ProcurementRequestSummary = {
   awardedAt: string | null;
   createdAt: string;
   updatedAt: string;
-  _count: { items: number; supplierRequests: number };
+  itemCount: number;
+  supplierCount: number;
 };
 
 const statusLabel: Record<RequestStatus, string> = {
@@ -156,8 +157,8 @@ export function ProcurementWorkspace({
                 <small>Created {shortDate(request.createdAt)}</small>
               </span>
               <span className={styles.coverage}>
-                <span>{request._count.items} {request._count.items === 1 ? 'item' : 'items'}</span>
-                <span>{request._count.supplierRequests} {request._count.supplierRequests === 1 ? 'supplier' : 'suppliers'}</span>
+                <span>{request.itemCount} {request.itemCount === 1 ? 'item' : 'items'}</span>
+                <span>{request.supplierCount} {request.supplierCount === 1 ? 'supplier' : 'suppliers'}</span>
               </span>
               <span className={styles.date}><CalendarDays aria-hidden="true" />{deadlineText(request.quoteDeadline)}</span>
               <span className={styles.date}>{shortDate(request.deliveryDate)}</span>

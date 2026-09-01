@@ -1068,6 +1068,7 @@ type RequestListRow = {
   version: number;
   menuId: string | null;
   sourceRequestId: string | null;
+  deliveryDate: Date;
   quoteDeadline: Date;
   openedAt: Date | null;
   awardedAt: Date | null;
@@ -1100,7 +1101,7 @@ export async function listProcurementRequests(
     const requests = await transaction.$queryRaw<RequestListRow[]>(Prisma.sql`
       SELECT request."id", request."tenantId", request."title", request."status",
              request."version", request."menuId", request."sourceRequestId",
-             request."quoteDeadline", request."openedAt", request."awardedAt",
+             request."deliveryDate", request."quoteDeadline", request."openedAt", request."awardedAt",
              request."cancelledAt", request."createdByUserId", request."createdAt",
              request."updatedAt",
              CASE

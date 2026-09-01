@@ -282,10 +282,15 @@ describe('restricted compact procurement request workflow', () => {
 
         const listed = await listProcurementRequests({ actor }, app);
         expect(listed.requests).toEqual([
-          expect.objectContaining({ id: created.id, itemCount: 2, supplierCount: 2 }),
+          expect.objectContaining({
+            id: created.id,
+            itemCount: 2,
+            supplierCount: 2,
+            deliveryDate: expect.any(Date),
+          }),
         ]);
         for (const field of [
-          'items', 'sourcing', 'deliveryDetails', 'deliveryDate', 'commercialTerms',
+          'items', 'sourcing', 'deliveryDetails', 'commercialTerms',
           'applicationTokenDigest', 'applicationExpiresAt',
         ]) expect(listed.requests[0]).not.toHaveProperty(field);
         await expect(getProcurementRequest({ actor: otherActor, requestId: created.id }, app))

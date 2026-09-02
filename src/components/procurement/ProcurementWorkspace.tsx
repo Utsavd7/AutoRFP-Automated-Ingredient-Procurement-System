@@ -25,9 +25,9 @@ type ProcurementRequestSummary = {
 };
 
 const statusLabel: Record<RequestStatus, string> = {
-  DRAFT: 'Draft',
-  OPEN: 'Open',
-  AWARDED: 'Awarded',
+  DRAFT: 'Not sent',
+  OPEN: 'Waiting for suppliers',
+  AWARDED: 'Supplier selected',
   CANCELLED: 'Cancelled',
 };
 
@@ -106,20 +106,20 @@ export function ProcurementWorkspace({
       <header className={styles.header}>
         <div>
           <p className={styles.eyebrow}>Restaurant buying</p>
-          <h1>Procurement</h1>
+          <h1>Buy ingredients</h1>
           <p className={styles.intro}>
-            Create one clear request, collect comparable supplier quotes, and keep the final decision on record.
+            Ask suppliers for prices, compare the final cost, and record who you choose.
           </p>
         </div>
         <button className={styles.primaryButton} type="button" onClick={() => router.push('/procurement/new')}>
-          <Plus aria-hidden="true" /> New request
+          <Plus aria-hidden="true" /> Ask suppliers for prices
         </button>
       </header>
 
       <section className={styles.summary} aria-label="Request summary">
-        <div><ClipboardList aria-hidden="true" /><span><strong>{requests.filter(({ status }) => status === 'DRAFT').length}</strong>Drafts shown</span></div>
-        <div><Users aria-hidden="true" /><span><strong>{requests.filter(({ status }) => status === 'OPEN').length}</strong>Open shown</span></div>
-        <div><PackageCheck aria-hidden="true" /><span><strong>{requests.filter(({ status }) => status === 'AWARDED').length}</strong>Awarded shown</span></div>
+        <div><ClipboardList aria-hidden="true" /><span><strong>{requests.filter(({ status }) => status === 'DRAFT').length}</strong>Not sent</span></div>
+        <div><Users aria-hidden="true" /><span><strong>{requests.filter(({ status }) => status === 'OPEN').length}</strong>Waiting for suppliers</span></div>
+        <div><PackageCheck aria-hidden="true" /><span><strong>{requests.filter(({ status }) => status === 'AWARDED').length}</strong>Supplier selected</span></div>
       </section>
 
       <nav className={styles.filters} aria-label="Filter requests">
@@ -131,19 +131,19 @@ export function ProcurementWorkspace({
       </nav>
 
       {error && (
-        <div className={styles.error} role="alert"><span>{error}</span><button type="button" onClick={() => void loadRequests()}>Try again</button></div>
+        <div className={styles.error} role="alert"><span>{error} Your saved restaurant records are unchanged.</span><button type="button" onClick={() => void loadRequests()}>Try again</button></div>
       )}
 
       {loading ? (
         <section className={styles.loading} aria-label="Loading requests"><span /><span /><span /></section>
-      ) : shown.length === 0 && requests.length === 0 ? (
+      ) : error && requests.length === 0 ? null : shown.length === 0 && requests.length === 0 ? (
         <section className={styles.empty}>
           <div className={styles.emptyMark}><ClipboardList aria-hidden="true" /></div>
           <p className={styles.eyebrow}>Ready when you are</p>
           <h2>Create your first request</h2>
           <p>Start with an approved menu and at least one supplier. You can review everything before sharing any link.</p>
           <button className={styles.primaryButton} type="button" onClick={() => router.push('/procurement/new')}>
-            <Plus aria-hidden="true" /> New request
+            <Plus aria-hidden="true" /> Ask suppliers for prices
           </button>
         </section>
       ) : shown.length === 0 ? (

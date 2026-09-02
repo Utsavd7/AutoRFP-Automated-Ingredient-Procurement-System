@@ -2,7 +2,7 @@
 
 import { ArrowLeft, CalendarDays, Check, ChevronDown, MapPin, Store, Users } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { FormEvent, useEffect, useRef, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 
 import { workspaceMutationFetch } from '@/lib/client/workspace-prefetch';
 import type { MenuDocumentV1 } from '@/lib/menu/menu-document';
@@ -62,6 +62,11 @@ function deadlineBeforeDelivery(deadlineValue: string, deliveryValue: string) {
   return !Number.isNaN(deliveryStart.getTime()) && new Date(deadline).getTime() < deliveryStart.getTime();
 }
 
+type RequestFormError =
+  | { message: string; kind: 'load'; retry: 'initial' | 'menus' | 'suppliers' | 'menu' }
+  | { message: string; kind: 'operation' }
+  | null;
+
 export function NewRequestForm({ initialData }: { initialData?: InitialData }) {
   const router = useRouter();
   const [menus, setMenus] = useState(initialData?.menus.filter(({ status }) => status === 'APPROVED') ?? []);
@@ -88,53 +93,59 @@ export function NewRequestForm({ initialData }: { initialData?: InitialData }) {
   const [commercialTerms, setCommercialTerms] = useState('');
   const [loading, setLoading] = useState(!initialData);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<RequestFormError>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
   const initialLoadStarted = useRef(false);
   const menuRequest = useRef<AbortController | null>(null);
 
+  const loadInitialData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [menuResponse, supplierResponse, accountResponse] = await Promise.all([
+        fetch('/api/menus?limit=50', { cache: 'no-store' }),
+        fetch('/api/suppliers?active=true&limit=50', { cache: 'no-store' }),
+        fetch('/api/account', { cache: 'no-store' }),
+      ]);
+      if (!menuResponse.ok) throw new Error(await problem(menuResponse, 'We could not load approved menus.').then(({ message }) => message));
+      if (!supplierResponse.ok) throw new Error(await problem(supplierResponse, 'We could not load suppliers.').then(({ message }) => message));
+      if (!accountResponse.ok) throw new Error(await problem(accountResponse, 'We could not load the delivery address.').then(({ message }) => message));
+      const menuResult = (await menuResponse.json()) as { menus?: MenuSummary[]; nextCursor?: string | null };
+      const supplierResult = (await supplierResponse.json()) as { suppliers?: SupplierChoice[]; nextCursor?: string | null };
+      const accountResult = (await accountResponse.json()) as { account?: AccountDelivery };
+      setMenus((menuResult.menus ?? []).filter(({ status }) => status === 'APPROVED'));
+      setSuppliers(supplierResult.suppliers ?? []);
+      setMenuNextCursor(menuResult.nextCursor ?? null);
+      setSupplierNextCursor(supplierResult.nextCursor ?? null);
+      if (accountResult.account) {
+        setAddressLine(accountResult.account.addressLine);
+        setCity(accountResult.account.city);
+        setState(accountResult.account.state);
+        setPin(accountResult.account.pin);
+      }
+    } catch (caught) {
+      setError({
+        message: caught instanceof Error ? caught.message : 'We could not prepare this request.',
+        kind: 'load',
+        retry: 'initial',
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (initialData || initialLoadStarted.current) return;
     initialLoadStarted.current = true;
-    void (async () => {
-      setLoading(true);
-      setError('');
-      try {
-        const [menuResponse, supplierResponse, accountResponse] = await Promise.all([
-          fetch('/api/menus?limit=50', { cache: 'no-store' }),
-          fetch('/api/suppliers?active=true&limit=50', { cache: 'no-store' }),
-          fetch('/api/account', { cache: 'no-store' }),
-        ]);
-        if (!menuResponse.ok) throw new Error(await problem(menuResponse, 'We could not load approved menus.').then(({ message }) => message));
-        if (!supplierResponse.ok) throw new Error(await problem(supplierResponse, 'We could not load suppliers.').then(({ message }) => message));
-        if (!accountResponse.ok) throw new Error(await problem(accountResponse, 'We could not load the delivery address.').then(({ message }) => message));
-        const menuResult = (await menuResponse.json()) as { menus?: MenuSummary[]; nextCursor?: string | null };
-        const supplierResult = (await supplierResponse.json()) as { suppliers?: SupplierChoice[]; nextCursor?: string | null };
-        const accountResult = (await accountResponse.json()) as { account?: AccountDelivery };
-        setMenus((menuResult.menus ?? []).filter(({ status }) => status === 'APPROVED'));
-        setSuppliers(supplierResult.suppliers ?? []);
-        setMenuNextCursor(menuResult.nextCursor ?? null);
-        setSupplierNextCursor(supplierResult.nextCursor ?? null);
-        if (accountResult.account) {
-          setAddressLine(accountResult.account.addressLine);
-          setCity(accountResult.account.city);
-          setState(accountResult.account.state);
-          setPin(accountResult.account.pin);
-        }
-      } catch (caught) {
-        setError(caught instanceof Error ? caught.message : 'We could not prepare this request.');
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [initialData]);
+    void loadInitialData();
+  }, [initialData, loadInitialData]);
 
   useEffect(() => () => menuRequest.current?.abort(), []);
 
   async function loadMoreMenus() {
     if (!menuNextCursor || loadingMoreMenus) return;
     setLoadingMoreMenus(true);
-    setError('');
+    setError(null);
     try {
       const response = await fetch(`/api/menus?limit=50&cursor=${encodeURIComponent(menuNextCursor)}`, { cache: 'no-store' });
       if (!response.ok) throw new Error((await problem(response, 'We could not load more approved menus.')).message);
@@ -143,7 +154,11 @@ export function NewRequestForm({ initialData }: { initialData?: InitialData }) {
       setMenus((current) => [...new Map([...current, ...approved].map((menu) => [menu.id, menu])).values()]);
       setMenuNextCursor(result.nextCursor ?? null);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'We could not load more approved menus.');
+      setError({
+        message: caught instanceof Error ? caught.message : 'We could not load more approved menus.',
+        kind: 'load',
+        retry: 'menus',
+      });
     } finally {
       setLoadingMoreMenus(false);
     }
@@ -152,7 +167,7 @@ export function NewRequestForm({ initialData }: { initialData?: InitialData }) {
   async function loadMoreSuppliers() {
     if (!supplierNextCursor || loadingMoreSuppliers) return;
     setLoadingMoreSuppliers(true);
-    setError('');
+    setError(null);
     try {
       const response = await fetch(`/api/suppliers?active=true&limit=50&cursor=${encodeURIComponent(supplierNextCursor)}`, { cache: 'no-store' });
       if (!response.ok) throw new Error((await problem(response, 'We could not load more suppliers.')).message);
@@ -160,7 +175,11 @@ export function NewRequestForm({ initialData }: { initialData?: InitialData }) {
       setSuppliers((current) => [...new Map([...current, ...(result.suppliers ?? [])].map((supplier) => [supplier.id, supplier])).values()]);
       setSupplierNextCursor(result.nextCursor ?? null);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'We could not load more suppliers.');
+      setError({
+        message: caught instanceof Error ? caught.message : 'We could not load more suppliers.',
+        kind: 'load',
+        retry: 'suppliers',
+      });
     } finally {
       setLoadingMoreSuppliers(false);
     }
@@ -179,19 +198,25 @@ export function NewRequestForm({ initialData }: { initialData?: InitialData }) {
     const controller = new AbortController();
     menuRequest.current = controller;
     setLoadingMenu(true);
-    setError('');
+    setError(null);
     try {
       const response = await fetch(`/api/menus/${encodeURIComponent(id)}`, { cache: 'no-store', signal: controller.signal });
       if (!response.ok) {
         const message = (await problem(response, 'We could not load this menu.')).message;
-        if (menuRequest.current === controller) setError(message);
+        if (menuRequest.current === controller) {
+          setError({ message, kind: 'load', retry: 'menu' });
+        }
         return;
       }
       const result = (await response.json()) as { menu: ReviewedMenu };
       if (menuRequest.current === controller) setSelectedMenu(result.menu);
     } catch (caught) {
       if (menuRequest.current === controller && !(caught instanceof Error && caught.name === 'AbortError')) {
-        setError(caught instanceof Error ? caught.message : 'We could not load this menu.');
+        setError({
+          message: caught instanceof Error ? caught.message : 'We could not load this menu.',
+          kind: 'load',
+          retry: 'menu',
+        });
       }
     } finally {
       if (menuRequest.current === controller) {
@@ -199,6 +224,14 @@ export function NewRequestForm({ initialData }: { initialData?: InitialData }) {
         setLoadingMenu(false);
       }
     }
+  }
+
+  function retryLoad() {
+    if (error?.kind !== 'load') return;
+    if (error.retry === 'initial') void loadInitialData();
+    if (error.retry === 'menus') void loadMoreMenus();
+    if (error.retry === 'suppliers') void loadMoreSuppliers();
+    if (error.retry === 'menu') void chooseMenu(menuId);
   }
 
   function toggleSupplier(id: string) {
@@ -219,7 +252,7 @@ export function NewRequestForm({ initialData }: { initialData?: InitialData }) {
     event.preventDefault();
     if (!valid || saving) return;
     setSaving(true);
-    setError('');
+    setError(null);
     setFieldErrors({});
     try {
       if (!selectedMenu) throw new Error('Choose an approved menu before saving.');
@@ -259,7 +292,10 @@ export function NewRequestForm({ initialData }: { initialData?: InitialData }) {
       if (!result.request?.id) throw new Error('The saved request was not returned.');
       router.push(`/procurement/${encodeURIComponent(result.request.id)}`);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'We could not save this request.');
+      setError({
+        message: caught instanceof Error ? caught.message : 'We could not save this request.',
+        kind: 'operation',
+      });
       setSaving(false);
     }
   }
@@ -275,8 +311,8 @@ export function NewRequestForm({ initialData }: { initialData?: InitialData }) {
         <p>Choose what you need, who should quote, and when the order must arrive.</p>
       </header>
 
-      {error && <div className={styles.error} role="alert">{error}</div>}
-      <form className={styles.form} onSubmit={submit}>
+      {error && <div className={styles.error} role="alert">{error.message}{error.kind === 'load' && <> Your saved restaurant records are unchanged. <button type="button" onClick={retryLoad}>Try again</button></>}</div>}
+      {!(error?.kind === 'load' && error.retry === 'initial') && <form className={styles.form} onSubmit={submit}>
         <section className={styles.section}>
           <div className={styles.sectionNumber}>01</div>
           <div className={styles.sectionBody}>
@@ -374,7 +410,7 @@ export function NewRequestForm({ initialData }: { initialData?: InitialData }) {
         <section className={styles.section}>
           <div className={styles.sectionNumber}>04</div>
           <div className={styles.sectionBody}>
-            <div className={styles.sectionTitle}><div><h2>Commercial terms</h2><p>Add only the terms every supplier should see.</p></div><CalendarDays aria-hidden="true" /></div>
+            <div className={styles.sectionTitle}><div><h2>Payment and order terms</h2><p>Add only the terms every supplier should see.</p></div><CalendarDays aria-hidden="true" /></div>
             <label className={styles.field}><span>Terms or notes</span><textarea rows={4} value={commercialTerms} placeholder="Rates should include packing. Payment within 15 days of accepted delivery." onChange={(event) => setCommercialTerms(event.target.value)} /></label>
           </div>
         </section>
@@ -384,7 +420,7 @@ export function NewRequestForm({ initialData }: { initialData?: InitialData }) {
           <button className={styles.secondaryButton} type="button" onClick={() => router.push('/procurement')}>Cancel</button>
           <button className={styles.primaryButton} type="submit" disabled={!valid || saving}>{saving ? 'Saving…' : 'Save draft'}</button>
         </footer>
-      </form>
+      </form>}
     </main>
   );
 }

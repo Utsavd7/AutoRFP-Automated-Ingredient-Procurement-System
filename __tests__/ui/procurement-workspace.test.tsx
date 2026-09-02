@@ -3,6 +3,7 @@ import path from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { ProcurementWorkspace } from '@/components/procurement/ProcurementWorkspace';
+import { metadata } from '@/app/(app)/procurement/page';
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
@@ -32,14 +33,15 @@ describe('procurement workspace', () => {
       />,
     );
 
-    expect(html).toContain('Procurement');
+    expect(html).toContain('Buy ingredients');
+    expect(html).toContain('Ask suppliers for prices, compare the final cost, and record who you choose.');
     expect(html).toContain('Fresh produce · Week 36');
     expect(html).toContain('14 items');
     expect(html).toContain('4 suppliers');
-    expect(html).toContain('Open');
+    expect(html).toContain('Waiting for suppliers');
     expect(html).toContain('Quote by');
     expect(html).toContain('Delivery');
-    expect(html).toContain('New request');
+    expect(html).toContain('Ask suppliers for prices');
     expect(html).not.toContain('savings');
     expect(html).not.toContain('AI');
   });
@@ -61,6 +63,40 @@ describe('procurement workspace', () => {
 
     expect(html).toContain('Create your first request');
     expect(html).toContain('approved menu');
+    expect(html).toContain('Ask suppliers for prices');
+  });
+
+  it('translates every stored request status for restaurant users', () => {
+    const html = renderToStaticMarkup(
+      <ProcurementWorkspace
+        initialError=""
+        initialRequests={[
+          ...['DRAFT', 'OPEN', 'AWARDED', 'CANCELLED'].map((status, index) => ({
+            id: `request-${index}`,
+            title: `Request ${index}`,
+            status: status as 'DRAFT' | 'OPEN' | 'AWARDED' | 'CANCELLED',
+            version: 1,
+            deliveryDate: '2026-09-05T00:00:00.000Z',
+            quoteDeadline: '2026-09-03T10:00:00.000Z',
+            openedAt: null,
+            awardedAt: null,
+            createdAt: '2026-08-28T08:00:00.000Z',
+            updatedAt: '2026-08-28T08:00:00.000Z',
+            itemCount: 1,
+            supplierCount: 1,
+          })),
+        ]}
+      />,
+    );
+
+    expect(html).toContain('Not sent');
+    expect(html).toContain('Waiting for suppliers');
+    expect(html).toContain('Supplier selected');
+    expect(html).toContain('Cancelled');
+  });
+
+  it('uses the approved page title', () => {
+    expect(metadata.title).toBe('Buy ingredients');
   });
 
   it('offers the next real API page when a cursor is available', () => {

@@ -200,7 +200,12 @@ type SupplierApplicationLink = {
   expiresAt: string;
 };
 
-const statusLabel: Record<Status, string> = { DRAFT: 'Draft', OPEN: 'Open', AWARDED: 'Awarded', CANCELLED: 'Cancelled' };
+type RequestUiError = {
+  message: string;
+  kind: 'load' | 'operation';
+} | null;
+
+const statusLabel: Record<Status, string> = { DRAFT: 'Not sent', OPEN: 'Waiting for suppliers', AWARDED: 'Supplier selected', CANCELLED: 'Cancelled' };
 
 function displayDate(value: string, withTime = false) {
   const date = new Date(value);
@@ -276,7 +281,7 @@ export function RequestDetail({
   const [applicationLink, setApplicationLink] = useState<SupplierApplicationLink | null>(null);
   const [loading, setLoading] = useState(!initialRequest);
   const [working, setWorking] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState<RequestUiError>(null);
   const [notice, setNotice] = useState('');
   const [editingDraft, setEditingDraft] = useState(false);
   const [refreshingQuotes, setRefreshingQuotes] = useState(false);
@@ -300,16 +305,19 @@ export function RequestDetail({
       if (!quiet) setNotice('Supplier quotes refreshed.');
     } catch (caught) {
       if (!quiet) {
-        setError(caught instanceof Error ? caught.message : 'We could not load supplier quotes.');
+        setError({
+          message: caught instanceof Error ? caught.message : 'We could not load supplier quotes.',
+          kind: 'load',
+        });
       }
     } finally {
       if (!quiet) setRefreshingQuotes(false);
     }
   }, [requestId]);
 
-  const loadAll = useCallback(async () => {
-    setLoading(true);
-    setError('');
+  const loadAll = useCallback(async (showFailure = true) => {
+    if (showFailure) setLoading(true);
+    setError(null);
     try {
       const response = await fetch(`/api/requests/${encodeURIComponent(requestId)}`, { cache: 'no-store' });
       if (!response.ok) throw new Error(await problemMessage(response, 'We could not load this request.'));
@@ -323,9 +331,13 @@ export function RequestDetail({
         setComparison(null);
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'We could not load this request.');
+      if (!showFailure) throw caught;
+      setError({
+        message: caught instanceof Error ? caught.message : 'We could not load this request.',
+        kind: 'load',
+      });
     } finally {
-      setLoading(false);
+      if (showFailure) setLoading(false);
     }
   }, [requestId]);
 
@@ -354,7 +366,7 @@ export function RequestDetail({
     if (!request || request.status !== 'DRAFT' || working) return;
     if (!window.confirm('Open this request and create one private quote link for each supplier?')) return;
     setWorking('open');
-    setError('');
+    setError(null);
     try {
       const response = await workspaceMutationFetch(`/api/requests/${encodeURIComponent(request.id)}/open`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expectedVersion: request.version }),
@@ -373,7 +385,10 @@ export function RequestDetail({
         ? 'Request opened. Share the private quote links and the new supplier application link below.'
         : 'Request opened. Copy and share each supplier link below.');
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'We could not open this request.');
+      setError({
+        message: caught instanceof Error ? caught.message : 'We could not open this request.',
+        kind: 'operation',
+      });
     } finally {
       setWorking('');
     }
@@ -383,7 +398,7 @@ export function RequestDetail({
     if (!request || request.status !== 'OPEN' || working) return;
     if (action === 'revoke' && !window.confirm(`Revoke ${grant.supplier.businessName}'s quote link?`)) return;
     setWorking(`${action}:${grant.id}`);
-    setError('');
+    setError(null);
     try {
       const response = await workspaceMutationFetch(`/api/requests/${encodeURIComponent(request.id)}/links`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -404,7 +419,10 @@ export function RequestDetail({
         setNotice(`${grant.supplier.businessName}'s link was revoked.`);
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : `We could not ${action} this link.`);
+      setError({
+        message: caught instanceof Error ? caught.message : `We could not ${action} this link.`,
+        kind: 'operation',
+      });
     } finally {
       setWorking('');
     }
@@ -415,7 +433,10 @@ export function RequestDetail({
       await navigator.clipboard.writeText(link.url);
       setNotice(`${link.businessName ?? 'Supplier'} link copied.`);
     } catch {
-      setError('Copy was blocked by the browser. Select and copy the link manually.');
+      setError({
+        message: 'Copy was blocked by the browser. Select and copy the link manually.',
+        kind: 'operation',
+      });
     }
   }
 
@@ -425,7 +446,10 @@ export function RequestDetail({
       await navigator.clipboard.writeText(applicationLink.url);
       setNotice('New supplier application link copied.');
     } catch {
-      setError('Copy was blocked by the browser. Select and copy the link manually.');
+      setError({
+        message: 'Copy was blocked by the browser. Select and copy the link manually.',
+        kind: 'operation',
+      });
     }
   }
 
@@ -453,12 +477,15 @@ export function RequestDetail({
   async function download(url: string, label: string, fallbackFilename: string) {
     if (working) return;
     setWorking(`download:${label}`);
-    setError('');
+    setError(null);
     try {
       await saveDownload(await fetch(url, { cache: 'no-store' }), fallbackFilename);
       setNotice(`${label} downloaded.`);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : `We could not download ${label.toLowerCase()}.`);
+      setError({
+        message: caught instanceof Error ? caught.message : `We could not download ${label.toLowerCase()}.`,
+        kind: 'operation',
+      });
     } finally {
       setWorking('');
     }
@@ -467,7 +494,7 @@ export function RequestDetail({
   async function downloadQr(link: ShareLink) {
     if (!request || working) return;
     setWorking(`qr:${link.supplierRequestId}`);
-    setError('');
+    setError(null);
     try {
       const response = await fetch(`/api/requests/${encodeURIComponent(request.id)}/qr`, {
         method: 'POST',
@@ -477,7 +504,10 @@ export function RequestDetail({
       await saveDownload(response, 'quoteplate-supplier-link.png');
       setNotice(`${link.businessName ?? 'Supplier'} QR downloaded.`);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'We could not create this QR code.');
+      setError({
+        message: caught instanceof Error ? caught.message : 'We could not create this QR code.',
+        kind: 'operation',
+      });
     } finally {
       setWorking('');
     }
@@ -605,7 +635,7 @@ export function RequestDetail({
       `Record the final award for ${formatInr(finalTotal)}? The supplier, quantities and prices cannot be edited afterwards.`,
     )) return;
     setWorking('award');
-    setError('');
+    setError(null);
     try {
       const body = awardMode === 'WHOLE'
         ? {
@@ -623,17 +653,44 @@ export function RequestDetail({
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
       });
       if (!response.ok) throw new Error(await problemMessage(response, 'We could not record this award.'));
+      const result = (await response.json()) as { award?: AwardDetail };
+      if (!result.award) throw new Error('The recorded supplier selection was not returned.');
+      const nextVersion = request.version + 1;
+      setRequest((current) => current && current.id === request.id
+        ? { ...current, status: 'AWARDED', version: nextVersion }
+        : current);
+      setComparison((current) => current
+        ? {
+            ...current,
+            request: {
+              ...current.request,
+              status: 'AWARDED',
+              version: nextVersion,
+              award: result.award,
+            },
+          }
+        : current);
       setNotice('Award recorded. The request and winning prices are now locked.');
-      await loadAll();
+      try {
+        await loadAll(false);
+      } catch {
+        setError({
+          message: 'Supplier selection was recorded, but the latest view could not be loaded.',
+          kind: 'operation',
+        });
+      }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'We could not record this award.');
+      setError({
+        message: caught instanceof Error ? caught.message : 'We could not record this award.',
+        kind: 'operation',
+      });
     } finally {
       setWorking('');
     }
   }
 
   if (loading) return <main className={styles.page}><div className={styles.loading} aria-label="Loading request"><span /><span /><span /></div></main>;
-  if (!request) return <main className={styles.page}><section className={styles.missing}><h1>Request unavailable</h1><p>{error || 'This request could not be found.'}</p><button type="button" onClick={() => void loadAll()}>Try again</button></section></main>;
+  if (!request) return <main className={styles.page}><section className={styles.missing}><h1>Request unavailable</h1><p>{error?.message || 'This request could not be found.'} Your saved restaurant records are unchanged.</p><button type="button" onClick={() => void loadAll()}>Try again</button></section></main>;
 
   const delivery = request.deliveryDetails;
   const committedAward = comparison?.request.award ?? null;
@@ -665,7 +722,7 @@ export function RequestDetail({
       </header>
 
       {notice && <div className={styles.notice} role="status"><Check aria-hidden="true" />{notice}</div>}
-      {error && <div className={styles.error} role="alert">{error}</div>}
+      {error && <div className={styles.error} role="alert">{error.message}{error.kind === 'load' && <> Your saved restaurant records are unchanged.</>}</div>}
 
       {request.status === 'DRAFT' && editingDraft && (
         <DraftRequestEditor
@@ -687,7 +744,7 @@ export function RequestDetail({
       {delivery.instructions && <aside className={styles.instructions}><strong>Delivery instructions</strong>{delivery.instructions}</aside>}
 
       <section className={styles.panel}>
-        <header><div><p className={styles.eyebrow}>Demand</p><h2>Requested items</h2></div><span>{request.items.items.length} total</span></header>
+        <header><div><p className={styles.eyebrow}>Items you need</p><h2>Requested items</h2></div><span>{request.items.items.length} total</span></header>
         <div className={styles.itemTable}>
           <div className={styles.tableHeader}><span>Item</span><span>Quantity</span></div>
           {request.items.items.map((item) => (
@@ -847,7 +904,7 @@ export function RequestDetail({
       {(request.status === 'OPEN' || request.status === 'AWARDED') && (
         <section className={styles.panel}>
           <header>
-            <div><p className={styles.eyebrow}>Fact comparison</p><h2>Supplier quotes</h2></div>
+            <div><p className={styles.eyebrow}>Compare supplier prices</p><h2>Supplier quotes</h2></div>
             <div className={styles.quoteHeaderAction}>
               <span>{comparison?.quotes.length ?? 0} received</span>
               {request.status === 'OPEN' && (
@@ -901,7 +958,7 @@ export function RequestDetail({
 
               {request.status === 'OPEN' && (
                 <div className={styles.awardBox}>
-                  <div><p className={styles.eyebrow}>Human decision</p><h3>Record the award</h3><p>QuotePlate shows the facts. Your restaurant chooses the supplier.</p></div>
+                  <div><p className={styles.eyebrow}>Your decision</p><h3>Record the supplier you choose</h3><p>QuotePlate shows the prices and terms. Your restaurant makes the final choice.</p></div>
                   <div aria-label="Award method" className={styles.awardModes} role="group">
                     <button aria-pressed={awardMode === 'WHOLE'} type="button" className={awardMode === 'WHOLE' ? styles.selectedMode : ''} onClick={() => setAwardMode('WHOLE')}>Whole request</button>
                     <button aria-pressed={awardMode === 'SPLIT'} type="button" className={awardMode === 'SPLIT' ? styles.selectedMode : ''} onClick={() => setAwardMode('SPLIT')}>Split by item</button>

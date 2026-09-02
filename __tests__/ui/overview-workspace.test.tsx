@@ -5,6 +5,7 @@ import {
   OverviewWorkspace,
   type OverviewData,
 } from '@/components/overview/OverviewWorkspace';
+import { metadata } from '@/app/(app)/dashboard/page';
 
 const overview: OverviewData = {
   generatedAt: '2026-08-28T06:00:00.000Z',
@@ -38,7 +39,10 @@ describe('overview workspace', () => {
   it('renders real restaurant work, deadlines, and exact awarded totals', () => {
     const html = renderToStaticMarkup(<OverviewWorkspace initialData={overview} />);
 
-    expect(html).toContain('Good morning');
+    expect(html).toContain('Your restaurant today');
+    expect(html).toContain('What needs your attention today?');
+    expect(html).toContain('See requests, quotes, menus, and supplier work that need attention today.');
+    expect(html).toContain('Ask suppliers for prices');
     expect(html).toContain('Active suppliers');
     expect(html).toContain('Menus ready');
     expect(html).toContain('Open requests');
@@ -74,13 +78,24 @@ describe('overview workspace', () => {
     const error = renderToStaticMarkup(
       <OverviewWorkspace initialError="We could not load your overview." />,
     );
+    const withoutDeadlines = renderToStaticMarkup(
+      <OverviewWorkspace initialData={{ ...overview, deadlines: [] }} />,
+    );
 
     expect(empty).toContain('Set up your procurement workspace');
     expect(empty).toContain('Add suppliers');
     expect(empty).toContain('Add a menu');
+    expect(withoutDeadlines).toContain(
+      '<h3>No requests waiting for quotes</h3><p>Open a checked request when you are ready to ask suppliers for prices.</p><a href="/procurement/new">Ask suppliers for prices',
+    );
     expect(loading).toContain('Loading your procurement overview');
     expect(error).toContain('We could not load your overview.');
+    expect(error).toContain('Your saved restaurant records are unchanged.');
     expect(error).toContain('Try again');
+  });
+
+  it('uses the approved page title', () => {
+    expect(metadata.title).toBe('Home');
   });
 
   it('formats paise exactly without floating-point rounding', () => {

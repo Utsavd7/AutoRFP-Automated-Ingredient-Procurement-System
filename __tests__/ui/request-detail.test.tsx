@@ -1,3 +1,4 @@
+import { isValidElement, type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import {
@@ -44,6 +45,29 @@ function requestSourcingDocument(supplierId: string) {
   };
 }
 
+function textContent(node: ReactNode): string {
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(textContent).join('');
+  if (!isValidElement<{ children?: ReactNode }>(node)) return '';
+  return textContent(node.props.children);
+}
+
+function findElement(
+  node: ReactNode,
+  predicate: (element: ReactElement<Record<string, unknown>>) => boolean,
+): ReactElement<Record<string, unknown>> | null {
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const match = findElement(child, predicate);
+      if (match) return match;
+    }
+    return null;
+  }
+  if (!isValidElement<Record<string, unknown>>(node)) return null;
+  if (predicate(node)) return node;
+  return findElement(node.props.children as ReactNode, predicate);
+}
+
 describe('procurement request detail', () => {
   it('shows request facts, supplier progress, and deterministic quote comparison', () => {
     const html = renderToStaticMarkup(
@@ -75,7 +99,12 @@ describe('procurement request detail', () => {
     expect(html).toContain('Split by item');
     expect(html).toContain('full landed total');
     expect(html).toContain('Refresh quotes');
-    expect(html).toContain('Record award');
+    expect(html).toContain('Waiting for suppliers');
+    expect(html).toContain('Items you need');
+    expect(html).toContain('Compare supplier prices');
+    expect(html).toContain('Your decision');
+    expect(html).toContain('Record the supplier you choose');
+    expect(html).toContain('QuotePlate shows the prices and terms. Your restaurant makes the final choice.');
     expect(html).toContain('Download records');
     expect(html).toContain('Request CSV');
     expect(html).toContain('Quote comparison CSV');
@@ -99,6 +128,7 @@ describe('procurement request detail', () => {
     );
     expect(html).toContain('Edit draft');
     expect(html).toContain('Open and create links');
+    expect(html).toContain('Not sent');
     expect(html).not.toContain('Private quote link for Shakti Dairy');
   });
 
@@ -132,6 +162,7 @@ describe('procurement request detail', () => {
       />,
     );
     expect(html).toContain('Final decision record');
+    expect(html).toContain('Supplier selected');
     expect(html).toContain('Best complete landed price and on-time delivery.');
     expect(html).toContain('GreenLeaf Fresh Foods');
     expect(html).toContain('₹83,664.00');
@@ -160,5 +191,116 @@ describe('procurement request detail', () => {
     expect(html).toContain('Copy');
     expect(html).toContain('WhatsApp');
     expect(html).toContain('Download QR for GreenLeaf Fresh Foods');
+  });
+
+  it('locks the returned award immediately when its follow-up refresh fails', async () => {
+    const initialRequest = {
+      id: 'request-1', title: 'Fresh produce · Week 36', status: 'OPEN' as const, version: 2,
+      deliveryDetails: { addressLine: '18 Market Road', city: 'Mumbai', state: 'Maharashtra', pin: '400001' },
+      deliveryDate: '2026-09-05T00:00:00.000Z', quoteDeadline: '2026-09-03T10:00:00.000Z', commercialTerms: 'Payment in 15 days',
+      items: requestItemsDocument(requestItem('item-1', 'Tomato', '100', 'KILOGRAM')),
+      sourcing: requestSourcingDocument('supplier-1'),
+      supplierRequests: [{ id: 'grant-1', supplierId: 'supplier-1', expiresAt: '2026-09-03T10:00:00.000Z', revokedAt: null, viewedAt: '2026-08-28T09:00:00.000Z', supplier: { id: 'supplier-1', businessName: 'GreenLeaf Fresh Foods', contactName: 'Meera Shah', phone: '+919876543210', whatsappNumber: '+919876543210', email: null, isActive: true } }],
+    };
+    const quote = {
+      supplierRequestId: 'grant-1', supplierName: 'GreenLeaf Fresh Foods', supplierActive: true, revision: 2,
+      subtotalPaise: '7968000', gstPaise: '398400', freightPaise: '0', totalPaise: '8366400',
+      deliveryDate: '2026-09-05', validUntil: '2026-09-04', submittedAt: '2026-08-28T09:30:00.000Z',
+      minimumOrder: null, commercialTerms: '15 days', notes: null, coveredItemCount: 1, totalItemCount: 1,
+      fullCoverage: true, deliveryFit: 'ON_OR_BEFORE' as const, expired: false, missingTerms: false,
+      missingRequestItemIds: [], partialRequestItemIds: [], unitMismatchRequestItemIds: [], substitutions: [],
+      items: [{ requestItemId: 'item-1', requestItemKey: 'tomato', requestItemName: 'Tomato', requestedQuantity: '100', requestUnit: 'KILOGRAM' as const, requestedSpecification: { v: 1 as const, category: 'VEGETABLES' as const, description: null, preferredBrand: null, packSize: null, qualityGrade: null, notes: null, referenceUrl: null, thumbnailWebpBase64: null }, suppliedSpecification: { brand: null, packSize: null, qualityGrade: null }, quotedAvailableQuantity: '100', quotedUnit: 'KILOGRAM' as const, normalizedAvailableQuantity: '100', normalizedUnitRatePaise: '79680', unitComparable: true, coverage: 'FULL' as const, gstBasisPoints: 500, taxInclusive: false, substitution: null, subtotalPaise: '7968000', gstPaise: '398400', totalPaise: '8366400' }],
+    };
+    const award = {
+      id: 'award-1', requestId: initialRequest.id, rationale: 'Best complete landed price and on-time delivery.',
+      totalPaise: '8366400', createdAt: '2026-08-28T10:00:00.000Z', splitAward: false,
+      suppliers: [{ supplierId: 'supplier-1', supplierRequestId: 'grant-1', quoteRevision: 2, supplierName: 'GreenLeaf Fresh Foods', freightPaise: '0', deliveryDate: '2026-09-05', gstin: '27ABCDE1234F1Z5', commercialTerms: '15 days', lines: [{ requestItemId: 'item-1', itemName: 'Tomato' }] }],
+      lines: [{ requestItemId: 'item-1', supplierRequestId: 'grant-1', supplierId: 'supplier-1', quoteRevision: 2, quantity: '100', unit: 'KILOGRAM' as const, unitRatePaise: '79680', gstBasisPoints: 500, subtotalPaise: '7968000', gstPaise: '398400', totalPaise: '8366400' }],
+    };
+    const response = new Response(JSON.stringify({ award }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const fetchMock = jest.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(response)
+      .mockRejectedValueOnce(new Error('refresh unavailable'));
+    const hadWindow = 'window' in globalThis;
+    const originalWindow = globalThis.window;
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: { confirm: jest.fn(() => true) },
+    });
+
+    let finalHtml = '';
+    try {
+      await jest.isolateModulesAsync(async () => {
+        const values: unknown[] = [];
+        let stateIndex = 0;
+        jest.doMock('react', () => {
+          const actual = jest.requireActual<typeof import('react')>('react');
+          return {
+            ...actual,
+            useCallback: <T,>(callback: T) => callback,
+            useEffect: () => undefined,
+            useMemo: <T,>(factory: () => T) => factory(),
+            useRef: <T,>(initial: T) => {
+              const index = stateIndex;
+              stateIndex += 1;
+              if (index >= values.length) values[index] = { current: initial };
+              return values[index] as { current: T };
+            },
+            useState: <T,>(initial: T | (() => T)) => {
+              const index = stateIndex;
+              stateIndex += 1;
+              if (index >= values.length) values[index] = typeof initial === 'function' ? (initial as () => T)() : initial;
+              const setValue = (next: T | ((current: T) => T)) => {
+                values[index] = typeof next === 'function'
+                  ? (next as (current: T) => T)(values[index] as T)
+                  : next;
+              };
+              return [values[index] as T, setValue] as const;
+            },
+          };
+        });
+        const { RequestDetail: EffectRequestDetail } = await import('@/components/procurement/RequestDetail');
+        const render = () => {
+          stateIndex = 0;
+          return EffectRequestDetail({
+            requestId: initialRequest.id,
+            initialRequest,
+            initialComparison: {
+              request: { id: initialRequest.id, title: initialRequest.title, deliveryDate: '2026-09-05', quoteDeadline: initialRequest.quoteDeadline, commercialTerms: initialRequest.commercialTerms, itemCount: 1, items: initialRequest.items.items },
+              quotes: [quote],
+            },
+          });
+        };
+
+        let tree = render();
+        const supplierChoice = findElement(tree, (element) => element.type === 'input' && element.props.name === 'whole-award');
+        const rationale = findElement(tree, (element) => element.type === 'textarea');
+        (supplierChoice?.props.onChange as (() => void) | undefined)?.();
+        (rationale?.props.onChange as ((event: { target: { value: string } }) => void) | undefined)?.({ target: { value: award.rationale } });
+        tree = render();
+        const recordButton = findElement(tree, (element) => element.type === 'button' && textContent(element) === 'Record award');
+        expect(recordButton?.props.disabled).toBe(false);
+        (recordButton?.props.onClick as (() => void) | undefined)?.();
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        tree = render();
+        finalHtml = renderToStaticMarkup(tree);
+      });
+    } finally {
+      jest.dontMock('react');
+      fetchMock.mockRestore();
+      if (hadWindow) Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
+      else Reflect.deleteProperty(globalThis, 'window');
+    }
+
+    expect(finalHtml).toContain('Supplier selected');
+    expect(finalHtml).toContain('Award recorded');
+    expect(finalHtml).toContain('Final decision record');
+    expect(finalHtml).toContain('Supplier selection was recorded, but the latest view could not be loaded.');
+    expect(finalHtml).not.toContain('Your saved restaurant records are unchanged.');
+    expect(finalHtml).not.toContain('Record the supplier you choose');
+    expect(finalHtml).not.toContain('>Record award</button>');
   });
 });

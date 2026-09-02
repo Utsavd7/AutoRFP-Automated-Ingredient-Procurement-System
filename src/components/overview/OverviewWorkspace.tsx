@@ -63,21 +63,6 @@ function formatAwardDate(value: string) {
   }).format(date);
 }
 
-function greeting(value?: string) {
-  const date = value ? new Date(value) : new Date();
-  const safeDate = Number.isNaN(date.getTime()) ? new Date() : date;
-  const hour = Number(
-    new Intl.DateTimeFormat('en-GB', {
-      hour: '2-digit',
-      hourCycle: 'h23',
-      timeZone: 'Asia/Kolkata',
-    }).format(safeDate),
-  );
-  if (hour < 12) return 'Good morning';
-  if (hour < 17) return 'Good afternoon';
-  return 'Good evening';
-}
-
 function deadlineLabel(deadline: string, generatedAt: string) {
   const remaining = new Date(deadline).getTime() - new Date(generatedAt).getTime();
   if (!Number.isFinite(remaining)) return 'Open';
@@ -113,6 +98,7 @@ function OverviewError({ message, onRetry }: { message: string; onRetry: () => v
         <p className={styles.eyebrow}>Overview unavailable</p>
         <h1>We could not load your overview.</h1>
         <p>{message}</p>
+        <p>Your saved restaurant records are unchanged.</p>
         <button type="button" onClick={onRetry}><RefreshCw aria-hidden="true" /> Try again</button>
       </section>
     </main>
@@ -198,18 +184,18 @@ export function OverviewWorkspace({
     <main className={styles.page}>
       <header className={styles.header}>
         <div>
-          <p className={styles.eyebrow}>Restaurant procurement</p>
-          <h1>{greeting(data.generatedAt)}</h1>
-          <p className={styles.intro}>Here is the work that needs attention across your menus, requests, and supplier quotes.</p>
+          <p className={styles.eyebrow}>Your restaurant today</p>
+          <h1>What needs your attention today?</h1>
+          <p className={styles.intro}>See requests, quotes, menus, and supplier work that need attention today.</p>
         </div>
         <Link className={styles.primaryAction} href="/procurement/new">
-          New request <ArrowRight aria-hidden="true" />
+          Ask suppliers for prices <ArrowRight aria-hidden="true" />
         </Link>
       </header>
 
       {error && (
         <div className={styles.inlineError} role="alert">
-          <span>{error} The last loaded figures remain on screen.</span>
+          <span>{error} The last loaded figures remain on screen. Your saved restaurant records are unchanged.</span>
           <button type="button" onClick={() => void loadOverview()}>Try again</button>
         </div>
       )}
@@ -290,7 +276,7 @@ export function OverviewWorkspace({
                   <Send aria-hidden="true" />
                   <h3>No requests waiting for quotes</h3>
                   <p>Open a checked request when you are ready to ask suppliers for prices.</p>
-                  <Link href="/procurement/new">Create a request <ArrowRight aria-hidden="true" /></Link>
+                  <Link href="/procurement/new">Ask suppliers for prices <ArrowRight aria-hidden="true" /></Link>
                 </div>
               )}
             </section>

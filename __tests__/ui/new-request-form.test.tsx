@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { NewRequestForm } from '@/components/procurement/NewRequestForm';
+import { metadata } from '@/app/(app)/procurement/new/page';
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
@@ -36,5 +37,12 @@ describe('new procurement request', () => {
     expect(html).toContain('Also invite new verified suppliers');
     expect(html).toContain('Regular supplier');
     expect(html).toContain('New supplier');
+    expect(html).toContain('Payment and order terms');
+    expect(html).not.toContain('Commercial terms');
   });
+
+  it('uses the approved page title', () => {
+    expect(metadata.title).toBe('Ask suppliers for prices');
+  });
+
 });

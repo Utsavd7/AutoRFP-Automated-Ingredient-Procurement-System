@@ -51,7 +51,12 @@ type HistoryPageData = {
   recentActivity: ActivityRecord[];
 };
 
-const statusLabel = { DRAFT: 'Draft', OPEN: 'Open', AWARDED: 'Awarded', CANCELLED: 'Cancelled' } as const;
+type HistoryError =
+  | { message: string; kind: 'load'; cursor: string | null }
+  | { message: string; kind: 'operation' }
+  | null;
+
+const statusLabel = { DRAFT: 'Not sent', OPEN: 'Waiting for suppliers', AWARDED: 'Supplier selected', CANCELLED: 'Cancelled' } as const;
 
 function displayDate(value: string) {
   const date = new Date(value);
@@ -100,7 +105,7 @@ export function HistoryWorkspace({ initialPage }: { initialPage?: HistoryPageDat
   const [recentActivity, setRecentActivity] = useState(initialPage?.recentActivity ?? []);
   const [loading, setLoading] = useState(!initialPage);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<HistoryError>(null);
   const [repeatSource, setRepeatSource] = useState<HistoryRequest | null>(null);
   const [repeatValues, setRepeatValues] = useState({ title: '', deliveryDate: '', quoteDeadline: '' });
   const [repeating, setRepeating] = useState(false);
@@ -111,7 +116,7 @@ export function HistoryWorkspace({ initialPage }: { initialPage?: HistoryPageDat
   async function load(cursor?: string) {
     if (cursor) setLoadingMore(true);
     else setLoading(true);
-    setError('');
+    setError(null);
     try {
       const query = new URLSearchParams({ limit: '25' });
       if (cursor) query.set('cursor', cursor);
@@ -127,7 +132,11 @@ export function HistoryWorkspace({ initialPage }: { initialPage?: HistoryPageDat
         setRecentActivity(page.recentActivity);
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'We could not load procurement history.');
+      setError({
+        message: caught instanceof Error ? caught.message : 'We could not load procurement history.',
+        kind: 'load',
+        cursor: cursor ?? null,
+      });
     } finally {
       setLoading(false);
       setLoadingMore(false);
@@ -177,7 +186,7 @@ export function HistoryWorkspace({ initialPage }: { initialPage?: HistoryPageDat
     setRepeating(false);
     setRepeatSource(request);
     setRepeatValues(defaultRepeat(request));
-    setError('');
+    setError(null);
   }
 
   async function repeat(event: FormEvent<HTMLFormElement>) {
@@ -187,7 +196,7 @@ export function HistoryWorkspace({ initialPage }: { initialPage?: HistoryPageDat
     if (!repeatValues.title.trim() || !repeatValues.deliveryDate || !deadline) return;
     repeatingRef.current = true;
     setRepeating(true);
-    setError('');
+    setError(null);
     try {
       const response = await workspaceMutationFetch(`/api/requests/${encodeURIComponent(repeatSource.id)}/repeat`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -203,7 +212,10 @@ export function HistoryWorkspace({ initialPage }: { initialPage?: HistoryPageDat
       if (!result.request?.id) throw new Error('The new draft was not returned.');
       router.push(`/procurement/${encodeURIComponent(result.request.id)}`);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'We could not create the repeated request.');
+      setError({
+        message: caught instanceof Error ? caught.message : 'We could not create the repeated request.',
+        kind: 'operation',
+      });
       repeatingRef.current = false;
       setRepeating(false);
     }
@@ -212,12 +224,12 @@ export function HistoryWorkspace({ initialPage }: { initialPage?: HistoryPageDat
   return (
     <main className={styles.page}>
       <header className={styles.pageHeader}>
-        <div><p>Permanent buying record</p><h1>History</h1><span>See every request, quote version, buying decision and team action.</span></div>
-        <button type="button" onClick={() => router.push('/procurement/new')}><CopyPlus aria-hidden="true" />New request</button>
+        <div><p>Permanent buying record</p><h1>Past purchases</h1><span>Find earlier requests and decisions, then repeat a purchase when needed.</span></div>
+        <button type="button" onClick={() => router.push('/procurement/new')}><CopyPlus aria-hidden="true" />Ask suppliers for prices</button>
       </header>
-      {error && <div className={styles.error} role="alert">{error}</div>}
-      {loading ? <div className={styles.loading} aria-label="Loading history"><span /><span /><span /></div> : requests.length === 0 ? (
-        <section className={styles.empty}><History aria-hidden="true" /><p>No procurement history yet</p><h2>Your buying record starts when you send a request</h2><span>Sent requests, supplier response counts and awards will remain available here.</span><button type="button" onClick={() => router.push('/procurement/new')}>Create a request <ArrowRight aria-hidden="true" /></button></section>
+      {error && <div className={styles.error} role="alert">{error.message}{error.kind === 'load' && <> Your saved restaurant records are unchanged. <button type="button" onClick={() => void load(error.cursor ?? undefined)}>Try again</button></>}</div>}
+      {loading ? <div className={styles.loading} aria-label="Loading history"><span /><span /><span /></div> : error?.kind === 'load' && requests.length === 0 ? null : requests.length === 0 ? (
+        <section className={styles.empty}><History aria-hidden="true" /><p>No procurement history yet</p><h2>Your buying record starts when you send a request</h2><span>Sent requests, supplier response counts and awards will remain available here.</span><button type="button" onClick={() => router.push('/procurement/new')}>Ask suppliers for prices <ArrowRight aria-hidden="true" /></button></section>
       ) : (
         <section className={styles.historyPanel}>
           <div className={styles.historyHeader}><span>Request</span><span>Delivery</span><span>Suppliers</span><span>Quote versions</span><span>Final value</span><span>Status</span><span /></div>

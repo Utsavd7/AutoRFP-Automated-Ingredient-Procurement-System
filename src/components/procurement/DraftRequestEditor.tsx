@@ -54,6 +54,11 @@ type ItemSourcingDraft = {
   openToNewSuppliers: boolean;
 };
 
+type DraftEditorError = {
+  message: string;
+  kind: 'load' | 'operation';
+} | null;
+
 function indiaDateTimeInput(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
@@ -137,7 +142,7 @@ export function DraftRequestEditor({
   const [suppliers, setSuppliers] = useState<SupplierChoice[]>([]);
   const [loadingSuppliers, setLoadingSuppliers] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<DraftEditorError>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
@@ -146,7 +151,10 @@ export function DraftRequestEditor({
       .then((loaded) => setSuppliers(loaded))
       .catch((caught) => {
         if (!controller.signal.aborted) {
-          setError(caught instanceof Error ? caught.message : 'We could not load suppliers.');
+          setError({
+            message: caught instanceof Error ? caught.message : 'We could not load suppliers.',
+            kind: 'load',
+          });
         }
       })
       .finally(() => {
@@ -237,7 +245,7 @@ export function DraftRequestEditor({
     event.preventDefault();
     if (!valid || saving || request.status !== 'DRAFT') return;
     setSaving(true);
-    setError('');
+    setError(null);
     setFieldErrors({});
     try {
       const defaultSourcing = buildDefaultSourcingSelection(
@@ -291,7 +299,10 @@ export function DraftRequestEditor({
       if (!result.request) throw new Error('The updated draft was not returned.');
       onSaved(result.request);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'We could not save the draft.');
+      setError({
+        message: caught instanceof Error ? caught.message : 'We could not save the draft.',
+        kind: 'operation',
+      });
       setSaving(false);
     }
   }
@@ -307,7 +318,7 @@ export function DraftRequestEditor({
           <X aria-hidden="true" />
         </button>
       </header>
-      {error && <div className={styles.error} role="alert">{error}</div>}
+      {error && <div className={styles.error} role="alert">{error.message}{error.kind === 'load' && <> Your saved restaurant records are unchanged.</>}</div>}
       <div className={styles.grid}>
         <label className={styles.full}>
           <span>Request title *</span>
@@ -324,7 +335,7 @@ export function DraftRequestEditor({
         <label><span>Delivery date *</span><input type="date" value={deliveryDate} onChange={(event) => setDeliveryDate(event.target.value)} /></label>
         <label className={styles.full}><span>Quote deadline (India time) *</span><input type="datetime-local" value={quoteDeadline} onChange={(event) => setQuoteDeadline(event.target.value)} /></label>
         <label className={styles.full}><span>Delivery instructions</span><textarea rows={2} value={instructions} onChange={(event) => setInstructions(event.target.value)} /></label>
-        <label className={styles.full}><span>Commercial terms</span><textarea rows={3} value={commercialTerms} onChange={(event) => setCommercialTerms(event.target.value)} /></label>
+        <label className={styles.full}><span>Payment and order terms</span><textarea rows={3} value={commercialTerms} onChange={(event) => setCommercialTerms(event.target.value)} /></label>
       </div>
       <fieldset>
         <legend>Suppliers *</legend>

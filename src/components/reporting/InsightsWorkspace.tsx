@@ -91,10 +91,10 @@ export function InsightsWorkspace({ initialData }: { initialData?: FactualInsigh
   return (
     <main className={styles.page}>
       <header className={styles.pageHeader}>
-        <div><p>Submitted facts only</p><h1>Insights</h1><span>See how suppliers respond and where submitted prices differ. No estimates or automatic winner.</span></div>
+        <div><p>Submitted facts only</p><h1>Savings and prices</h1><span>See supplier response, submitted price differences, and facts from previous buying.</span></div>
         <button type="button" disabled={loading} onClick={() => void load()}><RefreshCw aria-hidden="true" />{loading ? 'Refreshing…' : 'Refresh'}</button>
       </header>
-      {error && <div className={styles.error} role="alert">{error}</div>}
+      {error && <div className={styles.error} role="alert">{error} Your saved restaurant records are unchanged.</div>}
       {loading && !data ? <div className={styles.loading} aria-label="Loading insights"><span /><span /><span /></div> : data && data.summary.requestSampleSize > 0 ? (
         <>
           <section className={styles.metrics} aria-label="Procurement summary">
@@ -144,7 +144,7 @@ export function InsightsWorkspace({ initialData }: { initialData?: FactualInsigh
       ) : data ? (
         <section className={styles.empty}>
           <BarChart3 aria-hidden="true" /><p>Insights start with real supplier responses</p><h2>Collect your first comparable quotes</h2><span>Open a procurement request and share the secure supplier links. This page will use only submitted records.</span>
-          <Link href="/procurement/new">Create a request <ArrowRight aria-hidden="true" /></Link>
+          <Link href="/procurement/new">Ask suppliers for prices <ArrowRight aria-hidden="true" /></Link>
         </section>
       ) : null}
     </main>

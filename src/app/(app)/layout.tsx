@@ -35,13 +35,13 @@ import type { TutorialStateDto } from '@/lib/tutorial/tutorial-state';
 import styles from './app-shell.module.css';
 
 const NAV = [
-  { href: '/dashboard', icon: LayoutDashboard, label: 'Overview' },
-  { href: '/procurement', icon: ClipboardList, label: 'Procurement' },
-  { href: '/menus', icon: BookOpen, label: 'Menus' },
+  { href: '/dashboard', icon: LayoutDashboard, label: 'Home' },
+  { href: '/procurement', icon: ClipboardList, label: 'Buy ingredients' },
+  { href: '/menus', icon: BookOpen, label: 'Menu and ingredients' },
   { href: '/suppliers', icon: Users, label: 'Suppliers' },
-  { href: '/insights', icon: BarChart3, label: 'Insights' },
-  { href: '/history', icon: History, label: 'History' },
-  { href: '/settings', icon: Settings, label: 'Settings' },
+  { href: '/insights', icon: BarChart3, label: 'Savings and prices' },
+  { href: '/history', icon: History, label: 'Past purchases' },
+  { href: '/settings', icon: Settings, label: 'Restaurant settings' },
 ] as const;
 
 function SidebarContent({
@@ -67,7 +67,7 @@ function SidebarContent({
       </Link>
 
       <Link className={styles.newRequest} href="/procurement/new" onClick={onNav}>
-        <Plus aria-hidden="true" /> New request
+        <Plus aria-hidden="true" /> Ask suppliers for prices
       </Link>
 
       <nav className={styles.nav} aria-label="Workspace navigation">
@@ -89,6 +89,15 @@ function SidebarContent({
           );
         })}
       </nav>
+
+      <div
+        aria-label="Restaurant data privacy"
+        className={styles.privacy}
+        role="note"
+      >
+        <strong>Private to your restaurant</strong>
+        <span>Recipes, supplier prices, and purchase records stay here.</span>
+      </div>
 
       <div className={styles.account}>
         <span className={styles.accountInitial}>{account.name.charAt(0).toUpperCase()}</span>

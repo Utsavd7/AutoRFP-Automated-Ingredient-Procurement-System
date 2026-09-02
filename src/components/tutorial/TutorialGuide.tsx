@@ -19,45 +19,45 @@ import styles from './tutorial-guide.module.css';
 
 export const TUTORIAL_STEPS = [
   {
-    title: 'See what needs attention',
+    title: 'Start from home',
     instruction:
-      'Look at Overview first. It shows open requests, quotes waiting, and the work that needs attention today.',
-    action: 'Open overview',
+      'Open Home to see requests, quotes, and the work that needs attention today.',
+    action: 'Open home',
     href: '/dashboard',
   },
   {
-    title: 'Add your menu',
+    title: 'Add your menu and ingredients',
     instruction:
-      'Click Menus, then Add menu. Paste your list, upload menu photos, or use a permitted website link. Check the dish names before saving.',
-    action: 'Open menus',
+      'Open Menu and ingredients. Add a menu, then check each dish and ingredient before you save it.',
+    action: 'Open menu and ingredients',
     href: '/menus',
   },
   {
-    title: 'Add the vendors you trust',
+    title: 'Add your suppliers',
     instruction:
-      'Click Suppliers. Add the vendors you already buy from and choose what each vendor supplies.',
+      'Open Suppliers. Add the businesses you buy from and choose the ingredients each one can supply.',
     action: 'Open suppliers',
     href: '/suppliers',
   },
   {
-    title: 'Ask for prices',
+    title: 'Ask suppliers for prices',
     instruction:
-      'Click New request. Pick a checked menu, choose the ingredients, set the delivery date, then choose saved suppliers or invite new verified suppliers.',
-    action: 'Create a request',
+      'Select Ask suppliers for prices. Choose a menu, ingredients, delivery date, and the suppliers you want to contact.',
+    action: 'Ask suppliers for prices',
     href: '/procurement/new',
   },
   {
-    title: 'Choose with the full cost',
+    title: 'Compare supplier prices',
     instruction:
-      'Click Procurement. Open a request, compare final cost and delivery details, then record the supplier you choose.',
-    action: 'Compare quotes',
+      'Open Buy ingredients. Select a request, compare supplier prices and delivery details, then record your choice.',
+    action: 'Compare supplier prices',
     href: '/procurement',
   },
   {
-    title: 'Use your buying history',
+    title: 'Review savings and prices',
     instruction:
-      'Open Insights to review response rates, quote coverage, awarded value, submitted price ranges, and facts from previous buying.',
-    action: 'Open insights',
+      'Open Savings and prices to review supplier response rates, price ranges, awarded value, and past buying facts.',
+    action: 'Open savings and prices',
     href: '/insights',
   },
 ] as const;

@@ -263,10 +263,10 @@ test('uses the approved QuotePlate product shell and exposes every core workspac
   });
   await expect(workspaceNavigation).toBeVisible();
   await expect(page.getByRole('link', { name: 'QuotePlate home' }).first()).toBeVisible();
-  for (const label of ['Overview', 'Procurement', 'Menus', 'Suppliers', 'Insights', 'History', 'Settings']) {
+  for (const label of ['Home', 'Buy ingredients', 'Menu and ingredients', 'Suppliers', 'Savings and prices', 'Past purchases', 'Restaurant settings']) {
     await expect(workspaceNavigation.getByRole('link', { name: label })).toBeVisible();
   }
-  await expect(page.getByRole('complementary').getByRole('link', { name: 'New request' })).toHaveAttribute(
+  await expect(page.getByRole('complementary').getByRole('link', { name: 'Ask suppliers for prices' })).toHaveAttribute(
     'href',
     '/procurement/new',
   );

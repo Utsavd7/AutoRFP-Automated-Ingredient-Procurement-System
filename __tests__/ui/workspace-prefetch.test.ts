@@ -330,6 +330,29 @@ describe('workspace prefetch', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it('retries a pending foreground read after a successful same-scope mutation', async () => {
+    let resolveOldRead!: (response: Response) => void;
+    const oldRead = new Promise<Response>((resolve) => {
+      resolveOldRead = resolve;
+    });
+    const fetchMock = jest
+      .spyOn(globalThis, 'fetch')
+      .mockReturnValueOnce(oldRead)
+      .mockResolvedValueOnce(jsonResponse({ saved: true }))
+      .mockResolvedValueOnce(jsonResponse({ source: 'post-mutation' }));
+
+    const responsePromise = workspaceFetch(overviewUrl);
+    await workspaceMutationFetch('/api/requests', { method: 'POST' });
+    resolveOldRead(jsonResponse({ source: 'pre-mutation' }));
+
+    const response = await responsePromise;
+    const cachedResponse = await workspaceFetch(overviewUrl);
+
+    await expect(response.json()).resolves.toEqual({ source: 'post-mutation' });
+    await expect(cachedResponse.json()).resolves.toEqual({ source: 'post-mutation' });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
   it('cannot consume workspace A data after switching to workspace B', async () => {
     const fetchMock = jest
       .spyOn(globalThis, 'fetch')
@@ -407,6 +430,28 @@ describe('workspace prefetch', () => {
     const responsePromise = workspaceFetch(overviewUrl);
     setWorkspacePrefetchScope('workspace-b');
     expect(refreshSignal?.aborted).toBe(true);
+
+    const response = await responsePromise;
+    const cachedResponse = await workspaceFetch(overviewUrl);
+
+    await expect(response.json()).resolves.toEqual({ workspace: 'b' });
+    await expect(cachedResponse.json()).resolves.toEqual({ workspace: 'b' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries an ordinary workspace A failure after switching to workspace B', async () => {
+    let rejectWorkspaceA!: (error: Error) => void;
+    const pendingWorkspaceA = new Promise<Response>((_resolve, reject) => {
+      rejectWorkspaceA = reject;
+    });
+    const fetchMock = jest
+      .spyOn(globalThis, 'fetch')
+      .mockReturnValueOnce(pendingWorkspaceA)
+      .mockResolvedValueOnce(jsonResponse({ workspace: 'b' }));
+
+    const responsePromise = workspaceFetch(overviewUrl);
+    setWorkspacePrefetchScope('workspace-b');
+    rejectWorkspaceA(new Error('workspace A failed late'));
 
     const response = await responsePromise;
     const cachedResponse = await workspaceFetch(overviewUrl);

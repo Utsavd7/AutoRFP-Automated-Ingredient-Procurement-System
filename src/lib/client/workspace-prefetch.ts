@@ -22,6 +22,7 @@ const WARM_CONCURRENCY = 2;
 const cacheableRequests = new Set<string>(Object.values(WORKSPACE_FIRST_REQUESTS));
 const responseCache = new Map<string, CacheEntry>();
 let activeWorkspaceScope: string | null = null;
+let cacheGeneration = 0;
 
 export function setWorkspacePrefetchScope(scope: string | null) {
   if (activeWorkspaceScope === scope) return;
@@ -32,10 +33,6 @@ export function setWorkspacePrefetchScope(scope: string | null) {
 // Keep stale data only for transient network and server failures; every 4xx is terminal.
 function isTerminalWorkspaceResponse(response: Response) {
   return response.status >= 400 && response.status < 500;
-}
-
-function isAbortError(error: unknown) {
-  return error instanceof DOMException && error.name === 'AbortError';
 }
 
 function startWorkspaceRefresh(
@@ -115,6 +112,7 @@ export async function workspaceFetch(
   if (init?.signal || !scope || method !== 'GET' || !cacheableRequests.has(url)) {
     return fetch(url, init);
   }
+  const generation = cacheGeneration;
 
   const current = responseCache.get(url);
   if (current?.scope === scope && current.response) {
@@ -128,12 +126,14 @@ export async function workspaceFetch(
   try {
     response = await startWorkspaceRefresh(url, scope, init);
   } catch (error) {
-    if (activeWorkspaceScope !== scope && isAbortError(error)) {
+    if (activeWorkspaceScope !== scope || cacheGeneration !== generation) {
       return workspaceFetch(url, init);
     }
     throw error;
   }
-  if (activeWorkspaceScope !== scope) return workspaceFetch(url, init);
+  if (activeWorkspaceScope !== scope || cacheGeneration !== generation) {
+    return workspaceFetch(url, init);
+  }
   return response.clone();
 }
 
@@ -142,6 +142,7 @@ export function clearWorkspacePrefetch() {
     entry.controller?.abort();
   }
   responseCache.clear();
+  cacheGeneration += 1;
 }
 
 export async function workspaceMutationFetch(

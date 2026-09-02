@@ -454,7 +454,7 @@ export function MenuEditor({
             <ArrowLeft aria-hidden="true" /> Menus
           </button>
           <p className={styles.eyebrow}>Review menu</p>
-          <input aria-label="Menu name" value={name} maxLength={160} onChange={(event) => setName(event.target.value)} />
+          <input aria-label="Menu name" value={name} maxLength={160} disabled={deleting} onChange={(event) => setName(event.target.value)} />
           <p>Check every dish, ingredient, quantity and unit before approval.</p>
         </div>
         <div className={styles.headerActions}>
@@ -529,6 +529,7 @@ export function MenuEditor({
                   aria-label={`Dish ${dishIndex + 1} name`}
                   value={dish.name}
                   maxLength={160}
+                  disabled={deleting}
                   placeholder="Dal makhani"
                   onChange={(event) => changeDish(dishIndex, { name: event.target.value })}
                 />
@@ -549,6 +550,7 @@ export function MenuEditor({
                       aria-label={`${dish.name || `Dish ${dishIndex + 1}`} ingredient ${ingredientIndex + 1}`}
                       value={ingredient.name}
                       maxLength={160}
+                      disabled={deleting}
                       placeholder="Urad dal"
                       onChange={(event) => changeIngredient(dishIndex, ingredientIndex, { name: event.target.value })}
                     />
@@ -559,6 +561,7 @@ export function MenuEditor({
                       aria-label={`${ingredient.name || 'Ingredient'} quantity`}
                       inputMode="decimal"
                       value={ingredient.quantity}
+                      disabled={deleting}
                       placeholder="2.5"
                       onChange={(event) => changeIngredient(dishIndex, ingredientIndex, { quantity: event.target.value })}
                     />
@@ -568,6 +571,7 @@ export function MenuEditor({
                     <select
                       aria-label={`${ingredient.name || 'Ingredient'} unit`}
                       value={ingredient.unit}
+                      disabled={deleting}
                       onChange={(event) => changeIngredient(dishIndex, ingredientIndex, { unit: event.target.value as Unit })}
                     >
                       {unitOptions.map((unit) => <option value={unit.value} key={unit.value}>{unit.label}</option>)}
@@ -579,6 +583,7 @@ export function MenuEditor({
                     <select
                       aria-label={`${ingredient.name || 'Ingredient'} category`}
                       value={ingredient.specification.category}
+                      disabled={deleting}
                       onChange={(event) => changeIngredient(dishIndex, ingredientIndex, {
                         specification: {
                           ...ingredient.specification,
@@ -600,6 +605,7 @@ export function MenuEditor({
                       inputMode="url"
                       placeholder="https://example.com/item"
                       value={ingredient.specification.referenceUrl ?? ''}
+                      disabled={deleting}
                       onChange={(event) => changeIngredient(dishIndex, ingredientIndex, {
                         specification: {
                           ...ingredient.specification,

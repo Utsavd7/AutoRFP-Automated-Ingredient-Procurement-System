@@ -139,6 +139,33 @@ describe('menu editor', () => {
     expect(source).toMatch(/if\s*\(\s*!result\.keepLocked\s*\)\s*\{?\s*setDeleting\(false\)/);
   });
 
+  it('locks every editable menu field during deletion', () => {
+    const source = readFileSync('src/components/menus/MenuEditor.tsx', 'utf8');
+    const fieldMarkers = [
+      'aria-label="Menu name"',
+      'aria-label={`Dish ${dishIndex + 1} name`}',
+      'ingredient ${ingredientIndex + 1}`}',
+      "aria-label={`${ingredient.name || 'Ingredient'} quantity`}",
+      "aria-label={`${ingredient.name || 'Ingredient'} unit`}",
+      "aria-label={`${ingredient.name || 'Ingredient'} category`}",
+      "aria-label={`${ingredient.name || 'Ingredient'} food reference link`}",
+    ];
+
+    for (const marker of fieldMarkers) {
+      const markerIndex = source.indexOf(marker);
+      const tagStart = Math.max(source.lastIndexOf('<input', markerIndex), source.lastIndexOf('<select', markerIndex));
+      const tagEnd = source.indexOf('>', markerIndex);
+      expect(markerIndex).toBeGreaterThan(-1);
+      expect(source.slice(tagStart, tagEnd + 1)).toContain('disabled={deleting}');
+    }
+  });
+
+  it('keeps dish selection controls at least 44px tall', () => {
+    const css = readFileSync('src/components/menus/menu-editor.module.css', 'utf8');
+
+    expect(css).toMatch(/\.dishToolbar button\s*\{[^}]*min-height:\s*2\.75rem/);
+  });
+
   it('renders a reviewable dish and ingredient form', () => {
     const html = renderToStaticMarkup(
       <MenuEditor

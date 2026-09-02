@@ -10,6 +10,7 @@ export const WORKSPACE_FIRST_REQUESTS = {
 
 type WorkspaceRequest = (typeof WORKSPACE_FIRST_REQUESTS)[keyof typeof WORKSPACE_FIRST_REQUESTS];
 type CacheEntry = {
+  controller: AbortController | null;
   expiresAt: number;
   response: Response | null;
   refresh: Promise<Response> | null;
@@ -24,8 +25,17 @@ let activeWorkspaceScope: string | null = null;
 
 export function setWorkspacePrefetchScope(scope: string | null) {
   if (activeWorkspaceScope === scope) return;
+  clearWorkspacePrefetch();
   activeWorkspaceScope = scope;
-  responseCache.clear();
+}
+
+// Keep stale data only for transient network and server failures; every 4xx is terminal.
+function isTerminalWorkspaceResponse(response: Response) {
+  return response.status >= 400 && response.status < 500;
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === 'AbortError';
 }
 
 function startWorkspaceRefresh(
@@ -37,6 +47,7 @@ function startWorkspaceRefresh(
   const entry = current?.scope === scope
     ? current
     : {
+        controller: null,
         expiresAt: 0,
         response: null,
         refresh: null,
@@ -46,7 +57,9 @@ function startWorkspaceRefresh(
   if (entry.refresh) return entry.refresh;
   if (entry !== current) responseCache.set(url, entry);
 
-  const refresh = fetch(url, init)
+  const controller = new AbortController();
+  entry.controller = controller;
+  const refresh = fetch(url, { ...init, signal: controller.signal })
     .then((response) => {
       if (
         response.ok &&
@@ -55,7 +68,10 @@ function startWorkspaceRefresh(
       ) {
         entry.response = response.clone();
         entry.expiresAt = Date.now() + TTL_MS;
-      } else if (!response.ok && !entry.response && responseCache.get(url) === entry) {
+      } else if (
+        (!entry.response || isTerminalWorkspaceResponse(response)) &&
+        responseCache.get(url) === entry
+      ) {
         responseCache.delete(url);
       }
       return response;
@@ -67,8 +83,9 @@ function startWorkspaceRefresh(
       throw error;
     })
     .finally(() => {
-      if (responseCache.get(url) === entry && entry.refresh === refresh) {
+      if (entry.refresh === refresh && entry.controller === controller) {
         entry.refresh = null;
+        entry.controller = null;
       }
     });
   entry.refresh = refresh;
@@ -95,7 +112,9 @@ export async function workspaceFetch(
 ): Promise<Response> {
   const method = init?.method?.toUpperCase() ?? 'GET';
   const scope = activeWorkspaceScope;
-  if (!scope || method !== 'GET' || !cacheableRequests.has(url)) return fetch(url, init);
+  if (init?.signal || !scope || method !== 'GET' || !cacheableRequests.has(url)) {
+    return fetch(url, init);
+  }
 
   const current = responseCache.get(url);
   if (current?.scope === scope && current.response) {
@@ -105,12 +124,23 @@ export async function workspaceFetch(
     return current.response.clone();
   }
 
-  const response = await startWorkspaceRefresh(url, scope, init);
+  let response: Response;
+  try {
+    response = await startWorkspaceRefresh(url, scope, init);
+  } catch (error) {
+    if (activeWorkspaceScope !== scope && isAbortError(error)) {
+      return workspaceFetch(url, init);
+    }
+    throw error;
+  }
   if (activeWorkspaceScope !== scope) return workspaceFetch(url, init);
   return response.clone();
 }
 
 export function clearWorkspacePrefetch() {
+  for (const entry of responseCache.values()) {
+    entry.controller?.abort();
+  }
   responseCache.clear();
 }
 

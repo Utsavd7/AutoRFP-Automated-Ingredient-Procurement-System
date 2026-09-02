@@ -141,6 +141,27 @@ describe('local menu photo intake', () => {
     ]);
   });
 
+  it('cleans bounded repeated price columns and their separators', () => {
+    expect(cleanRecognizedMenuLines([
+      { text: 'Paneer Tikka - 300', confidence: 0.94 },
+      { text: 'Paneer Tikka 180 320', confidence: 0.93 },
+      { text: 'Paneer Tikka 180/320', confidence: 0.92 },
+      { text: 'Paneer Tikka 180 | 320', confidence: 0.91 },
+      { text: 'Chicken 555', confidence: 0.9 },
+      { text: 'Chicken 999', confidence: 0.89 },
+      { text: 'Chicken 65', confidence: 0.88 },
+      { text: 'Gobi 65', confidence: 0.87 },
+      { text: '2 in 1 Dosa', confidence: 0.86 },
+    ])).toEqual([
+      { text: 'Paneer Tikka', confidence: 0.94 },
+      { text: 'Chicken 555', confidence: 0.9 },
+      { text: 'Chicken 999', confidence: 0.89 },
+      { text: 'Chicken 65', confidence: 0.88 },
+      { text: 'Gobi 65', confidence: 0.87 },
+      { text: '2 in 1 Dosa', confidence: 0.86 },
+    ]);
+  });
+
   it('keeps ambiguous singular menu items editable', () => {
     expect(cleanRecognizedMenuLines([
       { text: 'Tea', confidence: 0.91 },
@@ -172,5 +193,19 @@ describe('local menu photo intake', () => {
       { text: 'Open 11 AM to 11 PM', confidence: 0.88 },
       { text: 'Order now on Swiggy', confidence: 0.9 },
     ])).toEqual([]);
+  });
+
+  it('removes unambiguous OCR headings, contact details, hours, and descriptions', () => {
+    expect(cleanRecognizedMenuLines([
+      { text: 'NON-VEG STARTERS', confidence: 0.99 },
+      { text: '11:00 AM - 11:00 PM', confidence: 0.98 },
+      { text: 'orders@example.com', confidence: 0.97 },
+      { text: 'Crispy cottage cheese tossed in spices', confidence: 0.96 },
+      { text: 'Crispy Cottage Cheese', confidence: 0.9 },
+      { text: 'Tossed Salad', confidence: 0.89 },
+    ])).toEqual([
+      { text: 'Crispy Cottage Cheese', confidence: 0.9 },
+      { text: 'Tossed Salad', confidence: 0.89 },
+    ]);
   });
 });

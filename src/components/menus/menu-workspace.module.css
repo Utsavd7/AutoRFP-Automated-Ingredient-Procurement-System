@@ -24,7 +24,7 @@
 .explainer span { display: flex; align-items: center; gap: .45rem; }
 .explainer strong { width: 1.45rem; height: 1.45rem; display: grid; place-items: center; border-radius: 50%; color: #713917; background: #efd1bd; font-size: .68rem; }
 .explainer > svg { width: .9rem; color: #a9a299; }
-.explainer small { margin-left: auto; max-width: 19rem; color: #777a77; line-height: 1.4; }
+.privacyReassurance { margin-left: auto; max-width: 19rem; color: #777a77; line-height: 1.4; }
 .error { max-width: 82rem; margin: 0 auto 1rem; padding: .72rem .9rem; display: flex; justify-content: space-between; gap: 1rem; border: 1px solid #dfb7ae; background: #fbefec; color: #842d25; font-size: .84rem; }
 .error button { border: 0; border-bottom: 1px solid currentColor; background: transparent; color: inherit; font-weight: 800; cursor: pointer; }
 .menuGrid { max-width: 82rem; margin: 0 auto; display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 1rem; }
@@ -106,6 +106,6 @@
 .importedFrom svg { width: .9rem; }
 @keyframes pulse { to { background-position: -220% 0; } }
 @keyframes spin { to { transform: rotate(360deg); } }
-@media (max-width: 62rem) { .menuGrid, .loading { grid-template-columns: repeat(2,minmax(0,1fr)); } .explainer small { display: none; } }
+@media (max-width: 62rem) { .menuGrid, .loading { grid-template-columns: repeat(2,minmax(0,1fr)); } .explainer { flex-wrap: wrap; } .privacyReassurance { width: 100%; max-width: none; margin-left: 0; } }
 @media (max-width: 44rem) { .page { padding: 1.25rem 1rem 5rem; } .header { align-items: stretch; flex-direction: column; gap: 1.25rem; } .header .primaryButton { width: 100%; } .explainer { align-items: flex-start; flex-direction: column; } .explainer > svg { display: none; } .menuGrid, .loading { grid-template-columns: 1fr; } .dialogBackdrop { align-items: end; padding: 0; } .dialog { max-height: 94vh; border-width: 1px 0 0; } .dialogBody { padding: 1rem; } .dialog footer { flex-direction: column-reverse; } .dialog footer button { width: 100%; } .photoStrip { grid-template-columns: repeat(3,minmax(0,1fr)); } .photoProgress { grid-template-columns: 1.5rem 1fr; } .photoProgress button { grid-column: 1 / -1; } }
 @media (prefers-reduced-motion: reduce) { .menuCard, .intakeChoices > button { transition: none; } .menuCard:hover, .intakeChoices > button:hover { transform: none; } .loading span, .photoProgress > svg { animation: none; } }

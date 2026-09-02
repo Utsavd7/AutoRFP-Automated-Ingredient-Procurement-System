@@ -221,7 +221,8 @@ describe('public website contract', () => {
     expect(markup).toMatch(/GST/);
     expect(markup).toMatch(/no supplier account/i);
     expect(markup).toMatch(/human (?:decision|approval)/i);
-    expect(markup).toContain('Each restaurant can only see its own records');
+    expect(markup).toContain('Your restaurant records stay private');
+    expect(markup).toContain('Your recipes, menus, supplier prices, and purchase records stay private to your restaurant. Other restaurants cannot see them, and suppliers see only the request you send to them.');
     expect(markup).toContain('Private supplier links expire');
     expect(markup).toContain('Your team makes the final choice');
     expect(markup).toContain('Quote changes and decisions stay recorded');

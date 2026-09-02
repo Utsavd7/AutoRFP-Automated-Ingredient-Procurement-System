@@ -34,7 +34,9 @@ describe('settings workspace UI', () => {
   it('renders a professional owner workspace with real restaurant and people controls', () => {
     const html = renderToStaticMarkup(<SettingsWorkspace initialData={ownerSettings} />);
 
-    expect(html).toContain('Workspace settings');
+    expect(html).toContain('Your restaurant');
+    expect(html).toContain('Restaurant settings');
+    expect(html).toContain('Update restaurant details, team access, and workspace preferences.');
     expect(html).toContain('Monsoon Table');
     expect(html).toContain('GSTIN');
     expect(html).toContain('People and access');
@@ -97,5 +99,25 @@ describe('settings workspace UI', () => {
       .resolves.toBe(false);
     await expect(copyInvitationLink(link, jest.fn().mockResolvedValue(undefined)))
       .resolves.toBe(true);
+  });
+
+  it('reassures only read-only settings load failures that saved records are unchanged', () => {
+    const component = readFileSync(
+      path.resolve(__dirname, '../../src/components/settings/SettingsWorkspace.tsx'),
+      'utf8',
+    );
+
+    expect(component).toContain('Your saved restaurant records are unchanged.');
+    expect(component).toContain("errorContext === 'load'");
+  });
+
+  it('uses the task-led browser title', () => {
+    const page = readFileSync(
+      path.resolve(__dirname, '../../src/app/(app)/settings/page.tsx'),
+      'utf8',
+    );
+
+    expect(page).toContain("metadata = { title: 'Restaurant settings' };");
+    expect(page).not.toContain('Restaurant settings · QuotePlate');
   });
 });

@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import {
@@ -136,7 +139,9 @@ describe('supplier workspace', () => {
       />,
     );
 
+    expect(html).toContain('People you buy from');
     expect(html).toContain('Suppliers');
+    expect(html).toContain('Keep the suppliers you already use and what each one can supply in one place.');
     expect(html).toContain('GreenLeaf Fresh Foods');
     expect(html).toContain('Navi Mumbai');
     expect(html).toContain('Add supplier');
@@ -191,7 +196,18 @@ describe('supplier workspace', () => {
     );
 
     expect(html).toContain('We could not load suppliers.');
+    expect(html).toContain('Your saved restaurant records are unchanged.');
     expect(html).toContain('Try again');
+  });
+
+  it('uses the task-led browser title', () => {
+    const page = readFileSync(
+      path.resolve(__dirname, '../../src/app/(app)/suppliers/page.tsx'),
+      'utf8',
+    );
+
+    expect(page).toContain("metadata = { title: 'Suppliers' };");
+    expect(page).not.toContain('Suppliers · QuotePlate');
   });
 
   it('offers the next real API page when a cursor is available', () => {

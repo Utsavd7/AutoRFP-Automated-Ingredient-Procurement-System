@@ -377,6 +377,7 @@ export function SettingsWorkspace({ initialData }: { initialData?: WorkspaceSett
   const [form, setForm] = useState<WorkspaceForm | null>(initialData?.workspace ?? null);
   const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState('');
+  const [errorContext, setErrorContext] = useState<'load' | 'operation'>('load');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -391,7 +392,10 @@ export function SettingsWorkspace({ initialData }: { initialData?: WorkspaceSett
   const inviteButton = useRef<HTMLButtonElement>(null);
   const started = useRef(false);
 
-  const load = useCallback(async (usePrefetch = false) => {
+  const load = useCallback(async (
+    usePrefetch = false,
+    recordsUnchangedOnFailure = true,
+  ) => {
     setLoading(!data);
     setError('');
     try {
@@ -410,6 +414,7 @@ export function SettingsWorkspace({ initialData }: { initialData?: WorkspaceSett
       setData(next);
       setForm(next.workspace);
     } catch (caught) {
+      setErrorContext(recordsUnchangedOnFailure ? 'load' : 'operation');
       setError(caught instanceof Error ? caught.message : 'We could not load workspace settings.');
     } finally {
       setLoading(false);
@@ -434,6 +439,7 @@ export function SettingsWorkspace({ initialData }: { initialData?: WorkspaceSett
     setSaving(true);
     setSaved(false);
     setError('');
+    setErrorContext('operation');
     setFieldErrors({});
     try {
       const response = await workspaceMutationFetch('/api/settings', {
@@ -479,7 +485,7 @@ export function SettingsWorkspace({ initialData }: { initialData?: WorkspaceSett
         throw new Error(problem.message);
       }
       setAction(null);
-      await load();
+      await load(false, false);
     } catch (caught) {
       setActionError(caught instanceof Error ? caught.message : 'We could not change this access.');
     } finally {
@@ -496,6 +502,7 @@ export function SettingsWorkspace({ initialData }: { initialData?: WorkspaceSett
           <p>Workspace settings</p>
           <h1>We could not open settings</h1>
           <span>{error || 'Try again in a moment.'}</span>
+          <span>Your saved restaurant records are unchanged.</span>
           <button className={styles.primaryButton} onClick={() => void load()} type="button">Try again</button>
         </section>
       </main>
@@ -507,9 +514,9 @@ export function SettingsWorkspace({ initialData }: { initialData?: WorkspaceSett
     <main className={styles.page}>
       <header className={styles.pageHeader}>
         <div>
-          <p className={styles.eyebrow}>Restaurant workspace</p>
-          <h1>Workspace settings</h1>
-          <span>Keep your restaurant details accurate and decide who can work here.</span>
+          <p className={styles.eyebrow}>Your restaurant</p>
+          <h1>Restaurant settings</h1>
+          <span>Update restaurant details, team access, and workspace preferences.</span>
         </div>
         <div className={styles.currentAccess}>
           <ShieldCheck aria-hidden="true" />
@@ -527,7 +534,13 @@ export function SettingsWorkspace({ initialData }: { initialData?: WorkspaceSett
           <div><strong>View access only</strong><span>Only workspace owners can change restaurant details or manage access.</span></div>
         </section>
       )}
-      {error && data && <section className={styles.inlineError} role="alert"><span>{error}</span><button onClick={() => setError('')} type="button">Dismiss</button></section>}
+      {error && data && (
+        <section className={styles.inlineError} role="alert">
+          <span>{error}</span>
+          {errorContext === 'load' && <span>Your saved restaurant records are unchanged.</span>}
+          <button onClick={() => setError('')} type="button">Dismiss</button>
+        </section>
+      )}
 
       <div className={styles.settingsGrid}>
         <section className={styles.panel}>
@@ -634,7 +647,7 @@ export function SettingsWorkspace({ initialData }: { initialData?: WorkspaceSett
       {inviteOpen && (
         <InviteMemberDialog
           onClose={() => setInviteOpen(false)}
-          onCreated={() => void load()}
+          onCreated={() => void load(false, false)}
           returnFocusRef={inviteButton}
         />
       )}

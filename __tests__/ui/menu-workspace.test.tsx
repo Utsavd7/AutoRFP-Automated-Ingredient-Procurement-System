@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import {
@@ -27,14 +30,51 @@ describe('menu workspace', () => {
       />,
     );
 
-    expect(html).toContain('Menus');
+    expect(html).toContain('Prepare what you need');
+    expect(html).toContain('Menu and ingredients');
+    expect(html).toContain('Add dishes, check their ingredients, and prepare them for a buying request.');
     expect(html).toContain('Dinner menu');
     expect(html).toContain('Open and check the ingredient list');
     expect(html).toContain('Needs review');
     expect(html).toContain('Add menu');
-    expect(html).toContain('Nothing is sent to suppliers');
+    expect(html).toContain('Your recipes and menus stay private to your restaurant. Nothing is sent to suppliers until you open a buying request.');
     expect(html).not.toContain('AI');
     expect(html).not.toContain('AutoRFP');
+  });
+
+  it('reassures the restaurant when the read-only menu load fails', () => {
+    const html = renderToStaticMarkup(
+      <MenuWorkspace initialMenus={[]} initialError="We could not load menus." />,
+    );
+
+    expect(html).toContain('We could not load menus.');
+    expect(html).toContain('Your saved restaurant records are unchanged.');
+    expect(html).toContain('Try again');
+  });
+
+  it('keeps the menu privacy reassurance visible on narrower screens', () => {
+    const html = renderToStaticMarkup(
+      <MenuWorkspace initialMenus={[]} initialError="" />,
+    );
+    const css = readFileSync(
+      path.resolve(__dirname, '../../src/components/menus/menu-workspace.module.css'),
+      'utf8',
+    );
+
+    expect(html).toContain('<small class="privacyReassurance">');
+    expect(css).toContain('.privacyReassurance');
+    expect(css).not.toMatch(/[^{}]*\.privacyReassurance[^{}]*\{[^}]*display\s*:\s*none/);
+    expect(css).not.toMatch(/[^{}]*\.explainer\s+small[^{}]*\{[^}]*display\s*:\s*none/);
+  });
+
+  it('uses the task-led browser title', () => {
+    const page = readFileSync(
+      path.resolve(__dirname, '../../src/app/(app)/menus/page.tsx'),
+      'utf8',
+    );
+
+    expect(page).toContain("metadata = { title: 'Menu and ingredients' };");
+    expect(page).not.toContain('Menu and ingredients · QuotePlate');
   });
 
   it('has a clear empty state', () => {

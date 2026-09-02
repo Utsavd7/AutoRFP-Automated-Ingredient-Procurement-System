@@ -72,7 +72,7 @@ export function PublicLandingPage() {
               <h2 id="security-title">Commercial records deserve plain security.</h2>
             </div>
             <div className="security-section__points">
-              <article><span>01</span><div><h3>Each restaurant can only see its own records</h3><p>Workspace access keeps one restaurant&apos;s requests, suppliers, and quotes separate from another&apos;s.</p></div></article>
+              <article><span>01</span><div><h3>Your restaurant records stay private</h3><p>Your recipes, menus, supplier prices, and purchase records stay private to your restaurant. Other restaurants cannot see them, and suppliers see only the request you send to them.</p></div></article>
               <article><span>02</span><div><h3>Private supplier links expire</h3><p>Each supplier sees only the request shared with them, and the restaurant can revoke or replace that link.</p></div></article>
               <article><span>03</span><div><h3>Your team makes the final choice</h3><p>Quote changes and decisions stay recorded so the restaurant can review what changed and who chose.</p></div></article>
             </div>

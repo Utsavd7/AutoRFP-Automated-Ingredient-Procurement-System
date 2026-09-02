@@ -660,10 +660,10 @@ export function MenuWorkspace({
     <main className={styles.page}>
       <header className={styles.header}>
         <div>
-          <p className={styles.eyebrow}>Reviewed demand</p>
-          <h1>Menus</h1>
+          <p className={styles.eyebrow}>Prepare what you need</p>
+          <h1>Menu and ingredients</h1>
           <p className={styles.intro}>
-            Turn the dishes you serve into a checked ingredient list before asking suppliers for prices.
+            Add dishes, check their ingredients, and prepare them for a buying request.
           </p>
         </div>
         <button className={styles.primaryButton} type="button" onClick={openCreate}>
@@ -677,12 +677,13 @@ export function MenuWorkspace({
         <span><strong>2</strong> Add ingredients and quantities</span>
         <ArrowRight aria-hidden="true" />
         <span><strong>3</strong> Approve when checked</span>
-        <small>Nothing is sent to suppliers until you open a procurement request.</small>
+        <small className={styles.privacyReassurance}>Your recipes and menus stay private to your restaurant. Nothing is sent to suppliers until you open a buying request.</small>
       </aside>
 
       {error && (
         <div className={styles.error} role="alert">
           <span>{error}</span>
+          <span>Your saved restaurant records are unchanged.</span>
           <button type="button" onClick={() => void loadMenus()}>Try again</button>
         </div>
       )}

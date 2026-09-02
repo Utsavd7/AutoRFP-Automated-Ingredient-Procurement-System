@@ -1,6 +1,6 @@
 import { MenuWorkspace } from '@/components/menus/MenuWorkspace';
 
-export const metadata = { title: 'Menus · QuotePlate' };
+export const metadata = { title: 'Menu and ingredients' };
 
 export default function MenusPage() {
   return <MenuWorkspace />;

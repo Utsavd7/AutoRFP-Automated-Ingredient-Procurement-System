@@ -1,9 +1,14 @@
+import { Prisma } from '@prisma/client';
+
 import type { MenuDocumentV1 } from '@/lib/menu/menu-document';
 import {
   approveReviewedMenu,
   createReviewedMenuDraft,
+  deleteReviewedMenu,
   getReviewedMenu,
   listReviewedMenus,
+  MenuConflictError,
+  MenuNotFoundError,
   MenuValidationError,
   updateReviewedMenuDraft,
   validateMenuDraftInput,
@@ -52,6 +57,20 @@ function clientWith(transaction: Record<string, unknown>) {
 }
 
 const actor = { tenantId: 'tenant-a', userId: 'member-a' };
+
+async function expectMenuServiceError(
+  operation: () => unknown,
+  ErrorClass: typeof MenuConflictError | typeof MenuNotFoundError,
+  expected: { message: string; code: string; status: number },
+) {
+  try {
+    await operation();
+    throw new Error('Expected the menu service to reject.');
+  } catch (error) {
+    expect(error).toBeInstanceOf(ErrorClass);
+    expect(error).toMatchObject(expected);
+  }
+}
 
 describe('document-backed menu service', () => {
   it('validates the full document before persisting one Menu row', async () => {
@@ -191,5 +210,153 @@ describe('document-backed menu service', () => {
       ),
     ).rejects.toBeInstanceOf(MenuValidationError);
     expect(client.$transaction).not.toHaveBeenCalled();
+  });
+
+  it.each(['DRAFT', 'APPROVED'] as const)(
+    'deletes an unused %s menu and records its version',
+    async (status) => {
+      const findFirst = jest.fn().mockResolvedValue({
+        id: 'menu-a',
+        status,
+        version: 3,
+      });
+      const count = jest.fn().mockResolvedValue(0);
+      const deleteMany = jest.fn().mockResolvedValue({ count: 1 });
+      const auditCreate = jest.fn().mockResolvedValue({ id: 'audit-a' });
+      const transaction = {
+        $queryRaw: jest.fn(),
+        menu: { findFirst, deleteMany },
+        procurementRequest: { count },
+        auditEvent: { create: auditCreate },
+      };
+
+      await expect(
+        deleteReviewedMenu(
+          { actor, menuId: 'menu-a', expectedVersion: 3 },
+          clientWith(transaction) as never,
+        ),
+      ).resolves.toEqual({ id: 'menu-a' });
+
+      expect(findFirst).toHaveBeenCalledWith(expect.objectContaining({
+        where: { tenantId: actor.tenantId, id: 'menu-a' },
+      }));
+      expect(count).toHaveBeenCalledWith({
+        where: { tenantId: actor.tenantId, menuId: 'menu-a' },
+      });
+      expect(deleteMany).toHaveBeenCalledWith({
+        where: { tenantId: actor.tenantId, id: 'menu-a', version: 3 },
+      });
+      expect(auditCreate).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({
+          action: 'menu.deleted',
+          entityId: 'menu-a',
+          metadata: { version: 3 },
+        }),
+      }));
+    },
+  );
+
+  it('keeps a menu with procurement history intact', async () => {
+    const deleteMany = jest.fn();
+    const transaction = {
+      $queryRaw: jest.fn(),
+      menu: { findFirst: jest.fn().mockResolvedValue({ id: 'menu-a', version: 3 }), deleteMany },
+      procurementRequest: { count: jest.fn().mockResolvedValue(1) },
+      auditEvent: { create: jest.fn() },
+    };
+
+    await expectMenuServiceError(
+      () => deleteReviewedMenu(
+        { actor, menuId: 'menu-a', expectedVersion: 3 },
+        clientWith(transaction) as never,
+      ),
+      MenuConflictError,
+      {
+        message: 'This menu has procurement history and cannot be deleted.',
+        code: 'MENU_CONFLICT',
+        status: 409,
+      },
+    );
+    expect(deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('maps a deletion foreign-key race to the procurement-history conflict', async () => {
+    const auditCreate = jest.fn();
+    const transaction = {
+      $queryRaw: jest.fn(),
+      menu: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'menu-a', version: 3 }),
+        deleteMany: jest.fn().mockRejectedValue(
+          new Prisma.PrismaClientKnownRequestError('Foreign key constraint failed.', {
+            code: 'P2003',
+            clientVersion: 'test',
+          }),
+        ),
+      },
+      procurementRequest: { count: jest.fn().mockResolvedValue(0) },
+      auditEvent: { create: auditCreate },
+    };
+
+    await expectMenuServiceError(
+      () => deleteReviewedMenu(
+        { actor, menuId: 'menu-a', expectedVersion: 3 },
+        clientWith(transaction) as never,
+      ),
+      MenuConflictError,
+      {
+        message: 'This menu has procurement history and cannot be deleted.',
+        code: 'MENU_CONFLICT',
+        status: 409,
+      },
+    );
+    expect(auditCreate).not.toHaveBeenCalled();
+  });
+
+  it('rejects a stale menu version before checking procurement history', async () => {
+    const count = jest.fn();
+    const deleteMany = jest.fn();
+    const transaction = {
+      $queryRaw: jest.fn(),
+      menu: { findFirst: jest.fn().mockResolvedValue({ id: 'menu-a', version: 4 }), deleteMany },
+      procurementRequest: { count },
+      auditEvent: { create: jest.fn() },
+    };
+
+    await expectMenuServiceError(
+      () => deleteReviewedMenu(
+        { actor, menuId: 'menu-a', expectedVersion: 3 },
+        clientWith(transaction) as never,
+      ),
+      MenuConflictError,
+      {
+        message: 'This menu changed after you opened it. Reload before continuing.',
+        code: 'MENU_CONFLICT',
+        status: 409,
+      },
+    );
+    expect(count).not.toHaveBeenCalled();
+    expect(deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('does not reveal missing or cross-tenant menus', async () => {
+    const count = jest.fn();
+    const deleteMany = jest.fn();
+    const transaction = {
+      $queryRaw: jest.fn(),
+      menu: { findFirst: jest.fn().mockResolvedValue(null), deleteMany },
+      procurementRequest: { count },
+      auditEvent: { create: jest.fn() },
+    };
+
+    await expectMenuServiceError(
+      () => deleteReviewedMenu(
+        { actor, menuId: 'menu-a', expectedVersion: 3 },
+        clientWith(transaction) as never,
+      ),
+      MenuNotFoundError,
+      { message: 'Menu not found.', code: 'MENU_NOT_FOUND', status: 404 },
+    );
+    expect(count).not.toHaveBeenCalled();
+    expect(deleteMany).not.toHaveBeenCalled();
   });
 });

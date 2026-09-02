@@ -8,6 +8,7 @@ const auditRules = {
   'workspace.updated': { entityType: 'Tenant', metadata: ['fields'] },
   'tutorial.updated': { entityType: 'User', metadata: ['action', 'step'] },
   'menu.approved': { entityType: 'Menu', metadata: ['version'] },
+  'menu.deleted': { entityType: 'Menu', metadata: ['version'] },
   'supplier.created': { entityType: 'Supplier', metadata: [] },
   'supplier.applied': {
     entityType: 'Supplier',

@@ -18,6 +18,11 @@ function jsonResponse(value: unknown, init?: ResponseInit) {
   });
 }
 
+async function flushMicrotasks() {
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
 describe('workspace prefetch', () => {
   beforeEach(() => {
     clearWorkspacePrefetch();
@@ -31,20 +36,32 @@ describe('workspace prefetch', () => {
     jest.useRealTimers();
   });
 
-  it('reuses a prefetched response exactly once', async () => {
+  it('reuses a prefetched response for repeated fresh reads', async () => {
     const fetchMock = jest
       .spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(jsonResponse({ source: 'prefetch' }))
-      .mockResolvedValueOnce(jsonResponse({ source: 'network' }));
+      .mockResolvedValue(jsonResponse({ source: 'prefetch' }));
 
     await prefetchWorkspace(overviewUrl);
 
-    const prefetched = await workspaceFetch(overviewUrl, { cache: 'no-store' });
-    const fresh = await workspaceFetch(overviewUrl, { cache: 'no-store' });
+    const first = await workspaceFetch(overviewUrl, { cache: 'no-store' });
+    const second = await workspaceFetch(overviewUrl, { cache: 'no-store' });
 
-    await expect(prefetched.json()).resolves.toEqual({ source: 'prefetch' });
-    await expect(fresh.json()).resolves.toEqual({ source: 'network' });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await expect(first.json()).resolves.toEqual({ source: 'prefetch' });
+    await expect(second.json()).resolves.toEqual({ source: 'prefetch' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('populates the cache from a normal workspace fetch', async () => {
+    const fetchMock = jest
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async () => jsonResponse({ source: 'normal' }));
+
+    const first = await workspaceFetch(overviewUrl);
+    const second = await workspaceFetch(overviewUrl);
+
+    await expect(first.json()).resolves.toEqual({ source: 'normal' });
+    await expect(second.json()).resolves.toEqual({ source: 'normal' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('keeps response clones independently readable', async () => {
@@ -99,21 +116,131 @@ describe('workspace prefetch', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('does not reuse a prefetched response after the 30 second TTL', async () => {
+  it('returns stale data while an expired response refreshes in the background', async () => {
     jest.useFakeTimers();
     jest.setSystemTime(new Date('2026-09-01T00:00:00.000Z'));
+    let resolveRefresh!: (response: Response) => void;
+    const refresh = new Promise<Response>((resolve) => {
+      resolveRefresh = resolve;
+    });
     const fetchMock = jest
       .spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(jsonResponse({ source: 'expired' }))
-      .mockResolvedValueOnce(jsonResponse({ source: 'network' }));
+      .mockResolvedValue(jsonResponse({ source: 'unexpected' }))
+      .mockResolvedValueOnce(jsonResponse({ source: 'stale' }))
+      .mockReturnValueOnce(refresh);
 
     await prefetchWorkspace(overviewUrl);
     jest.setSystemTime(new Date('2026-09-01T00:00:30.001Z'));
 
-    const response = await workspaceFetch(overviewUrl);
+    let stale: Response | undefined;
+    void workspaceFetch(overviewUrl).then((response) => {
+      stale = response;
+    });
+    await flushMicrotasks();
 
-    await expect(response.json()).resolves.toEqual({ source: 'network' });
+    expect(stale).toBeDefined();
+    await expect(stale!.json()).resolves.toEqual({ source: 'stale' });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    resolveRefresh(jsonResponse({ source: 'refreshed' }));
+    await prefetchWorkspace(overviewUrl);
+
+    const refreshed = await workspaceFetch(overviewUrl);
+    await expect(refreshed.json()).resolves.toEqual({ source: 'refreshed' });
+  });
+
+  it('shares one background refresh across concurrent expired reads', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-09-01T00:00:00.000Z'));
+    let resolveRefresh!: (response: Response) => void;
+    const refresh = new Promise<Response>((resolve) => {
+      resolveRefresh = resolve;
+    });
+    const fetchMock = jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(jsonResponse({ source: 'unexpected' }))
+      .mockResolvedValueOnce(jsonResponse({ source: 'stale' }))
+      .mockReturnValueOnce(refresh);
+
+    await prefetchWorkspace(overviewUrl);
+    jest.setSystemTime(new Date('2026-09-01T00:00:30.001Z'));
+
+    let first: Response | undefined;
+    let second: Response | undefined;
+    void workspaceFetch(overviewUrl).then((response) => {
+      first = response;
+    });
+    void workspaceFetch(overviewUrl).then((response) => {
+      second = response;
+    });
+    await flushMicrotasks();
+
+    expect(first).toBeDefined();
+    expect(second).toBeDefined();
+    await expect(first!.json()).resolves.toEqual({ source: 'stale' });
+    await expect(second!.json()).resolves.toEqual({ source: 'stale' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    resolveRefresh(jsonResponse({ source: 'refreshed' }));
+    await prefetchWorkspace(overviewUrl);
+  });
+
+  it('preserves stale data after a failed background refresh and retries later', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-09-01T00:00:00.000Z'));
+    let rejectRefresh!: (error: Error) => void;
+    const refresh = new Promise<Response>((_, reject) => {
+      rejectRefresh = reject;
+    });
+    const fetchMock = jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(jsonResponse({ source: 'unexpected' }))
+      .mockResolvedValueOnce(jsonResponse({ source: 'stale' }))
+      .mockReturnValueOnce(refresh)
+      .mockResolvedValueOnce(jsonResponse({ source: 'retried' }));
+
+    await prefetchWorkspace(overviewUrl);
+    jest.setSystemTime(new Date('2026-09-01T00:00:30.001Z'));
+
+    let stale: Response | undefined;
+    void workspaceFetch(overviewUrl).then((response) => {
+      stale = response;
+    });
+    await flushMicrotasks();
+
+    expect(stale).toBeDefined();
+    await expect(stale!.json()).resolves.toEqual({ source: 'stale' });
+    rejectRefresh(new Error('refresh unavailable'));
+    await prefetchWorkspace(overviewUrl);
+
+    const retryingStale = await workspaceFetch(overviewUrl);
+    await expect(retryingStale.json()).resolves.toEqual({ source: 'stale' });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    await prefetchWorkspace(overviewUrl);
+    const retried = await workspaceFetch(overviewUrl);
+    await expect(retried.json()).resolves.toEqual({ source: 'retried' });
+  });
+
+  it('evicts stale data after a terminal authorization refresh failure', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-09-01T00:00:00.000Z'));
+    const fetchMock = jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse({ source: 'stale' }))
+      .mockResolvedValueOnce(jsonResponse({ error: 'Unauthorized' }, { status: 401 }))
+      .mockResolvedValueOnce(jsonResponse({ source: 'fresh' }));
+
+    await prefetchWorkspace(overviewUrl);
+    jest.setSystemTime(new Date('2026-09-01T00:00:30.001Z'));
+
+    const stale = await workspaceFetch(overviewUrl);
+    await expect(stale.json()).resolves.toEqual({ source: 'stale' });
+    await flushMicrotasks();
+
+    const fresh = await workspaceFetch(overviewUrl);
+    await expect(fresh.json()).resolves.toEqual({ source: 'fresh' });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it('does not cache a failed prefetch and lets the normal fetch retry', async () => {
@@ -144,6 +271,88 @@ describe('workspace prefetch', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it('bypasses cached data for an already-aborted signal', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const fetchMock = jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse({ source: 'cached' }))
+      .mockResolvedValueOnce(jsonResponse({ source: 'aborted-direct' }));
+
+    await prefetchWorkspace(overviewUrl);
+    const direct = await workspaceFetch(overviewUrl, { signal: controller.signal });
+    const cached = await workspaceFetch(overviewUrl);
+
+    await expect(direct.json()).resolves.toEqual({ source: 'aborted-direct' });
+    await expect(cached.json()).resolves.toEqual({ source: 'cached' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenLastCalledWith(overviewUrl, { signal: controller.signal });
+  });
+
+  it('bypasses cached data for a signal-bound request without replacing it', async () => {
+    const controller = new AbortController();
+    const fetchMock = jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse({ source: 'cached' }))
+      .mockResolvedValueOnce(jsonResponse({ source: 'signal-direct' }));
+
+    await prefetchWorkspace(overviewUrl);
+    const direct = await workspaceFetch(overviewUrl, { signal: controller.signal });
+    const cached = await workspaceFetch(overviewUrl);
+
+    await expect(direct.json()).resolves.toEqual({ source: 'signal-direct' });
+    await expect(cached.json()).resolves.toEqual({ source: 'cached' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('aborts a pending refresh during explicit invalidation without restoring its response', async () => {
+    let resolveRefresh!: (response: Response) => void;
+    let refreshSignal: AbortSignal | undefined;
+    const pendingRefresh = new Promise<Response>((resolve) => {
+      resolveRefresh = resolve;
+    });
+    const fetchMock = jest
+      .spyOn(globalThis, 'fetch')
+      .mockImplementationOnce((_input, init) => {
+        refreshSignal = init?.signal ?? undefined;
+        return pendingRefresh;
+      })
+      .mockResolvedValueOnce(jsonResponse({ source: 'fresh' }));
+
+    const prefetch = prefetchWorkspace(overviewUrl);
+    clearWorkspacePrefetch();
+    expect(refreshSignal?.aborted).toBe(true);
+    resolveRefresh(jsonResponse({ source: 'old' }));
+    await prefetch;
+
+    const fresh = await workspaceFetch(overviewUrl);
+    await expect(fresh.json()).resolves.toEqual({ source: 'fresh' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries a pending foreground read after a successful same-scope mutation', async () => {
+    let resolveOldRead!: (response: Response) => void;
+    const oldRead = new Promise<Response>((resolve) => {
+      resolveOldRead = resolve;
+    });
+    const fetchMock = jest
+      .spyOn(globalThis, 'fetch')
+      .mockReturnValueOnce(oldRead)
+      .mockResolvedValueOnce(jsonResponse({ saved: true }))
+      .mockResolvedValueOnce(jsonResponse({ source: 'post-mutation' }));
+
+    const responsePromise = workspaceFetch(overviewUrl);
+    await workspaceMutationFetch('/api/requests', { method: 'POST' });
+    resolveOldRead(jsonResponse({ source: 'pre-mutation' }));
+
+    const response = await responsePromise;
+    const cachedResponse = await workspaceFetch(overviewUrl);
+
+    await expect(response.json()).resolves.toEqual({ source: 'post-mutation' });
+    await expect(cachedResponse.json()).resolves.toEqual({ source: 'post-mutation' });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
   it('cannot consume workspace A data after switching to workspace B', async () => {
     const fetchMock = jest
       .spyOn(globalThis, 'fetch')
@@ -158,6 +367,100 @@ describe('workspace prefetch', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it('does not populate workspace B with a workspace A request that resolves late', async () => {
+    let resolveWorkspaceA!: (response: Response) => void;
+    const workspaceAResponse = new Promise<Response>((resolve) => {
+      resolveWorkspaceA = resolve;
+    });
+    const fetchMock = jest
+      .spyOn(globalThis, 'fetch')
+      .mockReturnValueOnce(workspaceAResponse)
+      .mockResolvedValueOnce(jsonResponse({ workspace: 'b' }));
+
+    const workspaceAPrefetch = prefetchWorkspace(overviewUrl);
+    setWorkspacePrefetchScope('workspace-b');
+    resolveWorkspaceA(jsonResponse({ workspace: 'a' }));
+    await workspaceAPrefetch;
+
+    const response = await workspaceFetch(overviewUrl);
+
+    await expect(response.json()).resolves.toEqual({ workspace: 'b' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries a pending normal workspace A fetch in workspace B without caching A', async () => {
+    let resolveWorkspaceA!: (response: Response) => void;
+    const workspaceAResponse = new Promise<Response>((resolve) => {
+      resolveWorkspaceA = resolve;
+    });
+    const fetchMock = jest
+      .spyOn(globalThis, 'fetch')
+      .mockReturnValueOnce(workspaceAResponse)
+      .mockResolvedValueOnce(jsonResponse({ workspace: 'b' }));
+
+    const responsePromise = workspaceFetch(overviewUrl);
+    setWorkspacePrefetchScope('workspace-b');
+    resolveWorkspaceA(jsonResponse({ workspace: 'a' }));
+
+    const response = await responsePromise;
+    const cachedResponse = await workspaceFetch(overviewUrl);
+
+    await expect(response.json()).resolves.toEqual({ workspace: 'b' });
+    await expect(cachedResponse.json()).resolves.toEqual({ workspace: 'b' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('aborts a pending workspace A fetch and retries in workspace B', async () => {
+    let refreshSignal: AbortSignal | undefined;
+    let rejectWorkspaceA!: (error: DOMException) => void;
+    const pendingWorkspaceA = new Promise<Response>((_resolve, reject) => {
+      rejectWorkspaceA = reject;
+    });
+    const fetchMock = jest
+      .spyOn(globalThis, 'fetch')
+      .mockImplementationOnce((_input, init) => {
+        refreshSignal = init?.signal ?? undefined;
+        refreshSignal?.addEventListener('abort', () => {
+          rejectWorkspaceA(new DOMException('aborted', 'AbortError'));
+        });
+        return pendingWorkspaceA;
+      })
+      .mockResolvedValueOnce(jsonResponse({ workspace: 'b' }));
+
+    const responsePromise = workspaceFetch(overviewUrl);
+    setWorkspacePrefetchScope('workspace-b');
+    expect(refreshSignal?.aborted).toBe(true);
+
+    const response = await responsePromise;
+    const cachedResponse = await workspaceFetch(overviewUrl);
+
+    await expect(response.json()).resolves.toEqual({ workspace: 'b' });
+    await expect(cachedResponse.json()).resolves.toEqual({ workspace: 'b' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries an ordinary workspace A failure after switching to workspace B', async () => {
+    let rejectWorkspaceA!: (error: Error) => void;
+    const pendingWorkspaceA = new Promise<Response>((_resolve, reject) => {
+      rejectWorkspaceA = reject;
+    });
+    const fetchMock = jest
+      .spyOn(globalThis, 'fetch')
+      .mockReturnValueOnce(pendingWorkspaceA)
+      .mockResolvedValueOnce(jsonResponse({ workspace: 'b' }));
+
+    const responsePromise = workspaceFetch(overviewUrl);
+    setWorkspacePrefetchScope('workspace-b');
+    rejectWorkspaceA(new Error('workspace A failed late'));
+
+    const response = await responsePromise;
+    const cachedResponse = await workspaceFetch(overviewUrl);
+
+    await expect(response.json()).resolves.toEqual({ workspace: 'b' });
+    await expect(cachedResponse.json()).resolves.toEqual({ workspace: 'b' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it('does not prefetch or consume cached data without an active workspace scope', async () => {
     const fetchMock = jest
       .spyOn(globalThis, 'fetch')
@@ -169,6 +472,21 @@ describe('workspace prefetch', () => {
 
     await expect(response.json()).resolves.toEqual({ source: 'network' });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('bypasses the workspace cache for non-GET requests', async () => {
+    const fetchMock = jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse({ source: 'prefetch' }))
+      .mockResolvedValueOnce(jsonResponse({ source: 'patch' }));
+
+    await prefetchWorkspace(overviewUrl);
+    const response = await workspaceFetch(overviewUrl, { method: 'PATCH' });
+    const cachedResponse = await workspaceFetch(overviewUrl);
+
+    await expect(response.json()).resolves.toEqual({ source: 'patch' });
+    await expect(cachedResponse.json()).resolves.toEqual({ source: 'prefetch' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('clears cached first pages only after a successful non-GET mutation', async () => {

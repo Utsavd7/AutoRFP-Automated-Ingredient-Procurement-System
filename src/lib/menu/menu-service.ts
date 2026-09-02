@@ -605,3 +605,73 @@ export async function approveReviewedMenu(
     client,
   );
 }
+
+export async function deleteReviewedMenu(
+  input: { actor: MenuActor; menuId: string; expectedVersion: unknown },
+  client: MenuClient = prisma,
+) {
+  const actor = validateActor(input.actor);
+  const menuId = validateMenuId(input.menuId);
+  const expectedVersion = validateExpectedVersion(input.expectedVersion);
+
+  return withTenant(
+    actor.tenantId,
+    async (transaction) => {
+      const existing = await transaction.menu.findFirst({
+        where: { tenantId: actor.tenantId, id: menuId },
+        select: { id: true, version: true },
+      });
+      if (!existing) throw new MenuNotFoundError();
+      if (existing.version !== expectedVersion) {
+        throw new MenuConflictError(
+          'This menu changed after you opened it. Reload before continuing.',
+        );
+      }
+
+      const procurementRequestCount = await transaction.procurementRequest.count({
+        where: { tenantId: actor.tenantId, menuId },
+      });
+      if (procurementRequestCount > 0) {
+        throw new MenuConflictError(
+          'This menu has procurement history and cannot be deleted.',
+        );
+      }
+
+      let deleted: Prisma.BatchPayload;
+      try {
+        deleted = await transaction.menu.deleteMany({
+          where: {
+            tenantId: actor.tenantId,
+            id: menuId,
+            version: expectedVersion,
+          },
+        });
+      } catch (error) {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2003'
+        ) {
+          throw new MenuConflictError(
+            'This menu has procurement history and cannot be deleted.',
+          );
+        }
+        throw error;
+      }
+      if (deleted.count !== 1) {
+        throw new MenuConflictError(
+          'This menu changed after you opened it. Reload before continuing.',
+        );
+      }
+
+      await writeAuditEvent(transaction, {
+        tenantId: actor.tenantId,
+        actorUserId: actor.userId,
+        action: 'menu.deleted',
+        entityId: menuId,
+        metadata: { version: expectedVersion },
+      });
+      return { id: menuId };
+    },
+    client,
+  );
+}

@@ -123,14 +123,14 @@ test.describe.serial('application Google identity through local OAuth', () => {
     await authorizeLocalGoogle(page, identity);
 
     await expect(page).toHaveURL(/\/settings\?section=members$/);
-    await expect(page.getByRole('heading', { name: 'Workspace settings' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Restaurant settings' })).toBeVisible();
     await signOut(page);
 
     await page.goto('/signin?callbackUrl=%2Fsettings%3Fsection%3Dmembers');
     await startGoogle(page);
     await authorizeLocalGoogle(page, identity);
     await expect(page).toHaveURL(/\/settings\?section=members$/);
-    await expect(page.getByRole('heading', { name: 'Workspace settings' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Restaurant settings' })).toBeVisible();
     await signOut(page);
   });
 

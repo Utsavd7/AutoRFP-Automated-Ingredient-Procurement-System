@@ -66,7 +66,7 @@ test.describe.serial('real restaurant settings and member access', () => {
     const data = await createOwner(page, testInfo.project.name);
     await signIn(page, data.ownerEmail);
 
-    await expect(page.getByRole('heading', { name: 'Workspace settings' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Restaurant settings' })).toBeVisible();
     await expect(page.getByText('Workspace owner')).toBeVisible();
     await expect(page.getByText(/account email belongs to you/i)).toBeVisible();
     await expect(page.getByLabel('Contact email')).toHaveCount(0);

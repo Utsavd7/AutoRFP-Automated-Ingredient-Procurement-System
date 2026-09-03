@@ -173,7 +173,7 @@ test.describe.serial('local credentials account journey', () => {
     await page.getByRole('button', { name: 'Create workspace with email' }).click();
 
     await expect(page).toHaveURL(/\/settings\?section=members$/);
-    await expect(page.getByRole('heading', { name: 'Workspace settings' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Restaurant settings' })).toBeVisible();
 
     const signOutError =
       'Sign out could not be completed. Your session is still active. Try again.';
@@ -260,7 +260,7 @@ test.describe.serial('local credentials account journey', () => {
     const email = `returning-${accountEmail(testInfo.project.name)}`;
     await createEmailAccount(page, email);
     await signInWithEmail(page, email);
-    await expect(page.getByRole('heading', { name: 'Workspace settings' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Restaurant settings' })).toBeVisible();
     await openAccountNavigation(page);
     await visibleSignOut(page).click();
     await expect(page).toHaveURL(/\/signin$/);
@@ -287,7 +287,7 @@ test.describe.serial('local credentials account journey', () => {
     expect(response.status()).toBe(201);
     await expect(page).toHaveURL(/\/dashboard$/);
     await expect(
-      page.getByRole('heading', { name: /Good (morning|afternoon|evening)/ }),
+      page.getByRole('heading', { name: 'What needs your attention today?' }),
     ).toBeVisible();
   });
 
@@ -355,7 +355,7 @@ test.describe.serial('local credentials account journey', () => {
 
       await page.unroute('**/api/account');
       await page.getByRole('button', { name: 'Try again' }).click();
-      await expect(page.getByRole('heading', { name: 'Workspace settings' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Restaurant settings' })).toBeVisible();
     }
   });
 });

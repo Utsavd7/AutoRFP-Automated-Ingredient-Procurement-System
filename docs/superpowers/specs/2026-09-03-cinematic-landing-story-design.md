@@ -2,7 +2,7 @@
 
 ## Objective
 
-Replace the current information heavy home page with a fast visual story that explains QuotePlate to an Indian restaurant owner, manager, chef, or purchasing employee without requiring procurement knowledge. The story must feel current in 2026 while preserving the established QuotePlate mark, colors, product truth, accessibility, and static rendering.
+Replace the current information heavy home page with a fast visual story that explains QuotePlate to an Indian restaurant owner, manager, chef, or purchasing employee without requiring procurement knowledge. Keep the guided product page on the same measured visual rhythm. Both journeys must feel current in 2026 while preserving the established QuotePlate mark, colors, product truth, accessibility, and static rendering.
 
 ## Design Direction
 
@@ -95,11 +95,21 @@ Styles remain in the existing public style system unless a small colocated modul
 
 ## Responsive Behaviour
 
-- Desktop: connected scenes may use alternating or sticky compositions with one dominant idea per viewport.
+- Desktop: connected scenes use one dominant, vertically centred idea per viewport without sticky copy or scroll trapping.
 - Tablet: reduce overlap and keep visuals beside or directly below their explanations.
 - Phone: use a single vertical route, full width controls, readable tables or compact comparisons, and no horizontal document overflow.
 - Touch targets remain at least 44 by 44 pixels.
 - Headings must wrap without clipping from 320 pixels upward.
+
+### Desktop story scale
+
+At normal browser zoom, the sections after the hero use the same measured visual proportions as the approved opening frame. This applies to both the home page buying journey and the guided product page. On desktop screens at least 901 pixels wide and 720 pixels tall, the home story introduction, each of its five operational scenes, the privacy section, each guided product tour step, and the product principles section each occupy at least one viewport height. Their contents remain vertically centred inside that frame, without scroll snapping, sticky text, or trapped scrolling.
+
+The lower sections match their page hero's balance rather than copying its headline size literally. Step headings remain subordinate to the main promise, body copy stays at the existing readable size, and each operational diagram receives the larger share of the two-column frame. Both journeys use the same 76rem content measure as their headers so copy and visuals align while scrolling. Comparison scenes may retain wider visual columns because their tables need more horizontal room. Existing product workspace mockups keep their internal type scale and structure.
+
+Desktop typography and spacing must respond to viewport height as well as width. At the 720 pixel height boundary, every section must fit without clipping or horizontal overflow. Desktop windows shorter than 720 pixels fall back to natural content height. Tablet and phone layouts retain their existing stacked flow, typography, spacing, and touch targets.
+
+This refinement changes only public-page styles and their browser contract. It does not rewrite copy, replace diagrams, add scroll snapping, strengthen motion, add dependencies, or alter product behaviour. The closing calls to action and footers remain natural-height endings rather than becoming additional full-screen scenes.
 
 ## Performance Boundaries
 
@@ -132,7 +142,8 @@ The landing page has no runtime data dependency. If JavaScript is unavailable, e
 6. Check that supported browsers apply scroll linked motion to the landing diagrams, unsupported browsers retain the static content, and reduced motion removes all landing animation and transforms.
 7. Check keyboard navigation, visible focus, heading order, landmark names, contrast, reduced motion, and non JavaScript readability.
 8. Confirm the landing redesign does not change application routes, database schema, environment variables, or billing behaviour.
+9. Confirm every desktop home-story and guided-product scene reaches at least one viewport height at the 901 by 720 boundary and common laptop sizes, while shorter desktops and all tablet and phone sizes keep natural document height.
 
 ## Scope Limits
 
-This work redesigns the public home page and only the shared public elements needed to support it. It does not alter authentication, procurement logic, the database, supplier submission behaviour, paid services, billing, or the product dashboard.
+This work refines the public home page and guided product page, plus only the shared public styles needed to support them. It does not alter authentication, procurement logic, the database, supplier submission behaviour, paid services, billing, or the product dashboard.

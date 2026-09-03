@@ -70,7 +70,7 @@ Keep “Start free pilot” and “See the product” as the two choices. State 
 
 Use the open source Lucide icon family already installed and used by QuotePlate. Select icons for menu photo, upload, ingredient list, supplier, private link, rupee quote, GST receipt, delivery, comparison, human approval, saved history, and privacy. Use one shared wrapper to enforce the same size, stroke width, alignment, and `currentColor` behaviour everywhere. Accessible names come from the surrounding section, so decorative icons stay hidden from assistive technology.
 
-Do not generate pictorial SVG artwork. The QuotePlate ledger mark and wordmark remain the only company logos and use their existing committed vector components without redrawing. Narrative diagrams are assembled from typography, lines, Lucide icons, and truthful product interface elements rather than illustration. Do not add stock icon tiles, oversized rounded icon containers, emoji, external icon APIs, or decorative raster art.
+Polished interface-style SVG diagrams are allowed when they follow the same grid, palette, typography, line weight, and realistic data treatment as `ProductDecisionPreview`. They may show requests moving between a restaurant and suppliers or a menu becoming an ingredient list, but they must read as QuotePlate product diagrams rather than hand-drawn artwork. The QuotePlate ledger mark and wordmark remain the only company logos and use their existing committed vector components without redrawing. Small symbols come from Lucide. Do not add inconsistent custom icon sets, stock icon tiles, oversized rounded icon containers, emoji, external icon APIs, or decorative raster art.
 
 ## Motion
 

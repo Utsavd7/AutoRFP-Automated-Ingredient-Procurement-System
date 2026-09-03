@@ -469,6 +469,19 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
+@media (min-width: 761px) {
+  .page[data-mode="start"] {
+    overflow: clip;
+  }
+
+  .page[data-mode="start"] .header {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: var(--stone);
+  }
+}
+
 @media (max-width: 1020px) {
   .layout {
     width: min(100% - 3rem, 48rem);

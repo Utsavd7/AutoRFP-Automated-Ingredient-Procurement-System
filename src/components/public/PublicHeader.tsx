@@ -3,11 +3,12 @@ import { Wordmark } from '@/components/brand/Wordmark';
 
 type PublicHeaderProps = {
   home?: boolean;
+  sticky?: boolean;
 };
 
-export function PublicHeader({ home = false }: PublicHeaderProps) {
+export function PublicHeader({ home = false, sticky = false }: PublicHeaderProps) {
   return (
-    <header className="public-header">
+    <header className={`public-header${sticky ? ' public-header--sticky' : ''}`}>
       <div className="public-container public-header__inner">
         <Link className="public-brand-link" href="/" aria-label="Home">
           <Wordmark />

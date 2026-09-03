@@ -19,7 +19,7 @@ export function PublicLandingPage() {
   return (
     <div className="public-site">
       <a className="skip-link" href="#main-content">Skip to main content</a>
-      <PublicHeader home />
+      <PublicHeader home sticky />
       <main id="main-content">
         <section className="public-hero public-container">
           <div className="public-hero__copy public-reveal">

@@ -194,6 +194,14 @@ textarea {
   background: var(--stone);
 }
 
+@media (min-width: 761px) {
+  .public-header--sticky {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+  }
+}
+
 .public-header__inner {
   min-height: 4.75rem;
   display: grid;

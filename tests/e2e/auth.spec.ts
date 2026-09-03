@@ -3,6 +3,13 @@ import { expect, test, type Page } from '@playwright/test';
 const password = 'Local-only test password 42!';
 const localAuthOrigin = 'http://127.0.0.1:52562';
 
+async function expectNoPageOverflow(page: Page) {
+  const overflow = await page.evaluate(() => (
+    document.documentElement.scrollWidth - document.documentElement.clientWidth
+  ));
+  expect(overflow).toBeLessThanOrEqual(1);
+}
+
 function accountEmail(projectName: string) {
   return `owner-${projectName.replace(/[^a-z0-9]+/gi, '-')}@example.com`;
 }
@@ -61,6 +68,27 @@ async function signInWithEmail(page: Page, email: string) {
   await page.getByRole('button', { name: 'Sign in with email' }).click();
   await expect(page).toHaveURL(/\/settings\?section=members$/);
 }
+
+test.describe('workspace creation layout', () => {
+  test('pins the start header above phone width only', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop-chromium', 'Responsive layout contract');
+
+    await page.setViewportSize({ width: 900, height: 900 });
+    await page.goto('/start');
+    await page.evaluate(() => window.scrollTo(0, 700));
+    const header = page.locator('main > header');
+    await expect.poll(() => header.evaluate((element) => (
+      element.getBoundingClientRect().top
+    ))).toBeGreaterThanOrEqual(-1);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/start');
+    await page.evaluate(() => window.scrollTo(0, 700));
+    expect(await page.locator('main > header').evaluate((element) => (
+      element.getBoundingClientRect().bottom
+    ))).toBeLessThan(0);
+  });
+});
 
 test.describe.serial('local credentials account journey', () => {
   test('creates a workspace, retains the callback, reports logout failure, and signs out', async ({

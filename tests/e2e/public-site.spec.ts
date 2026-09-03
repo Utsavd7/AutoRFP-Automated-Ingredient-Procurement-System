@@ -101,6 +101,35 @@ async function renderedContrast(
 }
 
 test.describe('public landing responsive contract', () => {
+  test('pins the public header on home and product above phone width', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop-chromium', 'Desktop viewport contract');
+
+    for (const route of ['/', '/product']) {
+      await test.step(`${route} tablet`, async () => {
+        await page.setViewportSize({ width: 900, height: 900 });
+        await page.goto(route);
+        await page.evaluate(() => window.scrollTo(0, 700));
+        await expect.poll(() => page.getByRole('banner').evaluate((element) => (
+          element.getBoundingClientRect().top
+        ))).toBeGreaterThanOrEqual(-1);
+      });
+    }
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/');
+    await page.evaluate(() => window.scrollTo(0, 700));
+    expect(await page.getByRole('banner').evaluate((element) => (
+      element.getBoundingClientRect().bottom
+    ))).toBeLessThan(0);
+
+    await page.setViewportSize({ width: 900, height: 900 });
+    await page.goto('/privacy');
+    await page.evaluate(() => window.scrollTo(0, 700));
+    expect(await page.getByRole('banner').evaluate((element) => (
+      element.getBoundingClientRect().bottom
+    ))).toBeLessThan(0);
+  });
+
   test('gives every home story scene one measured desktop frame', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'desktop-chromium', 'Desktop viewport contract');
 

@@ -37,7 +37,7 @@ export function AuthPageShell(props: AuthPageShellProps) {
   const page = content[props.mode];
 
   return (
-    <main className={styles.page} id="main-content">
+    <main className={styles.page} data-mode={props.mode} id="main-content">
       <a className={styles.skipLink} href="#account-form">
         Skip to account form
       </a>

@@ -14,7 +14,7 @@ const firstFoldSizes = [
   { name: 'large desktop', width: 1440, height: 960 },
   { name: 'standard desktop', width: 1366, height: 768 },
   { name: 'compact desktop', width: 1024, height: 900 },
-];
+] as const;
 
 const publicJourneyHeadings = [
   'Tell us what your kitchen needs',
@@ -101,6 +101,72 @@ async function renderedContrast(
 }
 
 test.describe('public landing responsive contract', () => {
+  test('gives every home story scene one measured desktop frame', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop-chromium', 'Desktop viewport contract');
+
+    for (const size of firstFoldSizes) {
+      await test.step(size.name, async () => {
+        await page.setViewportSize({ width: size.width, height: size.height });
+        await page.goto('/');
+
+        const frames = page.locator([
+          '.landing-story__intro',
+          '.story-scene',
+          '.privacy-story__grid',
+        ].join(', '));
+        await expect(frames).toHaveCount(7);
+
+        const measurements = await frames.evaluateAll((elements) => elements.map((element) => {
+          const box = element.getBoundingClientRect();
+          return {
+            name: element.className,
+            height: box.height,
+            verticalOverflow: element.scrollHeight - element.clientHeight,
+            horizontalOverflow: element.scrollWidth - element.clientWidth,
+          };
+        }));
+        for (const measurement of measurements) {
+          expect(measurement.height, `${measurement.name} height`).toBeGreaterThanOrEqual(
+            size.height - 2,
+          );
+          expect(measurement.verticalOverflow, `${measurement.name} vertical clipping`).toBeLessThanOrEqual(1);
+          expect(measurement.horizontalOverflow, `${measurement.name} horizontal clipping`).toBeLessThanOrEqual(1);
+        }
+
+        const heroSize = await page.locator('.public-hero h1').evaluate((element) => (
+          Number.parseFloat(getComputedStyle(element).fontSize)
+        ));
+        const introSize = await page.locator('.landing-story__intro h2').evaluate((element) => (
+          Number.parseFloat(getComputedStyle(element).fontSize)
+        ));
+        const privacySize = await page.locator('.privacy-story h2').evaluate((element) => (
+          Number.parseFloat(getComputedStyle(element).fontSize)
+        ));
+        const stepSizes = await page.locator('.story-scene__copy h3').evaluateAll((headings) => (
+          headings.map((heading) => Number.parseFloat(getComputedStyle(heading).fontSize))
+        ));
+
+        expect(introSize).toBeLessThanOrEqual(heroSize * 1.05);
+        expect(privacySize).toBeLessThanOrEqual(heroSize * 0.9);
+        for (const stepSize of stepSizes) expect(stepSize).toBeLessThanOrEqual(heroSize * 0.85);
+        await expectNoPageOverflow(page);
+      });
+    }
+  });
+
+  test('keeps home story scenes naturally sized on short desktops', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop-chromium', 'Desktop viewport contract');
+
+    await page.setViewportSize({ width: 1024, height: 650 });
+    await page.goto('/');
+    const frames = page.locator('.landing-story__intro, .story-scene, .privacy-story__grid');
+    const minHeights = await frames.evaluateAll((elements) => (
+      elements.map((element) => getComputedStyle(element).minHeight)
+    ));
+    expect(minHeights).not.toContain('650px');
+    await expectNoPageOverflow(page);
+  });
+
   test('fits the complete desktop hero before the first section line', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'desktop-chromium', 'Desktop viewport contract');
 
@@ -524,6 +590,60 @@ test.describe('public landing responsive contract', () => {
 });
 
 test.describe('public product tour responsive contract', () => {
+  test('gives every guided product scene one measured desktop frame', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop-chromium', 'Desktop viewport contract');
+
+    for (const size of firstFoldSizes) {
+      await test.step(size.name, async () => {
+        await page.setViewportSize({ width: size.width, height: size.height });
+        await page.goto('/product');
+
+        const frames = page.locator('.tour-step, .product-principles');
+        await expect(frames).toHaveCount(4);
+        const measurements = await frames.evaluateAll((elements) => elements.map((element) => ({
+          name: element.className,
+          height: element.getBoundingClientRect().height,
+          verticalOverflow: element.scrollHeight - element.clientHeight,
+          horizontalOverflow: element.scrollWidth - element.clientWidth,
+        })));
+        for (const measurement of measurements) {
+          expect(measurement.height, `${measurement.name} height`).toBeGreaterThanOrEqual(
+            size.height - 2,
+          );
+          expect(measurement.verticalOverflow, `${measurement.name} vertical clipping`).toBeLessThanOrEqual(1);
+          expect(measurement.horizontalOverflow, `${measurement.name} horizontal clipping`).toBeLessThanOrEqual(1);
+        }
+
+        const heroSize = await page.locator('.product-hero h1').evaluate((element) => (
+          Number.parseFloat(getComputedStyle(element).fontSize)
+        ));
+        const stepSizes = await page.locator('.tour-step__copy h2').evaluateAll((headings) => (
+          headings.map((heading) => Number.parseFloat(getComputedStyle(heading).fontSize))
+        ));
+        const principlesSize = await page.locator('.product-principles h2').evaluate((element) => (
+          Number.parseFloat(getComputedStyle(element).fontSize)
+        ));
+        for (const stepSize of stepSizes) expect(stepSize).toBeLessThanOrEqual(heroSize * 0.65);
+        expect(principlesSize).toBeLessThanOrEqual(heroSize * 0.72);
+        await expectNoPageOverflow(page);
+      });
+    }
+  });
+
+  test('keeps guided product scenes naturally sized on short desktops', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop-chromium', 'Desktop viewport contract');
+
+    await page.setViewportSize({ width: 1024, height: 650 });
+    await page.goto('/product');
+    const frames = page.locator('.tour-step, .product-principles');
+    const minHeights = await frames.evaluateAll((elements) => (
+      elements.map((element) => getComputedStyle(element).minHeight)
+    ));
+
+    expect(minHeights).not.toContain('650px');
+    await expectNoPageOverflow(page);
+  });
+
   test('shows every comparison column and readable supplier facts at 1280px', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto('/product');

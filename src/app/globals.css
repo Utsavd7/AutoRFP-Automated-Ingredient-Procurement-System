@@ -1068,6 +1068,27 @@ textarea {
 .legal-copy p { margin: 0; color: color-mix(in srgb, var(--ink) 72%, transparent); font-size: 0.8rem; line-height: 1.78; }
 .legal-copy p + p { margin-top: 1rem; }
 
+@media (min-width: 901px) and (min-height: 720px) {
+  .tour-step {
+    min-height: 100svh;
+    padding-block: clamp(3.5rem, 7vh, 6rem);
+  }
+
+  .tour-step__copy h2 {
+    font-size: clamp(2.35rem, min(3.7vw, 6.2vh), 3.6rem);
+  }
+
+  .product-principles {
+    min-height: 100svh;
+    align-items: center;
+    padding-block: clamp(4rem, 8vh, 7rem);
+  }
+
+  .product-principles h2 {
+    font-size: clamp(2.6rem, min(4.2vw, 7vh), 4rem);
+  }
+}
+
 @media (max-width: 900px) {
   .public-header__inner { grid-template-columns: 1fr auto; gap: 0.25rem 0.75rem; padding-block: 0.35rem; }
   .public-brand-link { grid-column: 1; grid-row: 1; }

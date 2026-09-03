@@ -677,7 +677,9 @@ export function MenuWorkspace({
         <span><strong>2</strong> Add ingredients and quantities</span>
         <ArrowRight aria-hidden="true" />
         <span><strong>3</strong> Approve when checked</span>
-        <small className={styles.privacyReassurance}>Your recipes and menus stay private to your restaurant. Nothing is sent to suppliers until you open a buying request.</small>
+        <small className={styles.privacyReassurance}>
+          Your recipes and menus stay private to your restaurant. Nothing is sent to suppliers until you open a buying request. Supplier prices and purchase records stay private too, and other restaurants cannot see any of these records. Suppliers see only the request you send to them.
+        </small>
       </aside>
 
       {error && (

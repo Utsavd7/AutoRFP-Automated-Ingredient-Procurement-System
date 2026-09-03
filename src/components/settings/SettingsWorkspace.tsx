@@ -39,6 +39,47 @@ export type WorkspaceSettingsData = SettingsData;
 type WorkspaceForm = WorkspaceSettingsData['workspace'];
 type Problem = { detail?: string; errors?: Record<string, string[]> };
 
+export type SettingsWorkspaceError = {
+  kind: 'load' | 'operation' | 'access-refresh';
+  message: string;
+};
+
+export type SettingsLoadResult =
+  | { ok: true }
+  | { ok: false; message: string };
+
+export async function runAccessChangeAndReload(
+  change: () => Promise<void>,
+  reload: () => Promise<SettingsLoadResult>,
+): Promise<{ changed: boolean; error: SettingsWorkspaceError | null }> {
+  try {
+    await change();
+  } catch (caught) {
+    return {
+      changed: false,
+      error: {
+        kind: 'operation',
+        message: caught instanceof Error ? caught.message : 'We could not change this access.',
+      },
+    };
+  }
+
+  try {
+    const result = await reload();
+    if (result.ok) return { changed: true, error: null };
+  } catch {
+    // The access mutation already succeeded; only the follow-up read failed.
+  }
+
+  return {
+    changed: true,
+    error: {
+      kind: 'access-refresh',
+      message: 'Access changed, but the latest list could not be loaded.',
+    },
+  };
+}
+
 async function responseProblem(response: Response, fallback: string) {
   const body = (await response.json().catch(() => ({}))) as Problem;
   return { message: body.detail || fallback, errors: body.errors ?? {} };
@@ -371,13 +412,35 @@ function LoadingState() {
   );
 }
 
+export function SettingsErrorBanner({
+  error,
+  onDismiss,
+  onReload,
+}: {
+  error: SettingsWorkspaceError;
+  onDismiss: () => void;
+  onReload: () => void;
+}) {
+  const reloadLabel = error.kind === 'access-refresh' ? 'Reload list' : 'Try again';
+  return (
+    <section className={styles.inlineError} role="alert">
+      <span>{error.message}</span>
+      {error.kind === 'load' && <span>Your saved restaurant records are unchanged.</span>}
+      {error.kind === 'operation' ? (
+        <button onClick={onDismiss} type="button">Dismiss</button>
+      ) : (
+        <button onClick={onReload} type="button">{reloadLabel}</button>
+      )}
+    </section>
+  );
+}
+
 export function SettingsWorkspace({ initialData }: { initialData?: WorkspaceSettingsData }) {
   const router = useRouter();
   const [data, setData] = useState(initialData ?? null);
   const [form, setForm] = useState<WorkspaceForm | null>(initialData?.workspace ?? null);
   const [loading, setLoading] = useState(!initialData);
-  const [error, setError] = useState('');
-  const [errorContext, setErrorContext] = useState<'load' | 'operation'>('load');
+  const [error, setError] = useState<SettingsWorkspaceError | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -394,17 +457,17 @@ export function SettingsWorkspace({ initialData }: { initialData?: WorkspaceSett
 
   const load = useCallback(async (
     usePrefetch = false,
-    recordsUnchangedOnFailure = true,
-  ) => {
+    showError = true,
+  ): Promise<SettingsLoadResult> => {
     setLoading(!data);
-    setError('');
+    setError(null);
     try {
       const response = await (usePrefetch
         ? workspaceFetch('/api/settings', { cache: 'no-store' })
         : fetch('/api/settings', { cache: 'no-store' }));
       if (response.status === 401) {
         router.replace(createSignInRedirect('/settings'));
-        return;
+        return { ok: false, message: 'Sign in is required to load settings.' };
       }
       if (!response.ok) {
         const problem = await responseProblem(response, 'We could not load workspace settings.');
@@ -413,9 +476,11 @@ export function SettingsWorkspace({ initialData }: { initialData?: WorkspaceSett
       const next = (await response.json()) as WorkspaceSettingsData;
       setData(next);
       setForm(next.workspace);
+      return { ok: true };
     } catch (caught) {
-      setErrorContext(recordsUnchangedOnFailure ? 'load' : 'operation');
-      setError(caught instanceof Error ? caught.message : 'We could not load workspace settings.');
+      const message = caught instanceof Error ? caught.message : 'We could not load workspace settings.';
+      if (showError) setError({ kind: 'load', message });
+      return { ok: false, message };
     } finally {
       setLoading(false);
     }
@@ -438,8 +503,7 @@ export function SettingsWorkspace({ initialData }: { initialData?: WorkspaceSett
     if (!form || !data?.permissions.canManageWorkspace || saving) return;
     setSaving(true);
     setSaved(false);
-    setError('');
-    setErrorContext('operation');
+    setError(null);
     setFieldErrors({});
     try {
       const response = await workspaceMutationFetch('/api/settings', {
@@ -458,7 +522,10 @@ export function SettingsWorkspace({ initialData }: { initialData?: WorkspaceSett
       setData((current) => current ? { ...current, workspace: result.workspace! } : current);
       setSaved(true);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'We could not save restaurant details.');
+      setError({
+        kind: 'operation',
+        message: caught instanceof Error ? caught.message : 'We could not save restaurant details.',
+      });
     } finally {
       setSaving(false);
     }
@@ -468,29 +535,39 @@ export function SettingsWorkspace({ initialData }: { initialData?: WorkspaceSett
     if (!action || actionBusy) return;
     setActionBusy(true);
     setActionError('');
-    try {
-      const invitationAction = action.type === 'invitation';
-      const response = await workspaceMutationFetch(
-        invitationAction ? '/api/members/invitations' : '/api/settings',
-        {
-          method: invitationAction ? 'DELETE' : 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(action.type === 'member'
-            ? { action: 'deactivate-member', userId: action.id }
-            : { invitationId: action.id }),
-        },
-      );
-      if (!response.ok) {
-        const problem = await responseProblem(response, 'We could not change this access.');
-        throw new Error(problem.message);
-      }
-      setAction(null);
-      await load(false, false);
-    } catch (caught) {
-      setActionError(caught instanceof Error ? caught.message : 'We could not change this access.');
-    } finally {
-      setActionBusy(false);
-    }
+    const currentAction = action;
+    const outcome = await runAccessChangeAndReload(
+      async () => {
+        const invitationAction = currentAction.type === 'invitation';
+        const response = await workspaceMutationFetch(
+          invitationAction ? '/api/members/invitations' : '/api/settings',
+          {
+            method: invitationAction ? 'DELETE' : 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(currentAction.type === 'member'
+              ? { action: 'deactivate-member', userId: currentAction.id }
+              : { invitationId: currentAction.id }),
+          },
+        );
+        if (!response.ok) {
+          const problem = await responseProblem(response, 'We could not change this access.');
+          throw new Error(problem.message);
+        }
+      },
+      () => load(false, false),
+    );
+    if (outcome.changed) setAction(null);
+    if (outcome.error?.kind === 'operation') setActionError(outcome.error.message);
+    else if (outcome.error) setError(outcome.error);
+    setActionBusy(false);
+  }
+
+  async function reloadAfterAccessChange() {
+    const outcome = await runAccessChangeAndReload(
+      async () => undefined,
+      () => load(false, false),
+    );
+    if (outcome.error) setError(outcome.error);
   }
 
   if (loading && !data) return <LoadingState />;
@@ -501,7 +578,7 @@ export function SettingsWorkspace({ initialData }: { initialData?: WorkspaceSett
           <Building2 aria-hidden="true" />
           <p>Workspace settings</p>
           <h1>We could not open settings</h1>
-          <span>{error || 'Try again in a moment.'}</span>
+          <span>{error?.message || 'Try again in a moment.'}</span>
           <span>Your saved restaurant records are unchanged.</span>
           <button className={styles.primaryButton} onClick={() => void load()} type="button">Try again</button>
         </section>
@@ -535,11 +612,11 @@ export function SettingsWorkspace({ initialData }: { initialData?: WorkspaceSett
         </section>
       )}
       {error && data && (
-        <section className={styles.inlineError} role="alert">
-          <span>{error}</span>
-          {errorContext === 'load' && <span>Your saved restaurant records are unchanged.</span>}
-          <button onClick={() => setError('')} type="button">Dismiss</button>
-        </section>
+        <SettingsErrorBanner
+          error={error}
+          onDismiss={() => setError(null)}
+          onReload={() => void load()}
+        />
       )}
 
       <div className={styles.settingsGrid}>
@@ -647,7 +724,7 @@ export function SettingsWorkspace({ initialData }: { initialData?: WorkspaceSett
       {inviteOpen && (
         <InviteMemberDialog
           onClose={() => setInviteOpen(false)}
-          onCreated={() => void load(false, false)}
+          onCreated={() => void reloadAfterAccessChange()}
           returnFocusRef={inviteButton}
         />
       )}

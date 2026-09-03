@@ -76,6 +76,11 @@ type Problem = {
   errors?: Record<string, string[]>;
 };
 
+export type SupplierWorkspaceError = {
+  kind: 'load' | 'operation';
+  message: string;
+};
+
 const emptyDraft: SupplierDraft = {
   businessName: '',
   contactName: '',
@@ -245,6 +250,55 @@ async function readProblem(response: Response, fallback: string) {
   };
 }
 
+export function SupplierErrorBanner({
+  error,
+  onReload,
+}: {
+  error: SupplierWorkspaceError;
+  onReload: () => void;
+}) {
+  return (
+    <div className={styles.error} role="alert">
+      <span>{error.message}</span>
+      {error.kind === 'load' && (
+        <>
+          <span>Your saved restaurant records are unchanged.</span>
+          <button type="button" onClick={onReload}>Try again</button>
+        </>
+      )}
+    </div>
+  );
+}
+
+export function SupplierDetailError({
+  error,
+  supplier,
+  onRetry,
+}: {
+  error: SupplierWorkspaceError;
+  supplier: SupplierSummary | null;
+  onRetry: (supplier: SupplierSummary) => void;
+}) {
+  return (
+    <div className={styles.dialogError} role="alert">
+      <span>{error.message}</span>
+      {error.kind === 'load' && supplier && (
+        <>
+          <br />
+          <span>Your saved restaurant records are unchanged.</span>
+          <button
+            className={styles.secondaryButton}
+            onClick={() => onRetry(supplier)}
+            type="button"
+          >
+            Try again
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function SupplierWorkspace({
   initialSuppliers,
   initialError,
@@ -258,14 +312,14 @@ export function SupplierWorkspace({
   const [search, setSearch] = useState('');
   const [activeFilter, setActiveFilter] = useState<'true' | 'false' | 'all'>('true');
   const [loading, setLoading] = useState(initialSuppliers === undefined);
-  const [error, setError] = useState(initialError ?? '');
-  const [errorContext, setErrorContext] = useState<'load' | 'operation'>('load');
+  const [error, setError] = useState<SupplierWorkspaceError | null>(initialError
+    ? { kind: 'load', message: initialError }
+    : null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<SupplierSummary | null>(null);
   const [draft, setDraft] = useState<SupplierDraft>(emptyDraft);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
-  const [editorError, setEditorError] = useState('');
-  const [editorErrorContext, setEditorErrorContext] = useState<'load' | 'operation'>('load');
+  const [editorError, setEditorError] = useState<SupplierWorkspaceError | null>(null);
   const [editorLoading, setEditorLoading] = useState(false);
   const [editorReady, setEditorReady] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -287,11 +341,11 @@ export function SupplierWorkspace({
     filter = activeFilter,
     cursor?: string,
     usePrefetch = false,
-    recordsUnchangedOnFailure = true,
+    failureKind: SupplierWorkspaceError['kind'] = 'load',
   ) => {
     if (cursor) setLoadingMore(true);
     else setLoading(true);
-    setError('');
+    setError(null);
     try {
       const params = new URLSearchParams({ limit: '50' });
       if (query.trim()) params.set('search', query.trim());
@@ -311,8 +365,10 @@ export function SupplierWorkspace({
         : loaded);
       setNextCursor(result.nextCursor ?? null);
     } catch (caught) {
-      setErrorContext(recordsUnchangedOnFailure ? 'load' : 'operation');
-      setError(caught instanceof Error ? caught.message : 'We could not load suppliers.');
+      setError({
+        kind: failureKind,
+        message: caught instanceof Error ? caught.message : 'We could not load suppliers.',
+      });
     } finally {
       setLoading(false);
       setLoadingMore(false);
@@ -368,24 +424,19 @@ export function SupplierWorkspace({
     setEditing(null);
     setDraft(emptyDraft);
     setFieldErrors({});
-    setEditorError('');
-    setEditorErrorContext('operation');
+    setEditorError(null);
     setEditorOpen(true);
   }
 
-  function openEdit(supplier: SupplierSummary) {
+  function loadSupplierDetails(supplier: SupplierSummary) {
     const requestId = editorRequest.current + 1;
     editorRequest.current = requestId;
-    savingRef.current = false;
-    setSaving(false);
     setEditing(supplier);
     setDraft(draftFromSupplier(supplier));
     setFieldErrors({});
-    setEditorError('');
-    setEditorErrorContext('load');
+    setEditorError(null);
     setEditorLoading(true);
     setEditorReady(false);
-    setEditorOpen(true);
     void (async () => {
       try {
         const response = await fetch(`/api/suppliers/${encodeURIComponent(supplier.id)}`, {
@@ -405,12 +456,21 @@ export function SupplierWorkspace({
         setEditorReady(true);
       } catch (caught) {
         if (editorRequest.current !== requestId) return;
-        setEditorErrorContext('load');
-        setEditorError(caught instanceof Error ? caught.message : 'We could not load this supplier.');
+        setEditorError({
+          kind: 'load',
+          message: caught instanceof Error ? caught.message : 'We could not load this supplier.',
+        });
       } finally {
         if (editorRequest.current === requestId) setEditorLoading(false);
       }
     })();
+  }
+
+  function openEdit(supplier: SupplierSummary) {
+    savingRef.current = false;
+    setSaving(false);
+    setEditorOpen(true);
+    loadSupplierDetails(supplier);
   }
 
   async function saveSupplier(event: FormEvent<HTMLFormElement>) {
@@ -418,8 +478,7 @@ export function SupplierWorkspace({
     if (saving || !editorReady || !draft.businessName.trim()) return;
     savingRef.current = true;
     setSaving(true);
-    setEditorError('');
-    setEditorErrorContext('operation');
+    setEditorError(null);
     setFieldErrors({});
     try {
       const response = await workspaceMutationFetch(
@@ -447,7 +506,10 @@ export function SupplierWorkspace({
       setEditorOpen(false);
       setNotice(editing ? 'Supplier updated.' : 'Supplier added.');
     } catch (caught) {
-      setEditorError(caught instanceof Error ? caught.message : 'We could not save this supplier.');
+      setEditorError({
+        kind: 'operation',
+        message: caught instanceof Error ? caught.message : 'We could not save this supplier.',
+      });
     } finally {
       savingRef.current = false;
       setSaving(false);
@@ -458,14 +520,13 @@ export function SupplierWorkspace({
     if (!window.confirm(`Deactivate ${supplier.businessName}? Existing request records will stay unchanged.`)) {
       return;
     }
-    setError('');
-    setErrorContext('operation');
+    setError(null);
     const response = await workspaceMutationFetch(`/api/suppliers/${encodeURIComponent(supplier.id)}`, {
       method: 'DELETE',
     });
     if (!response.ok) {
       const problem = await readProblem(response, 'We could not deactivate this supplier.');
-      setError(problem.message);
+      setError({ kind: 'operation', message: problem.message });
       return;
     }
     setSuppliers((current) => current.filter(({ id }) => id !== supplier.id));
@@ -482,8 +543,7 @@ export function SupplierWorkspace({
     }
     const workId = `${supplier.id}:${decision}`;
     setReviewing(workId);
-    setError('');
-    setErrorContext('operation');
+    setError(null);
     try {
       const response = await workspaceMutationFetch(`/api/suppliers/${encodeURIComponent(supplier.id)}/verify`, {
         method: 'POST',
@@ -516,7 +576,10 @@ export function SupplierWorkspace({
         setNotice(`${result.supplier.businessName} rejected.`);
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : `We could not ${action} this supplier.`);
+      setError({
+        kind: 'operation',
+        message: caught instanceof Error ? caught.message : `We could not ${action} this supplier.`,
+      });
     } finally {
       setReviewing('');
     }
@@ -528,8 +591,10 @@ export function SupplierWorkspace({
       await navigator.clipboard.writeText(freshApplicantLink.url);
       setNotice(`${freshApplicantLink.businessName} quote link copied.`);
     } catch {
-      setErrorContext('operation');
-      setError('Copy was blocked by the browser. Select and copy the link manually.');
+      setError({
+        kind: 'operation',
+        message: 'Copy was blocked by the browser. Select and copy the link manually.',
+      });
     }
   }
 
@@ -542,8 +607,7 @@ export function SupplierWorkspace({
   async function importCsv(file: File | undefined) {
     if (!file || importing) return;
     setImporting(true);
-    setError('');
-    setErrorContext('operation');
+    setError(null);
     try {
       const response = await workspaceMutationFetch('/api/suppliers/import', {
         method: 'POST',
@@ -556,9 +620,12 @@ export function SupplierWorkspace({
       }
       const result = (await response.json()) as { importedCount?: number };
       setNotice(`${result.importedCount ?? 0} suppliers imported.`);
-      await loadSuppliers(search, activeFilter, undefined, false, false);
+      await loadSuppliers(search, activeFilter, undefined, false, 'operation');
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'We could not import this CSV.');
+      setError({
+        kind: 'operation',
+        message: caught instanceof Error ? caught.message : 'We could not import this CSV.',
+      });
     } finally {
       setImporting(false);
       if (fileInput.current) fileInput.current.value = '';
@@ -568,8 +635,7 @@ export function SupplierWorkspace({
   async function exportCsv() {
     if (exporting) return;
     setExporting(true);
-    setError('');
-    setErrorContext('operation');
+    setError(null);
     try {
       const response = await fetch('/api/suppliers/export', { cache: 'no-store' });
       if (!response.ok) {
@@ -585,7 +651,10 @@ export function SupplierWorkspace({
       link.remove();
       window.setTimeout(() => URL.revokeObjectURL(href), 0);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'We could not export suppliers.');
+      setError({
+        kind: 'operation',
+        message: caught instanceof Error ? caught.message : 'We could not export suppliers.',
+      });
     } finally {
       setExporting(false);
     }
@@ -625,6 +694,10 @@ export function SupplierWorkspace({
           <Plus aria-hidden="true" /> Add supplier
         </button>
       </header>
+
+      <aside aria-label="Restaurant data privacy" className={styles.notice}>
+        <span>Your recipes, menus, supplier prices, and purchase records stay private to your restaurant. Other restaurants cannot see them, and suppliers see only the request you send to them.</span>
+      </aside>
 
       <section className={styles.toolbar} aria-label="Supplier tools">
         <form
@@ -702,13 +775,7 @@ export function SupplierWorkspace({
           </span>
         </section>
       )}
-      {error && (
-        <div className={styles.error} role="alert">
-          <span>{error}</span>
-          {errorContext === 'load' && <span>Your saved restaurant records are unchanged.</span>}
-          <button type="button" onClick={() => void loadSuppliers()}>Try again</button>
-        </div>
-      )}
+      {error && <SupplierErrorBanner error={error} onReload={() => void loadSuppliers()} />}
 
       {loading ? (
         <section className={styles.loading} aria-label="Loading suppliers">
@@ -822,10 +889,11 @@ export function SupplierWorkspace({
             </header>
             <form onSubmit={saveSupplier}>
               {editorError && (
-                <div className={styles.dialogError} role="alert">
-                  <span>{editorError}</span>
-                  {editorErrorContext === 'load' && <span>Your saved restaurant records are unchanged.</span>}
-                </div>
+                <SupplierDetailError
+                  error={editorError}
+                  supplier={editing}
+                  onRetry={loadSupplierDetails}
+                />
               )}
               {editorLoading && (
                 <div className={styles.loadingDetails} role="status">Loading supplier details…</div>

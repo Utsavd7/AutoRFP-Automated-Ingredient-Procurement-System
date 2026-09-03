@@ -7,6 +7,8 @@ import {
   copyInvitationLink,
   InvitationReady,
   InviteMemberDialog,
+  runAccessChangeAndReload,
+  SettingsErrorBanner,
   SettingsWorkspace,
   type WorkspaceSettingsData,
 } from '@/components/settings/SettingsWorkspace';
@@ -101,14 +103,44 @@ describe('settings workspace UI', () => {
       .resolves.toBe(true);
   });
 
-  it('reassures only read-only settings load failures that saved records are unchanged', () => {
-    const component = readFileSync(
-      path.resolve(__dirname, '../../src/components/settings/SettingsWorkspace.tsx'),
-      'utf8',
-    );
+  it('reports when access changed but the refreshed list could not be loaded', async () => {
+    const change = jest.fn().mockResolvedValue(undefined);
+    const reload = jest.fn().mockResolvedValue({
+      ok: false,
+      message: 'We could not load workspace settings.',
+    });
+    const outcome = await runAccessChangeAndReload(change, reload);
 
-    expect(component).toContain('Your saved restaurant records are unchanged.');
-    expect(component).toContain("errorContext === 'load'");
+    expect(change).toHaveBeenCalledTimes(1);
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(outcome.changed).toBe(true);
+    expect(outcome.error).toEqual({
+      kind: 'access-refresh',
+      message: 'Access changed, but the latest list could not be loaded.',
+    });
+
+    const html = renderToStaticMarkup(
+      <SettingsErrorBanner
+        error={outcome.error!}
+        onDismiss={jest.fn()}
+        onReload={jest.fn()}
+      />,
+    );
+    expect(html).toContain('Access changed, but the latest list could not be loaded.');
+    expect(html).toContain('Reload list');
+    expect(html).not.toContain('Your saved restaurant records are unchanged.');
+  });
+
+  it('reassures only read-only settings load failures that saved records are unchanged', () => {
+    const html = renderToStaticMarkup(
+      <SettingsErrorBanner
+        error={{ kind: 'load', message: 'We could not load workspace settings.' }}
+        onDismiss={jest.fn()}
+        onReload={jest.fn()}
+      />,
+    );
+    expect(html).toContain('Your saved restaurant records are unchanged.');
+    expect(html).toContain('Try again');
   });
 
   it('uses the task-led browser title', () => {

@@ -96,7 +96,7 @@ function SidebarContent({
         role="note"
       >
         <strong>Private to your restaurant</strong>
-        <span>Recipes, supplier prices, and purchase records stay here.</span>
+        <span>Recipes, menus, supplier prices, and purchase records stay private. Other restaurants cannot see them. Suppliers see only requests you send.</span>
       </div>
 
       <div className={styles.account}>

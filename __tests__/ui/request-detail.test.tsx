@@ -89,6 +89,8 @@ describe('procurement request detail', () => {
     );
 
     expect(html).toContain('Fresh produce · Week 36');
+    expect(html).toContain('Buy ingredients');
+    expect(html).toContain('Buying request');
     expect(html).toContain('Tomato');
     expect(html).toContain('View food reference');
     expect(html).toContain('https://example.com/tomato-grade-a');
@@ -110,6 +112,8 @@ describe('procurement request detail', () => {
     expect(html).toContain('Quote comparison CSV');
     expect(html).not.toContain('Award decision CSV');
     expect(html).not.toContain('recommended winner');
+    expect(html).not.toContain('>Procurement</button>');
+    expect(html).not.toContain('>Procurement request</p>');
   });
 
   it('lets a draft be edited before private links are created', () => {
@@ -193,7 +197,7 @@ describe('procurement request detail', () => {
     expect(html).toContain('Download QR for GreenLeaf Fresh Foods');
   });
 
-  it('locks the returned award immediately when its follow-up refresh fails', async () => {
+  it('keeps a returned award locked when an older quote refresh resolves last', async () => {
     const initialRequest = {
       id: 'request-1', title: 'Fresh produce · Week 36', status: 'OPEN' as const, version: 2,
       deliveryDetails: { addressLine: '18 Market Road', city: 'Mumbai', state: 'Maharashtra', pin: '400001' },
@@ -217,12 +221,17 @@ describe('procurement request detail', () => {
       suppliers: [{ supplierId: 'supplier-1', supplierRequestId: 'grant-1', quoteRevision: 2, supplierName: 'GreenLeaf Fresh Foods', freightPaise: '0', deliveryDate: '2026-09-05', gstin: '27ABCDE1234F1Z5', commercialTerms: '15 days', lines: [{ requestItemId: 'item-1', itemName: 'Tomato' }] }],
       lines: [{ requestItemId: 'item-1', supplierRequestId: 'grant-1', supplierId: 'supplier-1', quoteRevision: 2, quantity: '100', unit: 'KILOGRAM' as const, unitRatePaise: '79680', gstBasisPoints: 500, subtotalPaise: '7968000', gstPaise: '398400', totalPaise: '8366400' }],
     };
-    const response = new Response(JSON.stringify({ award }), {
+    const awardResponse = new Response(JSON.stringify({ award }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
+    let resolveStaleRefresh: (response: Response) => void = () => undefined;
+    const staleRefresh = new Promise<Response>((resolve) => {
+      resolveStaleRefresh = resolve;
+    });
     const fetchMock = jest.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(response)
+      .mockImplementationOnce(() => staleRefresh)
+      .mockResolvedValueOnce(awardResponse)
       .mockRejectedValueOnce(new Error('refresh unavailable'));
     const hadWindow = 'window' in globalThis;
     const originalWindow = globalThis.window;
@@ -231,6 +240,7 @@ describe('procurement request detail', () => {
       value: { confirm: jest.fn(() => true) },
     });
 
+    let afterAwardHtml = '';
     let finalHtml = '';
     try {
       await jest.isolateModulesAsync(async () => {
@@ -276,6 +286,8 @@ describe('procurement request detail', () => {
         };
 
         let tree = render();
+        const refreshButton = findElement(tree, (element) => element.type === 'button' && textContent(element) === 'Refresh quotes');
+        (refreshButton?.props.onClick as (() => void) | undefined)?.();
         const supplierChoice = findElement(tree, (element) => element.type === 'input' && element.props.name === 'whole-award');
         const rationale = findElement(tree, (element) => element.type === 'textarea');
         (supplierChoice?.props.onChange as (() => void) | undefined)?.();
@@ -284,6 +296,16 @@ describe('procurement request detail', () => {
         const recordButton = findElement(tree, (element) => element.type === 'button' && textContent(element) === 'Record award');
         expect(recordButton?.props.disabled).toBe(false);
         (recordButton?.props.onClick as (() => void) | undefined)?.();
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        tree = render();
+        afterAwardHtml = renderToStaticMarkup(tree);
+        resolveStaleRefresh(new Response(JSON.stringify({
+          request: { id: initialRequest.id, title: initialRequest.title, deliveryDate: '2026-09-05', quoteDeadline: initialRequest.quoteDeadline, commercialTerms: initialRequest.commercialTerms, itemCount: 1, items: initialRequest.items.items, status: 'OPEN', version: 2, award: null },
+          quotes: [quote],
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }));
         await new Promise<void>((resolve) => setImmediate(resolve));
         tree = render();
         finalHtml = renderToStaticMarkup(tree);
@@ -295,6 +317,8 @@ describe('procurement request detail', () => {
       else Reflect.deleteProperty(globalThis, 'window');
     }
 
+    expect(afterAwardHtml).toContain('Supplier selected');
+    expect(afterAwardHtml).toContain('Final decision record');
     expect(finalHtml).toContain('Supplier selected');
     expect(finalHtml).toContain('Award recorded');
     expect(finalHtml).toContain('Final decision record');
@@ -302,5 +326,6 @@ describe('procurement request detail', () => {
     expect(finalHtml).not.toContain('Your saved restaurant records are unchanged.');
     expect(finalHtml).not.toContain('Record the supplier you choose');
     expect(finalHtml).not.toContain('>Record award</button>');
+    expect(finalHtml).toContain('Award decision CSV');
   });
 });

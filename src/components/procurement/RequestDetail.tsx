@@ -290,8 +290,10 @@ export function RequestDetail({
   const [splitAllocations, setSplitAllocations] = useState<Record<string, SplitAllocation[]>>({});
   const [rationale, setRationale] = useState('');
   const initialLoadStarted = useRef(false);
+  const comparisonEpoch = useRef(0);
 
   const loadComparison = useCallback(async (quiet = false) => {
+    const epoch = comparisonEpoch.current;
     if (!quiet) setRefreshingQuotes(true);
     try {
       const comparisonResponse = await fetch(
@@ -301,9 +303,12 @@ export function RequestDetail({
       if (!comparisonResponse.ok) {
         throw new Error(await problemMessage(comparisonResponse, 'We could not load supplier quotes.'));
       }
-      setComparison((await comparisonResponse.json()) as QuoteComparison);
+      const result = (await comparisonResponse.json()) as QuoteComparison;
+      if (comparisonEpoch.current !== epoch) return;
+      setComparison(result);
       if (!quiet) setNotice('Supplier quotes refreshed.');
     } catch (caught) {
+      if (comparisonEpoch.current !== epoch) return;
       if (!quiet) {
         setError({
           message: caught instanceof Error ? caught.message : 'We could not load supplier quotes.',
@@ -653,6 +658,7 @@ export function RequestDetail({
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
       });
       if (!response.ok) throw new Error(await problemMessage(response, 'We could not record this award.'));
+      comparisonEpoch.current += 1;
       const result = (await response.json()) as { award?: AwardDetail };
       if (!result.award) throw new Error('The recorded supplier selection was not returned.');
       const nextVersion = request.version + 1;
@@ -698,8 +704,8 @@ export function RequestDetail({
     <main className={styles.page}>
       <header className={styles.header}>
         <div>
-          <button className={styles.back} type="button" onClick={() => router.push('/procurement')}><ArrowLeft aria-hidden="true" />Procurement</button>
-          <p className={styles.eyebrow}>Procurement request</p>
+          <button className={styles.back} type="button" onClick={() => router.push('/procurement')}><ArrowLeft aria-hidden="true" />Buy ingredients</button>
+          <p className={styles.eyebrow}>Buying request</p>
           <h1>{request.title}</h1>
           <div className={styles.headerMeta}>
             <span className={styles[`status${request.status}`]}>{statusLabel[request.status]}</span>

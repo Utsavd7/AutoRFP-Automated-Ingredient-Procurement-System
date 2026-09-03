@@ -1,15 +1,30 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
+import { Children, isValidElement, type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import {
   cleanSupplierDraft,
   setSupplierCategoryTier,
   SupplierCapabilityFields,
+  SupplierDetailError,
+  SupplierErrorBanner,
   SupplierWorkspace,
 } from '@/components/suppliers/SupplierWorkspace';
 import { validateSupplierUpdateInput } from '@/lib/suppliers/supplier-schema';
+
+function findButton(node: ReactNode): ReactElement<{ children?: ReactNode; onClick?: () => void }> | undefined {
+  for (const child of Children.toArray(node)) {
+    if (!isValidElement(child)) continue;
+    if (child.type === 'button') {
+      return child as ReactElement<{ children?: ReactNode; onClick?: () => void }>;
+    }
+    const nested = findButton((child.props as { children?: ReactNode }).children);
+    if (nested) return nested;
+  }
+  return undefined;
+}
 
 const supplier = {
   id: 'supplier-1',
@@ -142,6 +157,8 @@ describe('supplier workspace', () => {
     expect(html).toContain('People you buy from');
     expect(html).toContain('Suppliers');
     expect(html).toContain('Keep the suppliers you already use and what each one can supply in one place.');
+    expect(html).toContain('Your recipes, menus, supplier prices, and purchase records stay private to your restaurant. Other restaurants cannot see them, and suppliers see only the request you send to them.');
+    expect(html).toContain('aria-label="Restaurant data privacy"');
     expect(html).toContain('GreenLeaf Fresh Foods');
     expect(html).toContain('Navi Mumbai');
     expect(html).toContain('Add supplier');
@@ -198,6 +215,56 @@ describe('supplier workspace', () => {
     expect(html).toContain('We could not load suppliers.');
     expect(html).toContain('Your saved restaurant records are unchanged.');
     expect(html).toContain('Try again');
+  });
+
+  it('offers list reload only for supplier list load errors', () => {
+    const loadHtml = renderToStaticMarkup(
+      <SupplierErrorBanner
+        error={{ kind: 'load', message: 'We could not load suppliers.' }}
+        onReload={jest.fn()}
+      />,
+    );
+    const operationHtml = renderToStaticMarkup(
+      <SupplierErrorBanner
+        error={{ kind: 'operation', message: 'We could not export suppliers.' }}
+        onReload={jest.fn()}
+      />,
+    );
+
+    expect(loadHtml).toContain('Try again');
+    expect(loadHtml).toContain('Your saved restaurant records are unchanged.');
+    expect(operationHtml).toContain('We could not export suppliers.');
+    expect(operationHtml).not.toContain('Try again');
+    expect(operationHtml).not.toContain('Your saved restaurant records are unchanged.');
+  });
+
+  it('retries a supplier-detail load for that supplier only', () => {
+    const retry = jest.fn();
+    const element = SupplierDetailError({
+      error: { kind: 'load', message: 'We could not load this supplier.' },
+      supplier,
+      onRetry: retry,
+    });
+    const html = renderToStaticMarkup(element);
+    const button = findButton(element);
+
+    expect(html).toContain('Try again');
+    expect(button).toBeDefined();
+    button?.props.onClick?.();
+    expect(retry).toHaveBeenCalledWith(supplier);
+  });
+
+  it('keeps the supplier privacy reassurance visible in responsive layouts', () => {
+    const html = renderToStaticMarkup(
+      <SupplierWorkspace initialSuppliers={[]} initialError="" />,
+    );
+    const css = readFileSync(
+      path.resolve(__dirname, '../../src/components/suppliers/supplier-workspace.module.css'),
+      'utf8',
+    );
+
+    expect(html).toContain('aria-label="Restaurant data privacy"');
+    expect(css).not.toMatch(/[^{}]*\.notice[^{}]*\{[^}]*display\s*:\s*none/);
   });
 
   it('uses the task-led browser title', () => {

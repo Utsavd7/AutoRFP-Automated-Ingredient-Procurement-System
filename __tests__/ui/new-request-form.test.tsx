@@ -25,6 +25,8 @@ describe('new procurement request', () => {
     );
 
     expect(html).toContain('New supplier price request');
+    expect(html).toContain('Buy ingredients');
+    expect(html).toContain('Not sent');
     expect(html).toContain('Dinner menu');
     expect(html).toContain('GreenLeaf Fresh Foods');
     expect(html).toContain('18 Market Road');
@@ -39,6 +41,8 @@ describe('new procurement request', () => {
     expect(html).toContain('New supplier');
     expect(html).toContain('Payment and order terms');
     expect(html).not.toContain('Commercial terms');
+    expect(html).not.toContain('> Procurement</button>');
+    expect(html).not.toContain('>Draft</p>');
   });
 
   it('uses the approved page title', () => {

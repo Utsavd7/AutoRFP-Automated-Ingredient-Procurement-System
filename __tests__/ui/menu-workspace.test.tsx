@@ -38,6 +38,9 @@ describe('menu workspace', () => {
     expect(html).toContain('Needs review');
     expect(html).toContain('Add menu');
     expect(html).toContain('Your recipes and menus stay private to your restaurant. Nothing is sent to suppliers until you open a buying request.');
+    expect(html).toContain('Supplier prices and purchase records stay private too');
+    expect(html).toContain('other restaurants cannot see any of these records.');
+    expect(html).toContain('Suppliers see only the request you send to them.');
     expect(html).not.toContain('AI');
     expect(html).not.toContain('AutoRFP');
   });

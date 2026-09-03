@@ -65,10 +65,10 @@ function formatAwardDate(value: string) {
 
 function deadlineLabel(deadline: string, generatedAt: string) {
   const remaining = new Date(deadline).getTime() - new Date(generatedAt).getTime();
-  if (!Number.isFinite(remaining)) return 'Open';
+  if (!Number.isFinite(remaining)) return 'Waiting for suppliers';
   if (remaining <= 0) return 'Deadline passed';
   if (remaining <= 24 * 60 * 60 * 1_000) return 'Due within 24 hours';
-  return 'Open for quotes';
+  return 'Waiting for suppliers';
 }
 
 async function responseMessage(response: Response) {
@@ -177,8 +177,8 @@ export function OverviewWorkspace({
 
   const empty = !hasAnyWork(data);
   const responseCopy = data.counts.requests.open === 0
-    ? 'No request is open'
-    : `Across ${data.counts.requests.open} open ${data.counts.requests.open === 1 ? 'request' : 'requests'}`;
+    ? 'No request is waiting for suppliers'
+    : `Across ${data.counts.requests.open} ${data.counts.requests.open === 1 ? 'request' : 'requests'} waiting for suppliers`;
 
   return (
     <main className={styles.page}>
@@ -219,7 +219,7 @@ export function OverviewWorkspace({
             </Link>
             <Link className={styles.metricCard} href="/procurement">
               <span className={styles.metricIcon}><Send aria-hidden="true" /></span>
-              <span className={styles.metricLabel}>Open requests</span>
+              <span className={styles.metricLabel}>Waiting for suppliers</span>
               <strong>{data.counts.requests.open}</strong>
               <small>{data.counts.requests.draft} saved in draft</small>
               <ArrowRight className={styles.cardArrow} aria-hidden="true" />
@@ -239,9 +239,9 @@ export function OverviewWorkspace({
               <h2 id="workflow-title">Current work</h2>
             </div>
             <ol>
-              <li><span>Draft</span><strong>{data.counts.requests.draft}</strong></li>
-              <li><span>Open</span><strong>{data.counts.requests.open}</strong></li>
-              <li><span>Awarded</span><strong>{data.counts.requests.awarded}</strong></li>
+              <li><span>Not sent</span><strong>{data.counts.requests.draft}</strong></li>
+              <li><span>Waiting for suppliers</span><strong>{data.counts.requests.open}</strong></li>
+              <li><span>Supplier selected</span><strong>{data.counts.requests.awarded}</strong></li>
             </ol>
             <Link href="/procurement">View all requests <ArrowRight aria-hidden="true" /></Link>
           </section>
@@ -250,7 +250,7 @@ export function OverviewWorkspace({
             <section className={styles.panel} aria-labelledby="deadlines-title">
               <header>
                 <div>
-                  <p className={styles.eyebrow}>Open requests</p>
+                  <p className={styles.eyebrow}>Waiting for suppliers</p>
                   <h2 id="deadlines-title">Nearest quote deadlines</h2>
                 </div>
                 <Clock3 aria-hidden="true" />

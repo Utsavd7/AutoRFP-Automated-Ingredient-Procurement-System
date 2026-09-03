@@ -305,8 +305,8 @@ export function NewRequestForm({ initialData }: { initialData?: InitialData }) {
   return (
     <main className={styles.page}>
       <header className={styles.header}>
-        <button type="button" onClick={() => router.push('/procurement')}><ArrowLeft aria-hidden="true" /> Procurement</button>
-        <p className={styles.eyebrow}>Draft</p>
+        <button type="button" onClick={() => router.push('/procurement')}><ArrowLeft aria-hidden="true" /> Buy ingredients</button>
+        <p className={styles.eyebrow}>Not sent</p>
         <h1>New supplier price request</h1>
         <p>Choose what you need, who should quote, and when the order must arrive.</p>
       </header>

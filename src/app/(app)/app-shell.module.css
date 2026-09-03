@@ -95,15 +95,12 @@
 .privacy {
   flex: 0 0 auto;
   margin: .75rem .2rem 0;
-  padding: .65rem .7rem;
-  border: 1px solid var(--shell-line);
+  padding: .15rem .2rem .15rem .7rem;
   border-left: .18rem solid var(--shell-copper);
-  border-radius: .25rem;
-  background: var(--shell-stone);
 }
 .privacy strong, .privacy span { display: block; }
-.privacy strong { color: var(--shell-ink); font-size: .68rem; line-height: 1.3; }
-.privacy span { margin-top: .22rem; color: var(--shell-muted); font-size: .61rem; line-height: 1.4; }
+.privacy strong { color: var(--shell-ink); font-size: .7rem; line-height: 1.3; }
+.privacy span { margin-top: .22rem; color: var(--shell-muted); font-size: .66rem; line-height: 1.45; }
 
 .account {
   display: flex;

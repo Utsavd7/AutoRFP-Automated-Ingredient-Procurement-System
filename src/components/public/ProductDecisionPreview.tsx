@@ -5,7 +5,19 @@ import {
   restaurantSampleRequest,
 } from '@/data/sample-procurement';
 
-export function ProductDecisionPreview() {
+type ProductDecisionPreviewProps = {
+  headingLevel?: 2 | 3 | 4;
+};
+
+const headingTags = {
+  2: 'h2',
+  3: 'h3',
+  4: 'h4',
+} as const;
+
+export function ProductDecisionPreview({ headingLevel = 2 }: ProductDecisionPreviewProps = {}) {
+  const Heading = headingTags[headingLevel];
+
   return (
     <figure className="decision-preview" aria-labelledby="decision-preview-title">
       <div className="decision-preview__shell">
@@ -16,7 +28,7 @@ export function ProductDecisionPreview() {
               <i />
               <i />
             </span>
-            <h2 id="decision-preview-title">Quote comparison</h2>
+            <Heading id="decision-preview-title">Quote comparison</Heading>
             <span className="sample-label">Sample data</span>
           </header>
 

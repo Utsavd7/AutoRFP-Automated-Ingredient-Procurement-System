@@ -34,7 +34,7 @@ export function LandingJourney() {
         </p>
       </header>
 
-      <ol className="landing-story__track">
+      <ol className="landing-story__track" role="list">
         <li className="story-scene story-scene--intake">
           <div className="story-scene__copy">
             <span className="story-scene__number" aria-hidden="true">1</span>
@@ -87,14 +87,15 @@ export function LandingJourney() {
             <span className="story-scene__number" aria-hidden="true">3</span>
             <h3>Send one clear request</h3>
             <p>
-              Every selected supplier receives the same quantities, delivery need and terms. No
-              supplier account needed.
+              Each supplier receives only the items and quantities assigned to them through a
+              private link, with the relevant delivery requirements and terms. No supplier
+              account needed.
             </p>
           </div>
           <div
             className="request-route"
             role="group"
-            aria-label="One request sent to vegetable, dairy and dry goods suppliers"
+            aria-label="Assigned items from one request sent to vegetable, dairy and dry goods suppliers by private links"
           >
             <div>
               <JourneyIcon name="list" />
@@ -114,11 +115,12 @@ export function LandingJourney() {
             <span className="story-scene__number" aria-hidden="true">4</span>
             <h3>Compare the complete cost</h3>
             <p>
-              Prices, GST, delivery and missing items stay together. A lower price matters only
-              when the supplier covers every required item.
+              Prices, GST, delivery and missing items stay together in whole-request totals and
+              item-level prices. Your restaurant can choose one supplier or split items between
+              suppliers.
             </p>
           </div>
-          <ProductDecisionPreview />
+          <ProductDecisionPreview headingLevel={4} />
         </li>
 
         <li className="story-scene story-scene--decision">

@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { PublicLandingPage } from '../../src/components/public/PublicLandingPage';
 import { PublicHeader } from '../../src/components/public/PublicHeader';
 import { ProductDecisionPreview } from '../../src/components/public/ProductDecisionPreview';
+import { LandingJourney } from '../../src/components/public/LandingJourney';
 import { ProductTour } from '../../src/components/public/ProductTour';
 import { AuthPageShell } from '../../src/components/auth/AuthPageShell';
 import {
@@ -92,7 +93,7 @@ describe('public website contract', () => {
   });
 
   test('presents the restaurant procurement story in the approved order', () => {
-    const markup = renderToStaticMarkup(<PublicLandingPage />);
+    const markup = renderToStaticMarkup(<LandingJourney />);
     const orderedStory = [
       'Tell us what your kitchen needs',
       'Choose who should send prices',
@@ -112,8 +113,21 @@ describe('public website contract', () => {
     expect(markup).toContain('Take menu photos');
     expect(markup).toContain('Use your existing suppliers');
     expect(markup).toContain('No supplier account needed');
+    expect(markup).toContain('only the items and quantities assigned to them through a private link');
+    expect(markup).toContain('relevant delivery requirements and terms');
     expect(markup).toContain('Prices, GST, delivery and missing items');
+    expect(markup).toContain('whole-request totals and item-level prices');
+    expect(markup).toContain('choose one supplier or split items between suppliers');
     expect(markup).toContain('Your restaurant makes the final choice.');
+    expect(markup).toContain('<ol class="landing-story__track" role="list">');
+  });
+
+  test('lets the quote comparison title follow its surrounding heading level', () => {
+    const defaultMarkup = renderToStaticMarkup(<ProductDecisionPreview />);
+    const nestedMarkup = renderToStaticMarkup(<ProductDecisionPreview headingLevel={4} />);
+
+    expect(defaultMarkup).toContain('<h2 id="decision-preview-title">Quote comparison</h2>');
+    expect(nestedMarkup).toContain('<h4 id="decision-preview-title">Quote comparison</h4>');
   });
 
   test('uses consistent local icons for the landing journey diagram', () => {

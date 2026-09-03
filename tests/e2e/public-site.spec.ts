@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 
 const publicJourneySizes = [
   { name: 'laptop', width: 1440, height: 960 },
+  { name: 'laptop compact', width: 1024, height: 900 },
   { name: 'tablet', width: 900, height: 1112 },
   { name: 'tablet narrow', width: 768, height: 1024 },
   { name: 'phone wide', width: 555, height: 900 },
@@ -24,8 +25,11 @@ async function expectNoPageOverflow(page: Page) {
   expect(overflow).toBeLessThanOrEqual(1);
 }
 
-async function renderedContrast(locator: ReturnType<Page['locator']>) {
-  return locator.evaluate((element) => {
+async function renderedContrast(
+  locator: ReturnType<Page['locator']>,
+  backgroundSelector: string,
+) {
+  return locator.evaluate((element, selector) => {
     const parseColor = (value: string) => {
       const numbers = value.match(/[\d.]+/g)?.map(Number) ?? [];
       const rgb = value.startsWith('color(srgb')
@@ -33,8 +37,8 @@ async function renderedContrast(locator: ReturnType<Page['locator']>) {
         : numbers.slice(0, 3).map((channel) => channel / 255);
       return { rgb, alpha: numbers[3] ?? 1 };
     };
-    const background = element.closest('.privacy-story');
-    if (!background) throw new Error('Privacy background is missing');
+    const background = element.closest(selector);
+    if (!background) throw new Error(`Contrast background ${selector} is missing`);
     const foregroundColor = parseColor(getComputedStyle(element).color);
     const backgroundColor = parseColor(getComputedStyle(background).backgroundColor);
     const composited = foregroundColor.rgb.map((channel, index) => (
@@ -48,7 +52,7 @@ async function renderedContrast(locator: ReturnType<Page['locator']>) {
     };
     const values = [luminance(composited), luminance(backgroundColor.rgb)].sort((a, b) => b - a);
     return (values[0] + 0.05) / (values[1] + 0.05);
-  });
+  }, backgroundSelector);
 }
 
 test.describe('public landing responsive contract', () => {
@@ -64,6 +68,7 @@ test.describe('public landing responsive contract', () => {
         const productCta = hero.getByRole('link', { name: 'See the product', exact: true });
         const story = page.locator('.landing-story');
         const firstScene = page.locator('.story-scene').first();
+        const heroRoute = page.getByRole('group', { name: 'QuotePlate buying journey' });
 
         await expect(page.getByRole('heading', { level: 1, name: /Send one list/i })).toBeVisible();
         await expect(page.getByRole('heading', {
@@ -80,7 +85,10 @@ test.describe('public landing responsive contract', () => {
           level: 2,
           name: 'Your recipes stay private with your restaurant.',
         })).toBeVisible();
-        expect(await renderedContrast(page.locator('.privacy-story .public-eyebrow'))).toBeGreaterThanOrEqual(4.5);
+        expect(await renderedContrast(
+          page.locator('.privacy-story .public-eyebrow'),
+          '.privacy-story',
+        )).toBeGreaterThanOrEqual(4.5);
         await expect(header.getByRole('link', { name: 'Sign in' })).toBeVisible();
         await expect(header.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/signin');
         await expect(productCta).toBeVisible();
@@ -102,7 +110,24 @@ test.describe('public landing responsive contract', () => {
         const sceneColumnCount = await firstScene.evaluate((element) => (
           getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/).length
         ));
-        expect(sceneColumnCount).toBe(size.name === 'laptop' ? 2 : 1);
+        expect(sceneColumnCount).toBe(size.width > 900 ? 2 : 1);
+        const heroRouteColumnCount = await heroRoute.evaluate((element) => (
+          getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/).length
+        ));
+        expect(heroRouteColumnCount).toBe(size.width > 620 ? 7 : 1);
+
+        const narrativeProse = page.locator([
+          '.story-scene__copy p',
+          '.privacy-story header > p:last-child',
+          '.privacy-story__note',
+          '.public-cta > div:last-child > p',
+        ].join(', '));
+        expect(await narrativeProse.count()).toBe(8);
+        for (const paragraph of await narrativeProse.all()) {
+          expect(await paragraph.evaluate((element) => (
+            Number.parseFloat(getComputedStyle(element).fontSize)
+          ))).toBeGreaterThanOrEqual(16);
+        }
 
         if (size.name === 'laptop') {
           await expect(header.getByRole('navigation', { name: 'Primary navigation' })).toBeVisible();
@@ -174,6 +199,31 @@ test.describe('public landing responsive contract', () => {
         .isVisible();
 
       expect(cueIsVisible, `comparison cue at ${width}px`).toBe(overflows);
+    }
+  });
+
+  test('keeps the central comparison proof readable on its light surfaces', async ({ page }) => {
+    await page.setViewportSize({ width: 1024, height: 900 });
+    await page.goto('/');
+
+    const checks = [
+      {
+        locator: page.getByRole('heading', { level: 4, name: 'Quote comparison' }),
+        surface: '.decision-preview__bar',
+      },
+      {
+        locator: page.locator('.decision-preview__summary > div > strong'),
+        surface: '.decision-preview__window',
+      },
+      {
+        locator: page.locator('.decision-preview__table tbody tr:nth-child(2) th'),
+        surface: '.decision-preview__window',
+      },
+    ];
+
+    for (const check of checks) {
+      await expect(check.locator).toBeVisible();
+      expect(await renderedContrast(check.locator, check.surface)).toBeGreaterThanOrEqual(4.5);
     }
   });
 

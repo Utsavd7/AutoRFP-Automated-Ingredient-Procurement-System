@@ -281,10 +281,6 @@ textarea {
   content: "";
 }
 
-.public-eyebrow--light {
-  color: color-mix(in srgb, var(--stone) 70%, transparent);
-}
-
 .public-hero {
   min-height: min(43rem, calc(100dvh - 4.75rem));
   display: grid;
@@ -437,6 +433,7 @@ textarea {
   border: 1px solid color-mix(in srgb, var(--ink) 17%, transparent);
   border-radius: 13px;
   background: #FBF8F1;
+  color: var(--ink);
   box-shadow: inset 0 1px 0 color-mix(in srgb, white 72%, transparent);
 }
 
@@ -833,7 +830,6 @@ textarea {
 .proof-band__grid strong { font-family: var(--font-display); font-size: 1.4rem; font-weight: 520; }
 .proof-band__grid span { max-width: 14rem; color: color-mix(in srgb, var(--ink) 65%, transparent); font-size: 0.72rem; line-height: 1.55; }
 
-.section-heading h2,
 .public-cta h2,
 .product-principles h2 {
   margin: 0;
@@ -844,14 +840,6 @@ textarea {
   letter-spacing: -0.04em;
   line-height: 0.95;
   text-wrap: balance;
-}
-
-.section-heading > p:last-child {
-  max-width: 30rem;
-  margin: 2rem 0 0;
-  color: color-mix(in srgb, var(--ink) 66%, transparent);
-  font-size: 0.88rem;
-  line-height: 1.7;
 }
 
 .landing-story {
@@ -888,7 +876,7 @@ textarea {
   max-width: 35rem;
   margin: 0 0 0.35rem;
   color: color-mix(in srgb, var(--stone) 76%, transparent);
-  font-size: 0.95rem;
+  font-size: 1rem;
   line-height: 1.75;
   text-wrap: pretty;
 }
@@ -969,7 +957,7 @@ textarea {
   max-width: 35rem;
   margin: 1.4rem 0 0;
   color: color-mix(in srgb, var(--stone) 76%, transparent);
-  font-size: 0.9rem;
+  font-size: 1rem;
   line-height: 1.75;
   text-wrap: pretty;
 }
@@ -1286,7 +1274,7 @@ textarea {
   max-width: 37rem;
   margin: 1.75rem 0 0;
   color: color-mix(in srgb, var(--ink) 76%, transparent);
-  font-size: 0.92rem;
+  font-size: 1rem;
   line-height: 1.75;
   text-wrap: pretty;
 }
@@ -1324,7 +1312,7 @@ textarea {
   max-width: 38rem;
   margin: 1.5rem 0 0;
   color: var(--copper-text);
-  font-size: 0.76rem;
+  font-size: 1rem;
   font-weight: 680;
   line-height: 1.65;
 }
@@ -1338,7 +1326,7 @@ textarea {
 }
 
 .public-cta > div:last-child { padding-bottom: 0.5rem; }
-.public-cta > div:last-child p { max-width: 28rem; margin: 0 0 1.8rem; color: color-mix(in srgb, var(--ink) 66%, transparent); font-size: 0.88rem; line-height: 1.7; }
+.public-cta > div:last-child p { max-width: 28rem; margin: 0 0 1.8rem; color: color-mix(in srgb, var(--ink) 66%, transparent); font-size: 1rem; line-height: 1.7; }
 
 .public-footer {
   background: var(--raised-ink);
@@ -1725,7 +1713,7 @@ textarea {
     font-size: 1rem;
   }
   .story-scene__copy h3 { font-size: clamp(2.2rem, 12vw, 3rem); }
-  .story-scene__copy p { font-size: 0.88rem; }
+  .story-scene__copy p { font-size: 1rem; }
   .intake-diagram { grid-template-columns: 1fr; }
   .intake-diagram > div {
     min-height: 5.75rem;

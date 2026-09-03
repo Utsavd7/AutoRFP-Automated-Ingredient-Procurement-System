@@ -359,6 +359,8 @@ describe('public website contract', () => {
     expect(css).toContain('font-variant-numeric: tabular-nums');
     expect(css).toContain('@media (prefers-reduced-motion: reduce)');
     expect(css).not.toMatch(/transition[^;]*(?:300|500)ms/);
+    expect(css).not.toContain('.public-eyebrow--light');
+    expect(css).not.toContain('.section-heading');
   });
 
   test('provides an accessible ledger mark, skip link, metadata, and SVG icon', () => {

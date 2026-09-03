@@ -6,7 +6,7 @@ Replace the current information heavy home page with a fast visual story that ex
 
 ## Design Direction
 
-The landing page behaves like one continuous restaurant buying journey. A copper route runs through the page and connects a menu, an ingredient request, chosen suppliers, returned quotes, a human decision, and saved history. Each scene combines a short sentence, a purpose built SVG symbol, and a truthful product representation. The visual language is operational rather than decorative: docket labels, table structure, clear arrows, and the existing ledger mark.
+The landing page behaves like one continuous restaurant buying journey. A copper route runs through the page and connects a menu, an ingredient request, chosen suppliers, returned quotes, a human decision, and saved history. Each scene combines a short sentence, one icon from the product's existing Lucide family, and a truthful product representation. The visual language is operational rather than decorative: docket labels, table structure, clear arrows, and the existing ledger mark.
 
 The existing dark green, copper, and stone palette remains the brand authority. The current logo and wordmark are reused unchanged. Newsreader remains reserved for selective brand emphasis while Manrope carries instructions and operational copy. Headings must not use letter spacing tighter than `-0.04em`.
 
@@ -20,11 +20,11 @@ The first viewport states the product in plain English:
 
 Supporting text explains that the restaurant can use existing suppliers, compare price, GST, delivery, missing items, freight, and payment terms, and make the final choice. The primary action opens the product tour and the secondary action starts the free pilot. The no card and no supplier commission boundaries stay visible.
 
-The main visual is a compact buying journey rather than a decorative hero image: a menu sheet becomes an ingredient request, reaches several suppliers, and returns as a comparison. It uses the same sample data already defined in `src/data/sample-procurement.ts`.
+The main visual is a compact buying journey rather than a decorative hero image: a menu sheet becomes an ingredient request, reaches several suppliers, and returns as a comparison. It uses the same sample data already defined in `src/data/sample-procurement.ts`. The current `ProductDecisionPreview` is a protected design element: keep its recognizable desktop window, dark restaurant sidebar, sample request summary, comparison table, human decision message, and sample data note.
 
 ### 2. Add what the kitchen needs
 
-Show three intake routes with custom symbols:
+Show three intake routes with consistent Lucide symbols:
 
 - photograph or scan a menu;
 - upload existing menu photos;
@@ -42,7 +42,7 @@ Show one request branching to selected suppliers. Copy must state that every sup
 
 ### 5. Compare complete quotes
 
-Use a real product style comparison with realistic rupee amounts and explicit sample labels. Surface landed total, item coverage, GST, freight, delivery, substitutions, and payment terms. The lowest number may be highlighted for scanning, but the page must never imply that QuotePlate automatically selects a winner.
+Use the existing `ProductDecisionPreview` as the visual centre of this scene rather than replacing or restyling it into a new concept. Preserve its current hierarchy and visual character while improving only the sizing, responsive fit, and connection to the surrounding story. Its realistic rupee amounts and explicit sample labels remain. Supporting details may surface GST, freight, delivery, substitutions, and payment terms. The lowest number may be highlighted for scanning, but the page must never imply that QuotePlate automatically selects a winner.
 
 ### 6. Decide and reuse
 
@@ -66,11 +66,11 @@ Close with a restrained call to action:
 
 Keep “Start free pilot” and “See the product” as the two choices. State the controlled pilot limit and no card requirement without turning free tier mechanics into the main brand message.
 
-## Visual Symbols
+## Icons and Diagrams
 
-Create a small local SVG symbol set for the landing story. Symbols represent menu photo, dish, ingredient list, supplier, private link, rupee quote, GST, delivery, comparison, human approval, saved history, and privacy. They use a consistent 24 or 32 unit view box, round or square line treatment chosen once, `currentColor`, and accessible text supplied by the surrounding section.
+Use the open source Lucide icon family already installed and used by QuotePlate. Select icons for menu photo, upload, ingredient list, supplier, private link, rupee quote, GST receipt, delivery, comparison, human approval, saved history, and privacy. Use one shared wrapper to enforce the same size, stroke width, alignment, and `currentColor` behaviour everywhere. Accessible names come from the surrounding section, so decorative icons stay hidden from assistive technology.
 
-These symbols are supporting illustrations, not alternate company logos. The QuotePlate ledger mark remains the only brand logo. Do not add stock icon tiles, oversized rounded icon containers, emoji, external icon APIs, or raster art for concepts that SVG can communicate more clearly.
+Do not generate pictorial SVG artwork. The QuotePlate ledger mark and wordmark remain the only company logos and use their existing committed vector components without redrawing. Narrative diagrams are assembled from typography, lines, Lucide icons, and truthful product interface elements rather than illustration. Do not add stock icon tiles, oversized rounded icon containers, emoji, external icon APIs, or decorative raster art.
 
 ## Motion
 
@@ -83,7 +83,7 @@ The page must render complete content before JavaScript runs. Motion enhances an
 Keep the public home route static and free of authentication or database access. Split the landing page only into focused presentational components:
 
 - `LandingJourney` owns the ordered story and route line;
-- `JourneySymbol` owns the local SVG symbol vocabulary;
+- `JourneyIcon` applies consistent presentation to icons imported from the existing Lucide dependency;
 - existing `ProductDecisionPreview` remains the truthful quote comparison representation;
 - `PublicHeader`, `PublicFooter`, brand components, and sample procurement data remain authoritative.
 
@@ -101,7 +101,7 @@ Styles remain in the existing public style system unless a small colocated modul
 
 - Keep the home page statically rendered.
 - Add no third party script, autoplay video, remote font, or animation package.
-- Inline SVG symbols must be small and reusable.
+- Lucide icons must be imported individually and rendered through the shared wrapper.
 - Avoid layout shift by giving product visuals stable dimensions.
 - Animation uses compositor friendly properties and stops when reduced motion is requested.
 - Existing product navigation and dashboard bundles must not grow because of the landing story.
@@ -121,7 +121,7 @@ The landing page has no runtime data dependency. If JavaScript is unavailable, e
 ## Verification
 
 1. Update the public copy contract tests for the new promise, ordered journey, sample labels, control boundaries, and privacy wording.
-2. Add structural tests ensuring the journey symbols are local SVG and the landing remains independent of APIs, authentication, and database code.
+2. Add structural tests ensuring the landing uses the existing icon dependency, preserves the committed QuotePlate logo components, and remains independent of APIs, authentication, and database code.
 3. Verify TypeScript, lint, unit tests, and production build.
 4. Check 320, 390, 768, 1024, and 1440 pixel layouts for clipping and understandable sequence.
 5. Check keyboard navigation, visible focus, heading order, landmark names, contrast, reduced motion, and non JavaScript readability.

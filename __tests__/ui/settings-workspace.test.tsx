@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
+import { Children, isValidElement, type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import {
@@ -14,6 +15,18 @@ import {
 } from '@/components/settings/SettingsWorkspace';
 
 jest.mock('next/navigation', () => ({ useRouter: () => ({ replace: jest.fn() }) }));
+
+function findButton(node: ReactNode): ReactElement<{ onClick?: () => void | Promise<void> }> | undefined {
+  for (const child of Children.toArray(node)) {
+    if (!isValidElement(child)) continue;
+    if (child.type === 'button') {
+      return child as ReactElement<{ onClick?: () => void | Promise<void> }>;
+    }
+    const nested = findButton((child.props as { children?: ReactNode }).children);
+    if (nested) return nested;
+  }
+  return undefined;
+}
 
 const ownerSettings: WorkspaceSettingsData = {
   workspace: {
@@ -122,6 +135,7 @@ describe('settings workspace UI', () => {
     const html = renderToStaticMarkup(
       <SettingsErrorBanner
         error={outcome.error!}
+        onAccessRefreshReload={jest.fn()}
         onDismiss={jest.fn()}
         onReload={jest.fn()}
       />,
@@ -131,10 +145,72 @@ describe('settings workspace UI', () => {
     expect(html).not.toContain('Your saved restaurant records are unchanged.');
   });
 
+  it('keeps the access-change warning through failed reload clicks and clears it after success', async () => {
+    const initial = await runAccessChangeAndReload(
+      jest.fn().mockResolvedValue(undefined),
+      jest.fn().mockResolvedValue({
+        ok: false,
+        message: 'We could not load workspace settings.',
+      }),
+    );
+    const retryResults = [
+      { ok: false as const, message: 'We still could not load workspace settings.' },
+      { ok: true as const },
+    ];
+    const ordinaryReload = jest.fn();
+    let currentError = initial.error;
+    const accessRefreshReload = jest.fn(async () => {
+      const retry = await runAccessChangeAndReload(
+        async () => undefined,
+        async () => retryResults.shift()!,
+      );
+      currentError = retry.error;
+    });
+
+    async function clickReloadList() {
+      if (!currentError) throw new Error('Expected an access-refresh error before retrying.');
+      const props = {
+        error: currentError,
+        onDismiss: jest.fn(),
+        onReload: ordinaryReload,
+        onAccessRefreshReload: accessRefreshReload,
+      };
+      const button = findButton(SettingsErrorBanner(props));
+      expect(button).toBeDefined();
+      await button?.props.onClick?.();
+    }
+
+    await clickReloadList();
+
+    expect(ordinaryReload).not.toHaveBeenCalled();
+    expect(accessRefreshReload).toHaveBeenCalledTimes(1);
+    expect(currentError).toEqual({
+      kind: 'access-refresh',
+      message: 'Access changed, but the latest list could not be loaded.',
+    });
+    const failedRetryHtml = renderToStaticMarkup(
+      <SettingsErrorBanner
+        error={currentError!}
+        onAccessRefreshReload={jest.fn()}
+        onDismiss={jest.fn()}
+        onReload={jest.fn()}
+      />,
+    );
+    expect(failedRetryHtml).toContain('Access changed, but the latest list could not be loaded.');
+    expect(failedRetryHtml).toContain('Reload list');
+    expect(failedRetryHtml).not.toContain('Your saved restaurant records are unchanged.');
+
+    await clickReloadList();
+
+    expect(accessRefreshReload).toHaveBeenCalledTimes(2);
+    expect(currentError).toBeNull();
+  });
+
   it('reassures only read-only settings load failures that saved records are unchanged', () => {
     const html = renderToStaticMarkup(
       <SettingsErrorBanner
         error={{ kind: 'load', message: 'We could not load workspace settings.' }}
+        onAccessRefreshReload={jest.fn()}
         onDismiss={jest.fn()}
         onReload={jest.fn()}
       />,

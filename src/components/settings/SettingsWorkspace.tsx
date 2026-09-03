@@ -416,10 +416,12 @@ export function SettingsErrorBanner({
   error,
   onDismiss,
   onReload,
+  onAccessRefreshReload,
 }: {
   error: SettingsWorkspaceError;
   onDismiss: () => void;
   onReload: () => void;
+  onAccessRefreshReload: () => void;
 }) {
   const reloadLabel = error.kind === 'access-refresh' ? 'Reload list' : 'Try again';
   return (
@@ -429,7 +431,12 @@ export function SettingsErrorBanner({
       {error.kind === 'operation' ? (
         <button onClick={onDismiss} type="button">Dismiss</button>
       ) : (
-        <button onClick={onReload} type="button">{reloadLabel}</button>
+        <button
+          onClick={error.kind === 'access-refresh' ? onAccessRefreshReload : onReload}
+          type="button"
+        >
+          {reloadLabel}
+        </button>
       )}
     </section>
   );
@@ -567,7 +574,7 @@ export function SettingsWorkspace({ initialData }: { initialData?: WorkspaceSett
       async () => undefined,
       () => load(false, false),
     );
-    if (outcome.error) setError(outcome.error);
+    setError(outcome.error);
   }
 
   if (loading && !data) return <LoadingState />;
@@ -616,6 +623,7 @@ export function SettingsWorkspace({ initialData }: { initialData?: WorkspaceSett
           error={error}
           onDismiss={() => setError(null)}
           onReload={() => void load()}
+          onAccessRefreshReload={() => void reloadAfterAccessChange()}
         />
       )}
 

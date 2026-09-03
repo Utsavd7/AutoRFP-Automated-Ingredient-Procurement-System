@@ -13,6 +13,9 @@ const supplierCategories = [
   'Dairy',
   'Dry goods',
   'Beverages',
+  'Coffee & tea',
+  'Sweets',
+  'Packaged foods',
   'Outsourced snacks',
 ] as const;
 
@@ -40,8 +43,8 @@ export function LandingJourney() {
             <span className="story-scene__number" aria-hidden="true">1</span>
             <h3>Tell us what your kitchen needs</h3>
             <p>
-              Start with a menu or enter the items yourself. Your team checks the list before it
-              is used.
+              Start with a menu or enter the items yourself. QuotePlate turns the dishes into an
+              ingredient list for your team to check before it is used.
             </p>
           </div>
           <div
@@ -63,8 +66,8 @@ export function LandingJourney() {
             <span className="story-scene__number" aria-hidden="true">2</span>
             <h3>Choose who should send prices</h3>
             <p>
-              Use your existing suppliers, select suppliers for specific items, or stay open to
-              verified new suppliers.
+              Use your existing suppliers, select suppliers for specific items, or allow new
+              suppliers to apply, then approve them yourself.
             </p>
           </div>
           <div
@@ -115,9 +118,9 @@ export function LandingJourney() {
             <span className="story-scene__number" aria-hidden="true">4</span>
             <h3>Compare the complete cost</h3>
             <p>
-              Prices, GST, delivery and missing items stay together in whole-request totals and
-              item-level prices. Your restaurant can choose one supplier or split items between
-              suppliers.
+              Prices, GST, freight, delivery and missing items stay together. See the full request
+              total and the price of every item. Your restaurant can choose one supplier or split
+              items between suppliers.
             </p>
           </div>
           <ProductDecisionPreview headingLevel={4} />

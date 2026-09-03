@@ -30,8 +30,8 @@ export function PublicLandingPage() {
               <em>Choose the best deal.</em>
             </h1>
             <p className="public-hero__lede">
-              Use suppliers you already know and compare prices, GST, delivery, missing items,
-              and payment terms before your restaurant chooses.
+              Use suppliers you already know and compare prices, GST, freight, delivery, missing
+              items, and payment terms before your restaurant chooses.
             </p>
             <div className="public-hero__actions">
               <Link className="public-button" href="/product">See the product <span aria-hidden="true">→</span></Link>

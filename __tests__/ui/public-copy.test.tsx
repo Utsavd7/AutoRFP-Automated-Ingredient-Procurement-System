@@ -67,9 +67,16 @@ describe('public website contract', () => {
 
   test('keeps the home page static and independent of identity or data access', () => {
     const home = source('src/app/page.tsx');
+    const landingDependencies = [
+      'src/components/public/PublicLandingPage.tsx',
+      'src/components/public/LandingJourney.tsx',
+      'src/components/public/JourneyIcon.tsx',
+      'src/components/public/ProductDecisionPreview.tsx',
+    ].map(source).join('\n');
 
     expect(home).not.toContain("'use client'");
     expect(home).not.toMatch(/next-auth|@\/lib\/(?:auth|prisma)|\/api\//);
+    expect(landingDependencies).not.toMatch(/next-auth|@\/lib\/(?:auth|prisma)|\/api\//);
     expect(home).toContain('<PublicLandingPage');
   });
 
@@ -160,15 +167,35 @@ describe('public website contract', () => {
     }
 
     expect(markup).toContain('Take menu photos');
+    expect(markup).toContain('turns the dishes into an ingredient list for your team to check');
     expect(markup).toContain('Use your existing suppliers');
+    expect(markup).toContain('allow new suppliers to apply, then approve them yourself');
+    expect(markup).not.toContain('verified new suppliers');
     expect(markup).toContain('No supplier account needed');
     expect(markup).toContain('only the items and quantities assigned to them through a private link');
     expect(markup).toContain('relevant delivery requirements and terms');
-    expect(markup).toContain('Prices, GST, delivery and missing items');
-    expect(markup).toContain('whole-request totals and item-level prices');
+    expect(markup).toContain('Prices, GST, freight, delivery and missing items');
+    expect(markup).toContain('See the full request total and the price of every item');
     expect(markup).toContain('choose one supplier or split items between suppliers');
     expect(markup).toContain('Your restaurant makes the final choice.');
     expect(markup).toContain('<ol class="landing-story__track" role="list">');
+    for (const category of ['Coffee &amp; tea', 'Sweets', 'Packaged foods']) {
+      expect(markup).toContain(category);
+    }
+  });
+
+  test('loads cinematic story styles only with the landing route', () => {
+    const home = source('src/app/page.tsx');
+    const globalCss = source('src/app/globals.css');
+    const landingCss = source('src/app/landing.css');
+
+    expect(home).toContain("import './landing.css'");
+    expect(landingCss).toContain('.hero-route');
+    expect(landingCss).toContain('.landing-story');
+    expect(landingCss).toContain('.privacy-story');
+    expect(globalCss).not.toContain('.hero-route');
+    expect(globalCss).not.toContain('.landing-story');
+    expect(globalCss).not.toContain('.privacy-story');
   });
 
   test('lets the quote comparison title follow its surrounding heading level', () => {
@@ -407,6 +434,7 @@ describe('public website contract', () => {
 
   test('uses contrast-safe text tokens across light and dark public surfaces', () => {
     const css = source('src/app/globals.css');
+    const landingCss = source('src/app/landing.css');
     const copper = css.match(/--copper:\s*(#[\dA-F]{6})/i)?.[1];
     const copperText = css.match(/--copper-text:\s*(#[\dA-F]{6})/i)?.[1];
     const ink = css.match(/--ink:\s*(#[\dA-F]{6})/i)?.[1];
@@ -426,7 +454,7 @@ describe('public website contract', () => {
     expect(contrastRatio(mutedLabel!, '#EBE5D9')).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(mutedLabel!, '#FBF8F1')).toBeGreaterThanOrEqual(4.5);
     expect(css).toMatch(/\.public-hero h1 em,[\s\S]*?\.product-hero h1 em[\s\S]*?color: var\(--copper-text\)/);
-    expect(css).toMatch(/\.story-scene__number[\s\S]*?color: var\(--copper\)/);
+    expect(landingCss).toMatch(/\.story-scene__number[\s\S]*?color: var\(--copper\)/);
     expect(css).toMatch(/\.tour-index \{ color: var\(--copper-text\); \}/);
     expect(css).toMatch(/\.sample-label,[\s\S]*?\.supplier-sheet header span[\s\S]*?color: var\(--ink-label\)/);
     expect(css).toMatch(/\.decision-preview__summary > span \{[\s\S]*?color: var\(--ink-label\)/);

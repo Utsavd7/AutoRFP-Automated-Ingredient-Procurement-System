@@ -29,7 +29,7 @@ The product does not introduce suppliers and then disappear from the workflow. I
 
 ## Safety and privacy
 
-- Restaurant data is isolated by workspace at the database layer.
+- Your recipes, menus, supplier prices, and purchase records stay private to your restaurant. Other restaurants cannot see them.
 - Supplier links are random, stored only as digests, limited to one request, replaceable, revocable, and time limited.
 - Award records preserve the checked prices, quantities, supplier facts, and delivery terms used for the decision.
 - Owner only actions protect restaurant settings, team access, supplier verification, and awards.

@@ -82,6 +82,11 @@ describe('public website contract', () => {
     expect(markup).toContain('Quote comparison');
     expect(markup).toContain('Human decision required');
     expect(markup).toContain('No card required');
+    expect(markup).toContain(`${restaurantSampleQuotes.length} supplier replies`);
+    expect(markup).toContain(`${restaurantSampleRequest.items.length} items requested`);
+    expect(markup).toContain('Labelled sample replies, not customer activity.');
+    expect(markup).toContain(`Requested in sample ${restaurantSampleRequest.id}; coverage stays visible supplier by supplier.`);
+    expect(markup).toContain('One sample decision is waiting; the product never chooses automatically.');
     expect(landing).toContain('<LandingJourney');
     expect(landing).not.toMatch(/['"]use client['"]/);
   });
@@ -98,6 +103,7 @@ describe('public website contract', () => {
     let previousIndex = -1;
 
     for (const statement of orderedStory) {
+      expect(markup).toContain(statement);
       const statementIndex = markup.indexOf(statement);
       expect(statementIndex).toBeGreaterThan(previousIndex);
       previousIndex = statementIndex;
@@ -115,11 +121,15 @@ describe('public website contract', () => {
     const landingJourney = source('src/components/public/LandingJourney.tsx');
 
     expect(journeyIcon).toMatch(/from ['"]lucide-react['"]/);
-    expect(journeyIcon).toContain('strokeWidth={1.8}');
+    expect(journeyIcon).toMatch(/strokeWidth\s*=\s*\{1\.8\}/);
+    expect(journeyIcon).not.toMatch(/['"]use client['"]/);
     expect(landingJourney).toContain('<JourneyIcon');
+    expect(landingJourney).not.toMatch(/['"]use client['"]/);
     expect(landingJourney).not.toMatch(/https?:\/\//i);
     expect(landingJourney).not.toMatch(/<img\b/i);
-    expect(landingJourney).not.toMatch(/\bthree\b/i);
+    expect(landingJourney).not.toMatch(
+      /(?:from\s+['"]three(?:\/[^'"]*)?['"]|require\s*\(\s*['"]three(?:\/[^'"]*)?['"])/i,
+    );
     expect(landingJourney).not.toMatch(/\bgsap\b/i);
   });
 

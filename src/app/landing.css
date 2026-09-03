@@ -81,12 +81,12 @@
 }
 
 @keyframes landing-diagram-enter {
-  from { opacity: 0.72; transform: translateY(1rem); }
+  from { opacity: 0.85; transform: translateY(1rem); }
   to { opacity: 1; transform: none; }
 }
 
 @keyframes landing-detail-enter {
-  from { opacity: 0.72; }
+  from { opacity: 0.85; }
   to { opacity: 1; }
 }
 
@@ -568,20 +568,17 @@
 @media (min-width: 901px) and (min-height: 720px) {
   .public-hero {
     min-height: calc(100svh - 4.75rem - 1px);
-    padding-block: 2rem;
+    padding-block: clamp(2rem, 4vh, 3.5rem);
   }
 
   .public-hero h1 {
-    font-size: clamp(3.4rem, min(5.8vw, 7.2vh), 5.8rem);
+    font-size: clamp(3.4rem, min(5.8vw, 7.2vh), 5.4rem);
   }
 
   .public-hero__lede,
-  .public-hero__actions {
-    margin-top: 1.25rem;
-  }
-
+  .public-hero__actions,
   .public-hero__note {
-    margin-top: 1rem;
+    margin-top: clamp(1rem, 2.2vh, 1.75rem);
   }
 }
 
@@ -595,6 +592,7 @@
 .hero-route > div:nth-of-type(4) { animation-delay: 320ms; }
 
 @supports (animation-timeline: view()) {
+  .intake-diagram,
   .supplier-diagram,
   .request-route,
   .story-scene--comparison .decision-preview,
@@ -605,7 +603,6 @@
     animation-range: entry 0% cover 28%;
   }
 
-  .intake-diagram,
   .intake-diagram > div,
   .supplier-diagram li,
   .request-route > div,

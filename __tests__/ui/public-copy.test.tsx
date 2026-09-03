@@ -193,9 +193,11 @@ describe('public website contract', () => {
     expect(landingCss).toContain('.hero-route');
     expect(landingCss).toContain('.landing-story');
     expect(landingCss).toContain('.privacy-story');
-    expect(landingCss).toContain('@supports (animation-timeline: view())');
-    expect(landingCss).toContain('animation-timeline: view()');
-    expect(landingCss).not.toMatch(/animation(?:-[\w-]+)?\s*:[^;{}]*\binfinite\b/i);
+    expect(landingCss).toMatch(/@supports\s*\(\s*animation-timeline\s*:\s*view\(\s*\)\s*\)/);
+    expect(landingCss).toMatch(
+      /\.supplier-diagram\s*,\s*\.request-route\s*,\s*\.story-scene--comparison\s+\.decision-preview\s*,\s*\.decision-route\s*,\s*\.privacy-map\s*\{[^}]*animation-timeline\s*:\s*view\(\s*\)/,
+    );
+    expect(landingCss).not.toMatch(/\binfinite\b/i);
     expect(globalCss).not.toContain('.hero-route');
     expect(globalCss).not.toContain('.landing-story');
     expect(globalCss).not.toContain('.privacy-story');

@@ -24,11 +24,49 @@ const publicJourneyHeadings = [
   'Choose and save the decision',
 ] as const;
 
+const landingMotionSelectors = [
+  '.supplier-diagram',
+  '.request-route',
+  '.story-scene--comparison .decision-preview',
+  '.decision-route',
+  '.privacy-map',
+] as const;
+
 async function expectNoPageOverflow(page: Page) {
   const overflow = await page.evaluate(() => (
     document.documentElement.scrollWidth - document.documentElement.clientWidth
   ));
   expect(overflow).toBeLessThanOrEqual(1);
+}
+
+async function measureHero(locator: ReturnType<Page['locator']>) {
+  return locator.evaluate((element) => {
+    const heroBox = element.getBoundingClientRect();
+    return {
+      top: heroBox.top,
+      right: heroBox.right,
+      bottom: heroBox.bottom,
+      left: heroBox.left,
+      clientHeight: element.clientHeight,
+      clientWidth: element.clientWidth,
+      scrollHeight: element.scrollHeight,
+      scrollWidth: element.scrollWidth,
+      children: [...element.children].map((child) => {
+        const box = child.getBoundingClientRect();
+        return {
+          name: child.getAttribute('class') ?? child.tagName.toLowerCase(),
+          top: box.top,
+          right: box.right,
+          bottom: box.bottom,
+          left: box.left,
+          clientHeight: child.clientHeight,
+          clientWidth: child.clientWidth,
+          scrollHeight: child.scrollHeight,
+          scrollWidth: child.scrollWidth,
+        };
+      }),
+    };
+  });
 }
 
 async function renderedContrast(
@@ -62,7 +100,9 @@ async function renderedContrast(
 }
 
 test.describe('public landing responsive contract', () => {
-  test('fits the complete desktop hero before the first section line', async ({ page }) => {
+  test('fits the complete desktop hero before the first section line', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop-chromium', 'Desktop viewport contract');
+
     for (const size of firstFoldSizes) {
       await test.step(size.name, async () => {
         await page.setViewportSize({ width: size.width, height: size.height });
@@ -84,22 +124,11 @@ test.describe('public landing responsive contract', () => {
           `.proof-band fold offset at ${size.width}x${size.height}`,
         ).toBeLessThanOrEqual(2);
 
-        const heroChildren = await hero.locator(':scope > *').evaluateAll((children) => (
-          children.map((child) => {
-            const box = child.getBoundingClientRect();
-            return {
-              name: child.className || child.tagName.toLowerCase(),
-              top: box.top,
-              right: box.right,
-              bottom: box.bottom,
-              left: box.left,
-              clientHeight: child.clientHeight,
-              scrollHeight: child.scrollHeight,
-            };
-          })
-        ));
-        expect(heroChildren.length).toBeGreaterThan(0);
-        for (const child of heroChildren) {
+        const geometry = await measureHero(hero);
+        expect(geometry.scrollHeight - geometry.clientHeight, 'hero clipped vertically').toBeLessThanOrEqual(1);
+        expect(geometry.scrollWidth - geometry.clientWidth, 'hero clipped horizontally').toBeLessThanOrEqual(1);
+        expect(geometry.children.length).toBeGreaterThan(0);
+        for (const child of geometry.children) {
           expect(child.top, `${child.name} top at ${size.width}x${size.height}`).toBeGreaterThanOrEqual(-1);
           expect(child.left, `${child.name} left at ${size.width}x${size.height}`).toBeGreaterThanOrEqual(-1);
           expect(child.right, `${child.name} right at ${size.width}x${size.height}`).toBeLessThanOrEqual(
@@ -112,12 +141,18 @@ test.describe('public landing responsive contract', () => {
             child.scrollHeight - child.clientHeight,
             `${child.name} clipped content at ${size.width}x${size.height}`,
           ).toBeLessThanOrEqual(1);
+          expect(
+            child.scrollWidth - child.clientWidth,
+            `${child.name} horizontally clipped content at ${size.width}x${size.height}`,
+          ).toBeLessThanOrEqual(1);
         }
       });
     }
   });
 
-  test('keeps a short desktop hero at natural height without clipping', async ({ page }) => {
+  test('keeps a short desktop hero at natural height without clipping', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop-chromium', 'Desktop viewport contract');
+
     const size = { width: 1024, height: 650 };
     await page.setViewportSize(size);
     await page.goto('/');
@@ -128,37 +163,17 @@ test.describe('public landing responsive contract', () => {
     ));
     expect(proofBandTop).toBeGreaterThan(size.height);
 
-    const geometry = await hero.evaluate((element) => {
-      const heroBox = element.getBoundingClientRect();
-      return {
-        clientHeight: element.clientHeight,
-        heroBottom: heroBox.bottom,
-        heroLeft: heroBox.left,
-        heroRight: heroBox.right,
-        heroTop: heroBox.top,
-        scrollHeight: element.scrollHeight,
-        children: [...element.children].map((child) => {
-          const box = child.getBoundingClientRect();
-          return {
-            name: child.className || child.tagName.toLowerCase(),
-            top: box.top,
-            right: box.right,
-            bottom: box.bottom,
-            left: box.left,
-            clientHeight: child.clientHeight,
-            scrollHeight: child.scrollHeight,
-          };
-        }),
-      };
-    });
-    expect(geometry.scrollHeight - geometry.clientHeight, 'hero clipped content').toBeLessThanOrEqual(1);
+    const geometry = await measureHero(hero);
+    expect(geometry.scrollHeight - geometry.clientHeight, 'hero clipped vertically').toBeLessThanOrEqual(1);
+    expect(geometry.scrollWidth - geometry.clientWidth, 'hero clipped horizontally').toBeLessThanOrEqual(1);
     expect(geometry.children.length).toBeGreaterThan(0);
     for (const child of geometry.children) {
-      expect(child.top, `${child.name} top`).toBeGreaterThanOrEqual(geometry.heroTop - 1);
-      expect(child.left, `${child.name} left`).toBeGreaterThanOrEqual(geometry.heroLeft - 1);
-      expect(child.right, `${child.name} right`).toBeLessThanOrEqual(geometry.heroRight + 1);
-      expect(child.bottom, `${child.name} bottom`).toBeLessThanOrEqual(geometry.heroBottom + 1);
-      expect(child.scrollHeight - child.clientHeight, `${child.name} clipped content`).toBeLessThanOrEqual(1);
+      expect(child.top, `${child.name} top`).toBeGreaterThanOrEqual(geometry.top - 1);
+      expect(child.left, `${child.name} left`).toBeGreaterThanOrEqual(geometry.left - 1);
+      expect(child.right, `${child.name} right`).toBeLessThanOrEqual(geometry.right + 1);
+      expect(child.bottom, `${child.name} bottom`).toBeLessThanOrEqual(geometry.bottom + 1);
+      expect(child.scrollHeight - child.clientHeight, `${child.name} clipped vertically`).toBeLessThanOrEqual(1);
+      expect(child.scrollWidth - child.clientWidth, `${child.name} clipped horizontally`).toBeLessThanOrEqual(1);
     }
   });
 
@@ -409,6 +424,17 @@ test.describe('public landing responsive contract', () => {
     expect(await connector.evaluate((element) => (
       getComputedStyle(element, '::after').animationName
     ))).toBe('hero-route-travel');
+    for (const selector of landingMotionSelectors) {
+      const motion = await page.locator(selector).evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+          animationName: style.animationName,
+          animationTimeline: style.getPropertyValue('animation-timeline'),
+        };
+      });
+      expect(motion.animationName, `${selector} animation`).toBe('landing-diagram-enter');
+      expect(motion.animationTimeline, `${selector} timeline`).toContain('view');
+    }
 
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.reload();
@@ -418,13 +444,7 @@ test.describe('public landing responsive contract', () => {
     expect(await connector.evaluate((element) => (
       getComputedStyle(element, '::after').animationName
     ))).toBe('none');
-    for (const selector of [
-      '.supplier-diagram',
-      '.request-route',
-      '.story-scene--comparison .decision-preview',
-      '.decision-route',
-      '.privacy-map',
-    ]) {
+    for (const selector of landingMotionSelectors) {
       const motion = await page.locator(selector).evaluate((element) => {
         const style = getComputedStyle(element);
         return {

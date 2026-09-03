@@ -408,13 +408,16 @@ describe('public website contract', () => {
     const copper = css.match(/--copper:\s*(#[\dA-F]{6})/i)?.[1];
     const copperText = css.match(/--copper-text:\s*(#[\dA-F]{6})/i)?.[1];
     const ink = css.match(/--ink:\s*(#[\dA-F]{6})/i)?.[1];
+    const raisedInk = css.match(/--raised-ink:\s*(#[\dA-F]{6})/i)?.[1];
     const mutedLabel = css.match(/--ink-label:\s*(#[\dA-F]{6})/i)?.[1];
 
     expect(copper).toBeDefined();
     expect(copperText).toBeDefined();
     expect(ink).toBeDefined();
+    expect(raisedInk).toBeDefined();
     expect(mutedLabel).toBeDefined();
     expect(contrastRatio(copper!, ink!)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(copper!, raisedInk!)).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(copperText!, '#F5F1E8')).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(copperText!, '#EBE5D9')).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(mutedLabel!, '#F5F1E8')).toBeGreaterThanOrEqual(4.5);

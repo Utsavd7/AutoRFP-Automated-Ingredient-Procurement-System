@@ -401,20 +401,25 @@ describe('public website contract', () => {
     expect(brandGuide).not.toContain('Manrope lettering');
   });
 
-  test('uses contrast-safe text tokens on every light public surface', () => {
+  test('uses contrast-safe text tokens across light and dark public surfaces', () => {
     const css = source('src/app/globals.css');
+    const copper = css.match(/--copper:\s*(#[\dA-F]{6})/i)?.[1];
     const copperText = css.match(/--copper-text:\s*(#[\dA-F]{6})/i)?.[1];
+    const ink = css.match(/--ink:\s*(#[\dA-F]{6})/i)?.[1];
     const mutedLabel = css.match(/--ink-label:\s*(#[\dA-F]{6})/i)?.[1];
 
+    expect(copper).toBeDefined();
     expect(copperText).toBeDefined();
+    expect(ink).toBeDefined();
     expect(mutedLabel).toBeDefined();
+    expect(contrastRatio(copper!, ink!)).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(copperText!, '#F5F1E8')).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(copperText!, '#EBE5D9')).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(mutedLabel!, '#F5F1E8')).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(mutedLabel!, '#EBE5D9')).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(mutedLabel!, '#FBF8F1')).toBeGreaterThanOrEqual(4.5);
     expect(css).toMatch(/\.public-hero h1 em,[\s\S]*?\.product-hero h1 em[\s\S]*?color: var\(--copper-text\)/);
-    expect(css).toMatch(/\.workflow__list > li > span[\s\S]*?color: var\(--copper-text\)/);
+    expect(css).toMatch(/\.story-scene__number[\s\S]*?color: var\(--copper\)/);
     expect(css).toMatch(/\.tour-index \{ color: var\(--copper-text\); \}/);
     expect(css).toMatch(/\.sample-label,[\s\S]*?\.supplier-sheet header span[\s\S]*?color: var\(--ink-label\)/);
     expect(css).toMatch(/\.decision-preview__summary > span \{[\s\S]*?color: var\(--ink-label\)/);

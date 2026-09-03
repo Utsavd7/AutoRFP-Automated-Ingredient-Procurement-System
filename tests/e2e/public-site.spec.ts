@@ -4,7 +4,16 @@ const publicJourneySizes = [
   { name: 'laptop', width: 1440, height: 960 },
   { name: 'tablet', width: 900, height: 1112 },
   { name: 'phone', width: 390, height: 844 },
+  { name: 'small phone', width: 320, height: 720 },
 ];
+
+const publicJourneyHeadings = [
+  'Tell us what your kitchen needs',
+  'Choose who should send prices',
+  'Send one clear request',
+  'Compare the complete cost',
+  'Choose and save the decision',
+] as const;
 
 async function expectNoPageOverflow(page: Page) {
   const overflow = await page.evaluate(() => (
@@ -24,11 +33,24 @@ test.describe('public landing responsive contract', () => {
         const hero = page.locator('.public-hero');
         const closingCta = page.locator('.public-cta');
         const productCta = hero.getByRole('link', { name: 'See the product', exact: true });
+        const story = page.locator('.landing-story');
+        const firstScene = page.locator('.story-scene').first();
 
         await expect(page.getByRole('heading', { level: 1, name: /Send one list/i })).toBeVisible();
+        await expect(page.getByRole('heading', {
+          level: 2,
+          name: "From today's menu to tomorrow's order.",
+        })).toBeVisible();
+        for (const heading of publicJourneyHeadings) {
+          await expect(page.getByRole('heading', { level: 3, name: heading })).toBeVisible();
+        }
         await expect(page.getByRole('heading', { level: 4, name: 'Quote comparison' })).toBeVisible();
         await expect(page.getByText('Human decision required', { exact: true })).toBeVisible();
         await expect(page.getByLabel('Sample decision facts')).toBeVisible();
+        await expect(page.getByRole('heading', {
+          level: 2,
+          name: 'Your recipes stay private with your restaurant.',
+        })).toBeVisible();
         await expect(header.getByRole('link', { name: 'Sign in' })).toBeVisible();
         await expect(header.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/signin');
         await expect(productCta).toBeVisible();
@@ -43,6 +65,14 @@ test.describe('public landing responsive contract', () => {
           'href',
           '/product#compare',
         );
+
+        expect(await story.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(
+          'rgb(16, 24, 23)',
+        );
+        const sceneColumnCount = await firstScene.evaluate((element) => (
+          getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/).length
+        ));
+        expect(sceneColumnCount).toBe(size.name === 'laptop' ? 2 : 1);
 
         if (size.name === 'laptop') {
           await expect(header.getByRole('navigation', { name: 'Primary navigation' })).toBeVisible();
@@ -114,6 +144,32 @@ test.describe('public landing responsive contract', () => {
         .isVisible();
 
       expect(cueIsVisible, `comparison cue at ${width}px`).toBe(overflows);
+    }
+  });
+
+  test('keeps the complete route visible and removes route motion when requested', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/');
+
+    const route = page.getByRole('group', { name: 'QuotePlate buying journey' });
+    const connector = route.locator('.hero-route__connector').first();
+    const routeNodes = route.locator(':scope > div');
+    await expect(routeNodes).toHaveCount(4);
+    for (const node of await routeNodes.all()) await expect(node).toBeVisible();
+    expect(await connector.evaluate((element) => (
+      getComputedStyle(element, '::after').animationName
+    ))).toBe('hero-route-travel');
+
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.reload();
+
+    await expect(routeNodes).toHaveCount(4);
+    for (const node of await routeNodes.all()) await expect(node).toBeVisible();
+    expect(await connector.evaluate((element) => (
+      getComputedStyle(element, '::after').animationName
+    ))).toBe('none');
+    for (const heading of publicJourneyHeadings) {
+      await expect(page.getByRole('heading', { level: 3, name: heading })).toBeVisible();
     }
   });
 

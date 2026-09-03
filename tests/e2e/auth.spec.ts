@@ -88,6 +88,78 @@ test.describe('workspace creation layout', () => {
       element.getBoundingClientRect().bottom
     ))).toBeLessThan(0);
   });
+
+  test('fits the complete start form in one laptop viewport', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop-chromium', 'Responsive layout contract');
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/start');
+
+    const sheet = page.locator('#account-form');
+    const terms = sheet.getByText('By creating a workspace', { exact: false });
+    const emailButton = sheet.getByRole('button', { name: 'Create workspace with email' });
+    const googleButton = sheet.getByRole('button', { name: 'Continue with Google' });
+    await expect(terms).toBeVisible();
+    await expect(emailButton).toBeVisible();
+    await expect(googleButton).toBeVisible();
+
+    const sheetBox = await sheet.boundingBox();
+    const termsBox = await terms.boundingBox();
+    expect(sheetBox).not.toBeNull();
+    expect(termsBox).not.toBeNull();
+    expect(sheetBox!.y + sheetBox!.height).toBeLessThanOrEqual(900);
+    expect(termsBox!.y + termsBox!.height).toBeLessThanOrEqual(900);
+
+    const fieldHeights = await sheet.locator('input').evaluateAll((inputs) => (
+      inputs.map((input) => input.getBoundingClientRect().height)
+    ));
+    for (const height of fieldHeights) expect(height).toBeGreaterThanOrEqual(44);
+
+    const rowTop = async (label: string) => {
+      const box = await page.getByLabel(label).boundingBox();
+      expect(box).not.toBeNull();
+      return box!.y;
+    };
+    expect(await rowTop('Restaurant name')).toBeCloseTo(await rowTop('Restaurant phone'), 0);
+    expect(await rowTop('Street address')).toBeCloseTo(await rowTop('City'), 0);
+    expect(await rowTop('City')).toBeCloseTo(await rowTop('State'), 0);
+    expect(await rowTop('PIN code')).toBeCloseTo(await rowTop('GSTIN optional'), 0);
+    expect(await rowTop('Your name')).toBeCloseTo(await rowTop('Work email'), 0);
+    expect(await rowTop('Work email')).toBeCloseTo(await rowTop('Password'), 0);
+
+    const emailBox = await emailButton.boundingBox();
+    const googleBox = await googleButton.boundingBox();
+    expect(emailBox).not.toBeNull();
+    expect(googleBox).not.toBeNull();
+    expect(emailBox!.y).toBeCloseTo(googleBox!.y, 0);
+    await expectNoPageOverflow(page);
+  });
+
+  test('keeps short laptops and phones naturally stacked', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop-chromium', 'Responsive layout contract');
+
+    await page.setViewportSize({ width: 1024, height: 650 });
+    await page.goto('/start');
+    const shortEmail = await page.getByRole('button', { name: 'Create workspace with email' }).boundingBox();
+    const shortGoogle = await page.getByRole('button', { name: 'Continue with Google' }).boundingBox();
+    expect(shortEmail).not.toBeNull();
+    expect(shortGoogle).not.toBeNull();
+    expect(shortGoogle!.y).toBeGreaterThan(shortEmail!.y + 44);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/start');
+    const restaurant = await page.getByLabel('Restaurant name').boundingBox();
+    const phone = await page.getByLabel('Restaurant phone').boundingBox();
+    const phoneEmail = await page.getByRole('button', { name: 'Create workspace with email' }).boundingBox();
+    const phoneGoogle = await page.getByRole('button', { name: 'Continue with Google' }).boundingBox();
+    expect(restaurant).not.toBeNull();
+    expect(phone).not.toBeNull();
+    expect(phoneEmail).not.toBeNull();
+    expect(phoneGoogle).not.toBeNull();
+    expect(phone!.y).toBeGreaterThan(restaurant!.y + 44);
+    expect(phoneGoogle!.y).toBeGreaterThan(phoneEmail!.y + 44);
+    await expectNoPageOverflow(page);
+  });
 });
 
 test.describe.serial('local credentials account journey', () => {

@@ -21,16 +21,24 @@ test.describe('public landing responsive contract', () => {
         await page.goto('/');
 
         const header = page.getByRole('banner');
-        const productCta = page.getByRole('link', { name: /See the product/i });
+        const hero = page.locator('.public-hero');
+        const closingCta = page.locator('.public-cta');
+        const productCta = hero.getByRole('link', { name: 'See the product', exact: true });
 
-        await expect(page.getByRole('heading', { level: 1, name: /Compare every quote/i })).toBeVisible();
-        await expect(page.getByRole('heading', { level: 2, name: 'Quote comparison' })).toBeVisible();
+        await expect(page.getByRole('heading', { level: 1, name: /Send one list/i })).toBeVisible();
+        await expect(page.getByRole('heading', { level: 4, name: 'Quote comparison' })).toBeVisible();
         await expect(page.getByText('Human decision required', { exact: true })).toBeVisible();
         await expect(page.getByLabel('Sample decision facts')).toBeVisible();
         await expect(header.getByRole('link', { name: 'Sign in' })).toBeVisible();
         await expect(header.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/signin');
         await expect(productCta).toBeVisible();
         await expect(productCta).toHaveAttribute('href', '/product');
+        await expect(
+          closingCta.getByRole('link', { name: 'Start free pilot', exact: true }),
+        ).toHaveAttribute('href', '/start');
+        await expect(
+          closingCta.getByRole('link', { name: 'See the product', exact: true }),
+        ).toHaveAttribute('href', '/product');
         await expect(page.getByRole('link', { name: /Review & award/i })).toHaveAttribute(
           'href',
           '/product#compare',
@@ -74,7 +82,7 @@ test.describe('public landing responsive contract', () => {
     await page.setViewportSize({ width: 621, height: 900 });
     await page.goto('/');
 
-    const desktopHeading = page.getByRole('heading', { level: 1, name: /Compare every quote/i });
+    const desktopHeading = page.getByRole('heading', { level: 1, name: /Send one list/i });
     await expect(desktopHeading).toBeVisible();
     const fontSizeAt621 = await desktopHeading.evaluate((element) => (
       Number.parseFloat(getComputedStyle(element).fontSize)
@@ -82,7 +90,7 @@ test.describe('public landing responsive contract', () => {
     await page.setViewportSize({ width: 620, height: 900 });
     await page.reload();
 
-    const mobileHeading = page.getByRole('heading', { level: 1, name: /Compare every quote/i });
+    const mobileHeading = page.getByRole('heading', { level: 1, name: /Send one list/i });
     await expect(mobileHeading).toBeVisible();
     const fontSizeAt620 = await mobileHeading.evaluate((element) => (
       Number.parseFloat(getComputedStyle(element).fontSize)

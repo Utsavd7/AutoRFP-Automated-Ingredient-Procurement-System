@@ -85,7 +85,7 @@ export function PublicLandingPage() {
               </p>
             </header>
             <div>
-              <dl className="privacy-story__map">
+              <dl className="privacy-map">
                 <div>
                   <dt>Your restaurant team</dt>
                   <dd>Menus, recipes, suppliers, quotes and buying history</dd>
@@ -117,7 +117,7 @@ export function PublicLandingPage() {
               Start with one ingredient request and your current suppliers. The pilot needs no
               payment card.
             </p>
-            <div className="public-cta__actions">
+            <div className="public-hero__actions">
               <Link className="public-button" href="/start">Start free pilot <span aria-hidden="true">→</span></Link>
               <Link className="public-inline-link" href="/product">See the product <span aria-hidden="true">↗</span></Link>
             </div>

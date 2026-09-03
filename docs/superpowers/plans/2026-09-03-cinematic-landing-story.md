@@ -335,9 +335,14 @@ import { LandingJourney } from './LandingJourney';
       </div>
       <p className="public-hero__note">No supplier commission. No card required.</p>
     </div>
-    <div className="hero-route" aria-label="QuotePlate buying journey">
-      <span>Menu</span><i aria-hidden="true" /><span>Request</span><i aria-hidden="true" />
-      <span>Supplier prices</span><i aria-hidden="true" /><span>Your choice</span>
+    <div className="hero-route" role="group" aria-label="QuotePlate buying journey">
+      <div><JourneyIcon name="receipt" /><span>Menu</span></div>
+      <span className="hero-route__connector" aria-hidden="true">→</span>
+      <div><JourneyIcon name="list" /><span>Request</span></div>
+      <span className="hero-route__connector" aria-hidden="true">→</span>
+      <div><JourneyIcon name="price" /><span>Supplier prices</span></div>
+      <span className="hero-route__connector" aria-hidden="true">→</span>
+      <div><JourneyIcon name="approve" /><span>Your choice</span></div>
     </div>
   </section>
 
@@ -413,7 +418,7 @@ Add styles using the existing color tokens. The exact layout foundation is:
   color: var(--ink);
 }
 
-.hero-route span {
+.hero-route > div {
   display: grid;
   min-height: 5rem;
   place-items: center;
@@ -421,16 +426,24 @@ Add styles using the existing color tokens. The exact layout foundation is:
   border: 1px solid color-mix(in srgb, var(--ink) 24%, transparent);
   border-radius: 12px;
   background: #fbf8f1;
-  font-size: 0.78rem;
-  font-weight: 720;
   text-align: center;
 }
 
-.hero-route i,
+.hero-route > div > span {
+  justify-self: center;
+}
+
+.hero-route > div > span:last-child {
+  font-size: 0.78rem;
+  font-weight: 720;
+}
+
+.hero-route__connector,
 .decision-route > span {
   width: clamp(1rem, 3vw, 3rem);
   height: 1px;
   background: var(--copper);
+  font-size: 0;
   transform-origin: left;
   animation: route-draw 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
@@ -571,7 +584,7 @@ Append:
     grid-template-columns: 1fr;
   }
 
-  .hero-route i {
+  .hero-route__connector {
     width: 1px;
     height: 1.25rem;
     transform-origin: top;
@@ -605,7 +618,7 @@ Append:
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hero-route i,
+  .hero-route__connector,
   .decision-route > span {
     animation: none;
     transform: none;

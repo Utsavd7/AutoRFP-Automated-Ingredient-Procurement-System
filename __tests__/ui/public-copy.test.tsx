@@ -92,6 +92,53 @@ describe('public website contract', () => {
     expect(landing).not.toMatch(/['"]use client['"]/);
   });
 
+  test('integrates the buying journey between the hero proof and private closing action', () => {
+    const markup = renderToStaticMarkup(<PublicLandingPage />);
+    const heroStart = markup.indexOf('<section class="public-hero');
+    const heroRouteStart = markup.indexOf('<div class="hero-route"');
+    const proofStart = markup.indexOf('<section class="proof-band');
+    const journeyStart = markup.indexOf('<section class="landing-story');
+    const privacyStart = markup.indexOf('<section class="privacy-story');
+    const closingStart = markup.indexOf('<section class="public-cta');
+    const mainEnd = markup.indexOf('</main>');
+    const orderedSections = [heroRouteStart, proofStart, journeyStart, privacyStart, closingStart];
+
+    expect(heroStart).toBeGreaterThanOrEqual(0);
+    expect(orderedSections.every((index) => index >= 0)).toBe(true);
+    expect(orderedSections).toEqual([...orderedSections].sort((a, b) => a - b));
+
+    const heroMarkup = markup.slice(heroStart, proofStart);
+    const heroRouteMarkup = markup.slice(heroRouteStart, proofStart);
+    const routeLabels = ['Menu', 'Request', 'Supplier prices', 'Your choice'];
+    let previousRouteLabel = -1;
+
+    expect(heroRouteMarkup).toContain('aria-label="QuotePlate buying journey"');
+    for (const label of routeLabels) {
+      const labelIndex = heroRouteMarkup.indexOf(`>${label}</span>`);
+      expect(labelIndex).toBeGreaterThan(previousRouteLabel);
+      previousRouteLabel = labelIndex;
+    }
+    expect(heroMarkup.match(/href="\/product"/g)).toHaveLength(1);
+    expect(heroMarkup.match(/href="\/start"/g)).toHaveLength(1);
+    expect(heroMarkup.match(/href="\/product">See the product /g)).toHaveLength(1);
+    expect(heroMarkup.match(/href="\/start">Start free pilot /g)).toHaveLength(1);
+
+    const journeyMarkup = markup.slice(journeyStart, privacyStart);
+    expect(journeyMarkup).toContain('Tell us what your kitchen needs');
+    expect(journeyMarkup).toContain('Choose and save the decision');
+
+    const privacyMarkup = markup.slice(privacyStart, closingStart);
+    expect(privacyMarkup).toContain('<dl class="privacy-map">');
+    expect(privacyMarkup).toContain('Your recipes stay private with your restaurant.');
+
+    const closingMarkup = markup.slice(closingStart, mainEnd);
+    expect(closingMarkup).toContain('<div class="public-hero__actions">');
+    expect(closingMarkup.match(/href="\/start"/g)).toHaveLength(1);
+    expect(closingMarkup.match(/href="\/product"/g)).toHaveLength(1);
+    expect(closingMarkup.match(/href="\/start">Start free pilot /g)).toHaveLength(1);
+    expect(closingMarkup.match(/href="\/product">See the product /g)).toHaveLength(1);
+  });
+
   test('presents the restaurant procurement story in the approved order', () => {
     const markup = renderToStaticMarkup(<LandingJourney />);
     const orderedStory = [

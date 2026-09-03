@@ -25,6 +25,7 @@ const publicJourneyHeadings = [
 ] as const;
 
 const landingMotionSelectors = [
+  '.intake-diagram',
   '.supplier-diagram',
   '.request-route',
   '.story-scene--comparison .decision-preview',
@@ -424,6 +425,25 @@ test.describe('public landing responsive contract', () => {
     expect(await connector.evaluate((element) => (
       getComputedStyle(element, '::after').animationName
     ))).toBe('hero-route-travel');
+    const routeNodeMotion = await routeNodes.evaluateAll((nodes) => nodes.map((node) => {
+      const style = getComputedStyle(node);
+      const delay = style.animationDelay.split(',')[0].trim();
+      const numericDelay = Number.parseFloat(delay);
+      return {
+        animationName: style.animationName,
+        delayMs: delay.endsWith('ms') ? numericDelay : numericDelay * 1000,
+      };
+    }));
+    for (const [index, motion] of routeNodeMotion.entries()) {
+      expect(motion.animationName, `hero route card ${index + 1} animation`).toBe(
+        'landing-hero-card-enter',
+      );
+      if (index > 0) {
+        expect(motion.delayMs, `hero route card ${index + 1} delay`).toBeGreaterThan(
+          routeNodeMotion[index - 1].delayMs,
+        );
+      }
+    }
     for (const selector of landingMotionSelectors) {
       const motion = await page.locator(selector).evaluate((element) => {
         const style = getComputedStyle(element);
@@ -444,6 +464,21 @@ test.describe('public landing responsive contract', () => {
     expect(await connector.evaluate((element) => (
       getComputedStyle(element, '::after').animationName
     ))).toBe('none');
+    const reducedRouteNodeMotion = await routeNodes.evaluateAll((nodes) => nodes.map((node) => {
+      const style = getComputedStyle(node);
+      return {
+        animationName: style.animationName,
+        opacity: style.opacity,
+        transform: style.transform,
+      };
+    }));
+    for (const [index, motion] of reducedRouteNodeMotion.entries()) {
+      expect(motion, `hero route card ${index + 1} reduced-motion styles`).toEqual({
+        animationName: 'none',
+        opacity: '1',
+        transform: 'none',
+      });
+    }
     for (const selector of landingMotionSelectors) {
       const motion = await page.locator(selector).evaluate((element) => {
         const style = getComputedStyle(element);

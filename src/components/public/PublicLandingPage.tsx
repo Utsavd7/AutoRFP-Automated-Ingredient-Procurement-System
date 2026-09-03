@@ -76,7 +76,7 @@ export function PublicLandingPage() {
           <div className="public-container privacy-story__grid">
             <header>
               <JourneyIcon name="privacy" />
-              <p className="public-eyebrow public-eyebrow--light">Clear boundaries</p>
+              <p className="public-eyebrow">Clear boundaries</p>
               <h2 id="privacy-story-title">Your recipes stay private with your restaurant.</h2>
               <p>
                 Your recipes, menus, supplier prices, and purchase records stay private to your

@@ -129,6 +129,8 @@ describe('public website contract', () => {
 
     const privacyMarkup = markup.slice(privacyStart, closingStart);
     expect(privacyMarkup).toContain('<dl class="privacy-map">');
+    expect(privacyMarkup).toContain('<p class="public-eyebrow">Clear boundaries</p>');
+    expect(privacyMarkup).not.toContain('public-eyebrow--light');
     expect(privacyMarkup).toContain('Your recipes stay private with your restaurant.');
 
     const closingMarkup = markup.slice(closingStart, mainEnd);

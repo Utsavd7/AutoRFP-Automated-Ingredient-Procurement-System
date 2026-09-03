@@ -3,6 +3,8 @@ import { expect, test, type Page } from '@playwright/test';
 const publicJourneySizes = [
   { name: 'laptop', width: 1440, height: 960 },
   { name: 'tablet', width: 900, height: 1112 },
+  { name: 'tablet narrow', width: 768, height: 1024 },
+  { name: 'phone wide', width: 555, height: 900 },
   { name: 'phone', width: 390, height: 844 },
   { name: 'small phone', width: 320, height: 720 },
 ];
@@ -20,6 +22,33 @@ async function expectNoPageOverflow(page: Page) {
     document.documentElement.scrollWidth - document.documentElement.clientWidth
   ));
   expect(overflow).toBeLessThanOrEqual(1);
+}
+
+async function renderedContrast(locator: ReturnType<Page['locator']>) {
+  return locator.evaluate((element) => {
+    const parseColor = (value: string) => {
+      const numbers = value.match(/[\d.]+/g)?.map(Number) ?? [];
+      const rgb = value.startsWith('color(srgb')
+        ? numbers.slice(0, 3)
+        : numbers.slice(0, 3).map((channel) => channel / 255);
+      return { rgb, alpha: numbers[3] ?? 1 };
+    };
+    const background = element.closest('.privacy-story');
+    if (!background) throw new Error('Privacy background is missing');
+    const foregroundColor = parseColor(getComputedStyle(element).color);
+    const backgroundColor = parseColor(getComputedStyle(background).backgroundColor);
+    const composited = foregroundColor.rgb.map((channel, index) => (
+      channel * foregroundColor.alpha + backgroundColor.rgb[index] * (1 - foregroundColor.alpha)
+    ));
+    const luminance = (channels: number[]) => {
+      const linear = channels.map((channel) => (
+        channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+      ));
+      return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+    };
+    const values = [luminance(composited), luminance(backgroundColor.rgb)].sort((a, b) => b - a);
+    return (values[0] + 0.05) / (values[1] + 0.05);
+  });
 }
 
 test.describe('public landing responsive contract', () => {
@@ -51,6 +80,7 @@ test.describe('public landing responsive contract', () => {
           level: 2,
           name: 'Your recipes stay private with your restaurant.',
         })).toBeVisible();
+        expect(await renderedContrast(page.locator('.privacy-story .public-eyebrow'))).toBeGreaterThanOrEqual(4.5);
         await expect(header.getByRole('link', { name: 'Sign in' })).toBeVisible();
         await expect(header.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/signin');
         await expect(productCta).toBeVisible();
@@ -67,7 +97,7 @@ test.describe('public landing responsive contract', () => {
         );
 
         expect(await story.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(
-          'rgb(16, 24, 23)',
+          'rgb(23, 37, 33)',
         );
         const sceneColumnCount = await firstScene.evaluate((element) => (
           getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/).length
@@ -84,7 +114,7 @@ test.describe('public landing responsive contract', () => {
           await expect(header.getByRole('link', { name: 'Security' })).toHaveAttribute('href', '#security');
           await expect(header.getByRole('link', { name: 'Start a pilot' })).toBeVisible();
           await expect(header.getByRole('link', { name: 'Start a pilot' })).toHaveAttribute('href', '/start');
-        } else if (size.name === 'tablet') {
+        } else if (size.width > 620) {
           await expect(header.getByRole('link', { name: 'Start a pilot' })).toBeVisible();
           await expect(header.getByRole('link', { name: 'Start a pilot' })).toHaveAttribute('href', '/start');
         }
@@ -129,7 +159,7 @@ test.describe('public landing responsive contract', () => {
   });
 
   test('shows the comparison cue exactly when the hero table overflows', async ({ page }) => {
-    for (const width of [721, 720, 621, 620, 560, 559, 558, 557, 556, 555, 521, 520, 390]) {
+    for (const width of [721, 720, 621, 620, 560, 559, 558, 557, 556, 555, 521, 520, 390, 320]) {
       await page.setViewportSize({ width, height: 900 });
       await page.goto('/');
 
@@ -144,6 +174,70 @@ test.describe('public landing responsive contract', () => {
         .isVisible();
 
       expect(cueIsVisible, `comparison cue at ${width}px`).toBe(overflows);
+    }
+  });
+
+  test('keeps every scene number clear of its operational visual when scenes stack', async ({ page }) => {
+    for (const width of [768, 555]) {
+      await test.step(`${width}px`, async () => {
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto('/');
+
+        const scenes = page.locator('.story-scene');
+        await expect(scenes).toHaveCount(5);
+        for (let index = 0; index < await scenes.count(); index += 1) {
+          const intersects = await scenes.nth(index).evaluate((scene) => {
+            const number = scene.querySelector('.story-scene__number');
+            const visual = [...scene.children].find((child) => (
+              !child.classList.contains('story-scene__copy')
+            ));
+            if (!(number instanceof HTMLElement) || !(visual instanceof HTMLElement)) {
+              throw new Error('Scene number or operational visual is missing');
+            }
+            const numberBox = number.getBoundingClientRect();
+            const visualBox = visual.getBoundingClientRect();
+            return numberBox.left < visualBox.right
+              && numberBox.right > visualBox.left
+              && numberBox.top < visualBox.bottom
+              && numberBox.bottom > visualBox.top;
+          });
+          expect(intersects, `scene ${index + 1} at ${width}px`).toBe(false);
+        }
+      });
+    }
+  });
+
+  test('keeps the comparison title fully readable at 320px', async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 720 });
+    await page.goto('/');
+
+    const heading = page.getByRole('heading', { level: 4, name: 'Quote comparison' });
+    await expect(heading).toBeVisible();
+    const geometry = await heading.evaluate((element) => ({
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+      text: element.textContent,
+      textOverflow: getComputedStyle(element).textOverflow,
+      whiteSpace: getComputedStyle(element).whiteSpace,
+    }));
+    expect(geometry.text).toBe('Quote comparison');
+    expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth + 1);
+    expect(geometry.textOverflow).not.toBe('ellipsis');
+    expect(geometry.whiteSpace).not.toBe('nowrap');
+  });
+
+  test('gives every footer destination a 44px touch target', async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 720 });
+    await page.goto('/');
+
+    const footerLinks = page.getByRole('contentinfo').getByRole('link');
+    expect(await footerLinks.count()).toBeGreaterThan(0);
+    for (const link of await footerLinks.all()) {
+      const label = await link.textContent() ?? 'footer link';
+      const box = await link.boundingBox();
+      expect(box, label).not.toBeNull();
+      expect(box!.width, `${label} width`).toBeGreaterThanOrEqual(44);
+      expect(box!.height, `${label} height`).toBeGreaterThanOrEqual(44);
     }
   });
 

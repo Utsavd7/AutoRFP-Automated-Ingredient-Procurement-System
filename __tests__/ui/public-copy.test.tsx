@@ -49,6 +49,8 @@ const publicFiles = [
   'src/components/public/SampleQuoteComparison.tsx',
   'src/components/public/ProductTour.tsx',
   'src/components/public/ProductDecisionPreview.tsx',
+  'src/components/public/JourneyIcon.tsx',
+  'src/components/public/LandingJourney.tsx',
 ];
 
 describe('public website contract', () => {
@@ -74,29 +76,51 @@ describe('public website contract', () => {
     const landing = source('src/components/public/PublicLandingPage.tsx');
     const markup = renderToStaticMarkup(<PublicLandingPage />);
 
-    expect(markup).toContain('Compare every quote.');
-    expect(markup).toContain('Choose with proof.');
+    expect(markup).toContain('Send one list.');
+    expect(markup).toContain('Compare every supplier.');
+    expect(markup).toContain('Choose the best deal.');
     expect(markup).toContain('Quote comparison');
     expect(markup).toContain('Human decision required');
-    expect(markup).toContain('href="/product"');
-    expect(markup).toContain('href="/start"');
-    expect(markup).toContain('No marketplace');
     expect(markup).toContain('No card required');
-    expect(markup).toContain('Run the request again');
-    expect(markup).toContain('aria-label="Sample decision facts"');
-    expect(markup).toContain(`${restaurantSampleQuotes.length} supplier replies`);
-    expect(markup).toContain(`${restaurantSampleRequest.items.length} items requested`);
-    expect(markup).toContain('Labelled sample replies, not customer activity.');
-    expect(markup).toContain(`Requested in sample ${restaurantSampleRequest.id}; coverage stays visible supplier by supplier.`);
-    expect(markup).toContain('One sample decision is waiting; the product never chooses automatically.');
-    expect(markup).toContain('Product rule: the restaurant records the final choice.');
+    expect(landing).toContain('<LandingJourney');
+    expect(landing).not.toMatch(/['"]use client['"]/);
+  });
 
-    expect(landing).toContain('<ProductDecisionPreview');
-    expect(landing).toContain("from '@/data/sample-procurement'");
-    expect(landing).toContain('restaurantSampleQuotes');
-    expect(landing).toContain('restaurantSampleRequest');
-    expect(landing).not.toMatch(/\b(?:3 supplier replies|8 items requested)\b/);
-    expect(landing).not.toContain('public-hero__mark');
+  test('presents the restaurant procurement story in the approved order', () => {
+    const markup = renderToStaticMarkup(<PublicLandingPage />);
+    const orderedStory = [
+      'Tell us what your kitchen needs',
+      'Choose who should send prices',
+      'Send one clear request',
+      'Compare the complete cost',
+      'Choose and save the decision',
+    ];
+    let previousIndex = -1;
+
+    for (const statement of orderedStory) {
+      const statementIndex = markup.indexOf(statement);
+      expect(statementIndex).toBeGreaterThan(previousIndex);
+      previousIndex = statementIndex;
+    }
+
+    expect(markup).toContain('Take menu photos');
+    expect(markup).toContain('Use your existing suppliers');
+    expect(markup).toContain('No supplier account needed');
+    expect(markup).toContain('Prices, GST, delivery and missing items');
+    expect(markup).toContain('Your restaurant makes the final choice.');
+  });
+
+  test('uses consistent local icons for the landing journey diagram', () => {
+    const journeyIcon = source('src/components/public/JourneyIcon.tsx');
+    const landingJourney = source('src/components/public/LandingJourney.tsx');
+
+    expect(journeyIcon).toMatch(/from ['"]lucide-react['"]/);
+    expect(journeyIcon).toContain('strokeWidth={1.8}');
+    expect(landingJourney).toContain('<JourneyIcon');
+    expect(landingJourney).not.toMatch(/https?:\/\//i);
+    expect(landingJourney).not.toMatch(/<img\b/i);
+    expect(landingJourney).not.toMatch(/\bthree\b/i);
+    expect(landingJourney).not.toMatch(/\bgsap\b/i);
   });
 
   test('renders the approved header links with accessible names and destinations', () => {
@@ -221,10 +245,12 @@ describe('public website contract', () => {
     expect(markup).toMatch(/GST/);
     expect(markup).toMatch(/no supplier account/i);
     expect(markup).toMatch(/human (?:decision|approval)/i);
-    expect(markup).toContain('Your restaurant records stay private');
-    expect(markup).toContain('Your recipes, menus, supplier prices, and purchase records stay private to your restaurant. Other restaurants cannot see them, and suppliers see only the request you send to them.');
+    expect(markup).toContain('Your recipes stay private with your restaurant.');
+    expect(markup).toContain('Your restaurant team');
+    expect(markup).toContain('Only the request sent to them');
+    expect(markup).toContain('Other restaurants');
+    expect(markup).toContain('Cannot see your information');
     expect(markup).toContain('Private supplier links expire');
-    expect(markup).toContain('Your team makes the final choice');
     expect(markup).toContain('Quote changes and decisions stay recorded');
     expect(markup).toMatch(/run the request again/i);
     expect(markup).toMatch(/saved history/i);

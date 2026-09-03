@@ -1,5 +1,5 @@
 .hero-route {
-  --hero-route-x: 3rem;
+  --hero-route-x: 1rem;
   --hero-route-y: 0;
   min-width: 0;
   min-height: 18rem;
@@ -70,9 +70,19 @@
 .hero-route__connector:nth-of-type(3)::after { animation-delay: 480ms; }
 
 @keyframes hero-route-travel {
-  from { opacity: 0; transform: translateX(0); }
+  from { opacity: 0.72; transform: translateX(0); }
   18% { opacity: 1; }
-  to { opacity: 0; transform: translate(var(--hero-route-x), var(--hero-route-y)); }
+  to { opacity: 0.72; transform: translate(var(--hero-route-x), var(--hero-route-y)); }
+}
+
+@keyframes landing-hero-card-enter {
+  from { opacity: 0.72; transform: translateX(-0.75rem); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes landing-diagram-enter {
+  from { opacity: 0.72; transform: translateY(1rem); }
+  to { opacity: 1; transform: none; }
 }
 
 .landing-story {
@@ -550,6 +560,79 @@
   line-height: 1.65;
 }
 
+@media (min-width: 901px) and (min-height: 720px) {
+  .public-hero {
+    min-height: calc(100svh - 4.75rem - 1px);
+    padding-block: 2rem;
+  }
+
+  .public-hero h1 {
+    font-size: clamp(3.4rem, min(5.8vw, 7.2vh), 5.8rem);
+  }
+
+  .public-hero__lede,
+  .public-hero__actions {
+    margin-top: 1.25rem;
+  }
+
+  .public-hero__note {
+    margin-top: 1rem;
+  }
+}
+
+.hero-route > div {
+  animation: landing-hero-card-enter 620ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.hero-route > div:nth-of-type(1) { animation-delay: 80ms; }
+.hero-route > div:nth-of-type(2) { animation-delay: 160ms; }
+.hero-route > div:nth-of-type(3) { animation-delay: 240ms; }
+.hero-route > div:nth-of-type(4) { animation-delay: 320ms; }
+
+@supports (animation-timeline: view()) {
+  .supplier-diagram,
+  .request-route,
+  .story-scene--comparison .decision-preview,
+  .decision-route,
+  .privacy-map {
+    animation: landing-diagram-enter linear both;
+    animation-timeline: view();
+    animation-range: entry 0% cover 28%;
+  }
+
+  .intake-diagram,
+  .intake-diagram > div,
+  .supplier-diagram li,
+  .request-route > div,
+  .request-route li,
+  .decision-route > div,
+  .privacy-map > div {
+    animation: landing-diagram-enter linear both;
+    animation-timeline: view();
+    animation-range: entry 0% cover 24%;
+  }
+
+  .intake-diagram > div:nth-child(2),
+  .supplier-diagram li:nth-child(2),
+  .request-route li:nth-child(2),
+  .privacy-map > div:nth-child(2) {
+    animation-range: entry 4% cover 28%;
+  }
+
+  .intake-diagram > div:nth-child(3),
+  .supplier-diagram li:nth-child(3),
+  .request-route li:nth-child(3),
+  .privacy-map > div:nth-child(3) {
+    animation-range: entry 8% cover 32%;
+  }
+
+  .supplier-diagram li:nth-child(n + 4),
+  .request-route li:nth-child(n + 4),
+  .privacy-map > div:nth-child(n + 4) {
+    animation-range: entry 12% cover 36%;
+  }
+}
+
 @media (max-width: 900px) {
   .landing-story__intro,
   .story-scene,
@@ -592,7 +675,7 @@
 @media (max-width: 620px) {
   .hero-route {
     --hero-route-x: 0;
-    --hero-route-y: 1.5rem;
+    --hero-route-y: 1rem;
     min-height: 0;
     grid-template-columns: 1fr;
     gap: 0;
@@ -794,7 +877,22 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hero-route__connector::after {
+  .hero-route > div,
+  .hero-route__connector::after,
+  .intake-diagram,
+  .intake-diagram > div,
+  .supplier-diagram,
+  .supplier-diagram li,
+  .request-route,
+  .request-route > div,
+  .request-route li,
+  .story-scene--comparison .decision-preview,
+  .decision-route,
+  .decision-route > div,
+  .privacy-map,
+  .privacy-map > div {
     animation: none !important;
+    opacity: 1;
+    transform: none;
   }
 }

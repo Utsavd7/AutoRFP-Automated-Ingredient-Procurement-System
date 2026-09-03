@@ -22,6 +22,8 @@ Supporting text explains that the restaurant can use existing suppliers, compare
 
 The main visual is a compact buying journey rather than a decorative hero image: a menu sheet becomes an ingredient request, reaches several suppliers, and returns as a comparison. It uses the same sample data already defined in `src/data/sample-procurement.ts`. The current `ProductDecisionPreview` is a protected design element: keep its recognizable desktop window, dark restaurant sidebar, sample request summary, comparison table, human decision message, and sample data note.
 
+On desktop screens at least 901 pixels wide and 720 pixels tall, the header and complete hero form one opening frame at normal browser zoom. The headline, explanation, actions, no card note, and buying journey diagram must all be visible before scrolling. The top border of the sample facts section sits at the bottom edge of the viewport, so scrolling begins visually from that line. Short desktop windows use natural document height rather than shrinking or clipping content. Tablet and phone layouts retain their existing vertical flow.
+
 ### 2. Add what the kitchen needs
 
 Show three intake routes with consistent Lucide symbols:
@@ -74,7 +76,9 @@ Polished interface-style SVG diagrams are allowed when they follow the same grid
 
 ## Motion
 
-Use a small client component only where scroll progress materially improves the story. Prefer CSS sticky positioning, transforms, opacity, clip paths, and a single request animation. Do not add GSAP or another dependency.
+Motion guides the eye through the same operational sequence shown by the diagrams. The hero nodes settle in from left to right and its connectors travel once on page load. As the user scrolls, the intake choices, supplier categories, request branches, quote comparison, decision route, and privacy rows receive a small rise or line reveal when they enter the viewport. The movement stays within roughly 16 pixels, does not loop, and never competes with reading.
+
+Use CSS view timelines as a progressive enhancement rather than adding a client component, GSAP, Three.js, or another dependency. Browsers without scroll timeline support show the complete static diagrams. Do not animate layout properties, trap scrolling, add a continuous floating effect, or delay navigation.
 
 The page must render complete content before JavaScript runs. Motion enhances an already visible layout and never controls access to information. `prefers-reduced-motion` removes the progress animation and presents the same scenes as a static sequence. Mobile uses a normal vertical flow with no scroll trapping or long sticky sections.
 
@@ -124,8 +128,10 @@ The landing page has no runtime data dependency. If JavaScript is unavailable, e
 2. Add structural tests ensuring the landing uses the existing icon dependency, preserves the committed QuotePlate logo components, and remains independent of APIs, authentication, and database code.
 3. Verify TypeScript, lint, unit tests, and production build.
 4. Check 320, 390, 768, 1024, and 1440 pixel layouts for clipping and understandable sequence.
-5. Check keyboard navigation, visible focus, heading order, landmark names, contrast, reduced motion, and non JavaScript readability.
-6. Confirm the landing redesign does not change application routes, database schema, environment variables, or billing behaviour.
+5. At 1440 by 960, 1366 by 768, and 1024 by 900, confirm the sample facts border begins at the viewport fold and every hero element is visible without scrolling. Confirm short desktop windows fall back to natural page height.
+6. Check that supported browsers apply scroll linked motion to the landing diagrams, unsupported browsers retain the static content, and reduced motion removes all landing animation and transforms.
+7. Check keyboard navigation, visible focus, heading order, landmark names, contrast, reduced motion, and non JavaScript readability.
+8. Confirm the landing redesign does not change application routes, database schema, environment variables, or billing behaviour.
 
 ## Scope Limits
 

@@ -10,6 +10,12 @@ const publicJourneySizes = [
   { name: 'small phone', width: 320, height: 720 },
 ];
 
+const firstFoldSizes = [
+  { name: 'large desktop', width: 1440, height: 960 },
+  { name: 'standard desktop', width: 1366, height: 768 },
+  { name: 'compact desktop', width: 1024, height: 900 },
+];
+
 const publicJourneyHeadings = [
   'Tell us what your kitchen needs',
   'Choose who should send prices',
@@ -56,6 +62,106 @@ async function renderedContrast(
 }
 
 test.describe('public landing responsive contract', () => {
+  test('fits the complete desktop hero before the first section line', async ({ page }) => {
+    for (const size of firstFoldSizes) {
+      await test.step(size.name, async () => {
+        await page.setViewportSize({ width: size.width, height: size.height });
+        await page.goto('/');
+
+        const hero = page.locator('.public-hero');
+        await expect(page.getByRole('heading', { level: 1, name: /Send one list/i })).toBeVisible();
+        await expect(page.getByRole('group', { name: 'QuotePlate buying journey' })).toBeVisible();
+        await expect(page.getByText(
+          'No supplier commission. No card required.',
+          { exact: true },
+        )).toBeVisible();
+
+        const proofBandTop = await page.locator('.proof-band').evaluate((element) => (
+          element.getBoundingClientRect().top
+        ));
+        expect(
+          Math.abs(proofBandTop - size.height),
+          `.proof-band fold offset at ${size.width}x${size.height}`,
+        ).toBeLessThanOrEqual(2);
+
+        const heroChildren = await hero.locator(':scope > *').evaluateAll((children) => (
+          children.map((child) => {
+            const box = child.getBoundingClientRect();
+            return {
+              name: child.className || child.tagName.toLowerCase(),
+              top: box.top,
+              right: box.right,
+              bottom: box.bottom,
+              left: box.left,
+              clientHeight: child.clientHeight,
+              scrollHeight: child.scrollHeight,
+            };
+          })
+        ));
+        expect(heroChildren.length).toBeGreaterThan(0);
+        for (const child of heroChildren) {
+          expect(child.top, `${child.name} top at ${size.width}x${size.height}`).toBeGreaterThanOrEqual(-1);
+          expect(child.left, `${child.name} left at ${size.width}x${size.height}`).toBeGreaterThanOrEqual(-1);
+          expect(child.right, `${child.name} right at ${size.width}x${size.height}`).toBeLessThanOrEqual(
+            size.width + 1,
+          );
+          expect(child.bottom, `${child.name} bottom at ${size.width}x${size.height}`).toBeLessThanOrEqual(
+            size.height + 1,
+          );
+          expect(
+            child.scrollHeight - child.clientHeight,
+            `${child.name} clipped content at ${size.width}x${size.height}`,
+          ).toBeLessThanOrEqual(1);
+        }
+      });
+    }
+  });
+
+  test('keeps a short desktop hero at natural height without clipping', async ({ page }) => {
+    const size = { width: 1024, height: 650 };
+    await page.setViewportSize(size);
+    await page.goto('/');
+
+    const hero = page.locator('.public-hero');
+    const proofBandTop = await page.locator('.proof-band').evaluate((element) => (
+      element.getBoundingClientRect().top
+    ));
+    expect(proofBandTop).toBeGreaterThan(size.height);
+
+    const geometry = await hero.evaluate((element) => {
+      const heroBox = element.getBoundingClientRect();
+      return {
+        clientHeight: element.clientHeight,
+        heroBottom: heroBox.bottom,
+        heroLeft: heroBox.left,
+        heroRight: heroBox.right,
+        heroTop: heroBox.top,
+        scrollHeight: element.scrollHeight,
+        children: [...element.children].map((child) => {
+          const box = child.getBoundingClientRect();
+          return {
+            name: child.className || child.tagName.toLowerCase(),
+            top: box.top,
+            right: box.right,
+            bottom: box.bottom,
+            left: box.left,
+            clientHeight: child.clientHeight,
+            scrollHeight: child.scrollHeight,
+          };
+        }),
+      };
+    });
+    expect(geometry.scrollHeight - geometry.clientHeight, 'hero clipped content').toBeLessThanOrEqual(1);
+    expect(geometry.children.length).toBeGreaterThan(0);
+    for (const child of geometry.children) {
+      expect(child.top, `${child.name} top`).toBeGreaterThanOrEqual(geometry.heroTop - 1);
+      expect(child.left, `${child.name} left`).toBeGreaterThanOrEqual(geometry.heroLeft - 1);
+      expect(child.right, `${child.name} right`).toBeLessThanOrEqual(geometry.heroRight + 1);
+      expect(child.bottom, `${child.name} bottom`).toBeLessThanOrEqual(geometry.heroBottom + 1);
+      expect(child.scrollHeight - child.clientHeight, `${child.name} clipped content`).toBeLessThanOrEqual(1);
+    }
+  });
+
   test('supports the public decision journey from laptop to phone', async ({ page }) => {
     for (const size of publicJourneySizes) {
       await test.step(size.name, async () => {
@@ -312,6 +418,27 @@ test.describe('public landing responsive contract', () => {
     expect(await connector.evaluate((element) => (
       getComputedStyle(element, '::after').animationName
     ))).toBe('none');
+    for (const selector of [
+      '.supplier-diagram',
+      '.request-route',
+      '.story-scene--comparison .decision-preview',
+      '.decision-route',
+      '.privacy-map',
+    ]) {
+      const motion = await page.locator(selector).evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+          animationName: style.animationName,
+          opacity: style.opacity,
+          transform: style.transform,
+        };
+      });
+      expect(motion, `${selector} reduced-motion styles`).toEqual({
+        animationName: 'none',
+        opacity: '1',
+        transform: 'none',
+      });
+    }
     for (const heading of publicJourneyHeadings) {
       await expect(page.getByRole('heading', { level: 3, name: heading })).toBeVisible();
     }

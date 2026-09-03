@@ -303,6 +303,21 @@ describe('public website contract', () => {
     );
   });
 
+  test('fills the owner row when production uses Google-only registration', () => {
+    const markup = renderToStaticMarkup(
+      <AuthPageShell
+        callbackUrl="/dashboard"
+        emailOwnerSignupAvailable={false}
+        googleAvailable
+        mode="start"
+      />,
+    );
+
+    expect(markup).toContain('<label class="fieldHalf"><span>Your name</span>');
+    expect(markup).toContain('<label class="fieldHalf"><span>Work email</span>');
+    expect(markup).not.toContain('<span>Password</span>');
+  });
+
   test('keeps sign in focused on account access and states browser session storage accurately', () => {
     const markup = renderToStaticMarkup(
       <AuthPageShell

@@ -480,6 +480,10 @@
     z-index: 20;
     background: var(--stone);
   }
+
+  .page[data-mode="start"] .sheet {
+    scroll-margin-top: 6rem;
+  }
 }
 
 @media (min-width: 1180px) and (min-height: 820px) {

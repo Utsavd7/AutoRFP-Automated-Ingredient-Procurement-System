@@ -230,12 +230,20 @@ export function AuthForm({
         <legend>{mode === 'signin' ? 'Account' : 'Owner account'}</legend>
         <div className={styles.fieldGrid}>
           {mode === 'start' && (
-            <label className={styles.fieldThird}>
+            <label className={emailOwnerSignupAvailable ? styles.fieldThird : styles.fieldHalf}>
               <span>Your name</span>
               <input name="ownerName" autoComplete="name" maxLength={200} required />
             </label>
           )}
-          <label className={mode === 'signin' ? styles.fieldWide : styles.fieldThird}>
+          <label
+            className={
+              mode === 'signin'
+                ? styles.fieldWide
+                : emailOwnerSignupAvailable
+                  ? styles.fieldThird
+                  : styles.fieldHalf
+            }
+          >
             <span>Work email</span>
             <input name="email" type="email" autoComplete="email" maxLength={320} required />
           </label>

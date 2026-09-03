@@ -89,6 +89,25 @@ test.describe('workspace creation layout', () => {
     ))).toBeLessThan(0);
   });
 
+  test('keeps the account form anchor below the sticky header', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop-chromium', 'Keyboard layout contract');
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/start#account-form');
+
+    const header = page.locator('main > header');
+    const sheet = page.locator('#account-form');
+    await expect.poll(async () => {
+      const [headerBox, sheetBox] = await Promise.all([
+        header.boundingBox(),
+        sheet.boundingBox(),
+      ]);
+      expect(headerBox).not.toBeNull();
+      expect(sheetBox).not.toBeNull();
+      return sheetBox!.y - (headerBox!.y + headerBox!.height);
+    }).toBeGreaterThanOrEqual(0);
+  });
+
   test('fits the complete start form in one laptop viewport', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'desktop-chromium', 'Responsive layout contract');
 

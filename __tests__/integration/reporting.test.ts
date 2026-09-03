@@ -72,6 +72,7 @@ async function seedHistory(admin: PrismaClient, suffix: string) {
     data: {
       id: `grant-${suffix}`, tenantId, requestId: request.id, supplierId: supplier.id,
       tokenDigest: randomBytes(32).toString('hex'),
+      createdAt: new Date('2026-08-28T08:00:00.000Z'),
       expiresAt: new Date('2026-09-03T08:00:00.000Z'),
       quoteRevision: suffix === 'a' ? 2 : 1,
       quoteRevisions: quoteRevisions({ count: suffix === 'a' ? 2 : 1 }),

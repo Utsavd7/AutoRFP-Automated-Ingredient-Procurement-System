@@ -2,7 +2,7 @@
 
 ![QuotePlate, restaurant procurement made accountable](public/brand/social-card.png)
 
-QuotePlate is a procurement workspace for restaurants in India. A restaurant can turn a menu into an ingredient request, collect private supplier quotes, compare the real landed cost, record its decision, check the delivery and invoice, and repeat the next buying cycle from a factual history.
+QuotePlate is a procurement workspace for restaurants in India. It turns menus into ingredient requests, collects private supplier quotes, compares landed cost, records the restaurant's choice, checks each delivery and entered invoice total, and starts the next buying cycle from saved history.
 
 Live product: [quoteplate.netlify.app](https://quoteplate.netlify.app)
 
@@ -12,18 +12,18 @@ Built by [Utsav Doshi](https://github.com/Utsavd7).
 
 The current release supports:
 
-- create a menu by typing dish names, uploading up to five laptop photos, scanning a QR code to send up to ten original phone photos at a time, or importing a menu page you have permission to use;
-- scan menu photos in the browser, review the detected text, remove unwanted text, and approve the final dishes and ingredients;
+- create a menu by typing dish names, uploading up to ten photos from the current device, scanning a QR code to send up to ten original phone photos at a time, or importing a menu page you have permission to use;
+- scan menu photos in the browser, review the detected text, remove unwanted dishes together, delete unused menus, and approve the final dishes and ingredients;
 - organise ingredients using categories familiar to Indian restaurants;
-- keep existing suppliers, choose more than one sourcing route, or accept applications from verified new suppliers;
+- keep existing suppliers, choose more than one sourcing route, or accept applications from new suppliers and then approve or reject them;
 - send each supplier a private quote link with no supplier account required;
 - collect quantities, rates, GST, freight, availability, delivery, substitutions, and payment terms;
 - compare complete and incomplete quotes while keeping the final decision with the restaurant;
 - award the full request to one supplier or split items across suppliers;
-- check each winning supplier delivery, record problems, and compare the invoice total with the accepted total;
-- see deliveries waiting for a check and unresolved problems on the restaurant home page;
+- check each winning supplier delivery, record problems, and automatically flag any difference between the entered invoice total and the accepted total;
+- see counts of deliveries waiting for a check and unresolved problems on the restaurant home page;
 - download request, comparison, award, accounting, QR, supplier, and purchase order records;
-- keep delivery checks in history, repeat a previous request, and use prior buying facts as guidance;
+- keep delivery check totals and problem counts in history, repeat a completed awarded request into a new draft, and use prior buying facts as guidance;
 - manage restaurant details, roles, invitations, Google sign in, sign out, and an optional six step setup guide;
 - use the public site and product workspace on phones, tablets, and laptops.
 
@@ -32,12 +32,12 @@ The product does not introduce suppliers and then disappear from the workflow. I
 ## Safety and privacy
 
 - Your recipes, menus, supplier prices, and purchase records stay private to your restaurant. Other restaurants cannot see them.
-- Supplier links are random, stored only as digests, limited to one request, replaceable, revocable, and time limited.
-- Award records preserve the checked prices, quantities, supplier facts, and delivery terms used for the decision.
+- Each supplier link has a unique secret key. The key itself is not stored, works for only one request, expires, and can be replaced or revoked.
+- Award records preserve the accepted prices, quantities, supplier facts, and delivery terms used for the decision.
 - Owner only actions protect restaurant settings, team access, supplier verification, and awards.
-- Production startup fails closed when required configuration is missing.
+- The production service refuses to start when required security settings are missing.
 - Rate limits cover account creation, invitations, supplier access, supplier submissions, and applications.
-- Security headers block framing, content type guessing, browser referrer leakage, and unnecessary device permissions.
+- Browser security rules stop other sites from placing QuotePlate inside a hidden frame, reduce information shared through links, and limit unnecessary device access.
 - Phone photos travel as temporary encrypted copies. The decryption key stays in the QR link, and retrieved originals are kept only in that restaurant workspace on the current browser.
 - Backup and restore tools are included for the operator.
 
@@ -72,7 +72,7 @@ npm run build
 npm run test:e2e
 ```
 
-The checks cover access control, workspace isolation, authentication, menu intake, OCR boundaries, supplier workflow, quote integrity, landed cost calculations, awards, exports, responsive layouts, accessibility, migrations, and a bounded twenty restaurant load profile.
+The checks cover access control, workspace isolation, authentication, menu intake, OCR boundaries, supplier workflow, quote integrity, landed cost calculations, awards, delivery and invoice checks, repeat ordering, exports, responsive layouts, accessibility, migrations, and a bounded twenty restaurant load profile.
 
 ## Project references
 

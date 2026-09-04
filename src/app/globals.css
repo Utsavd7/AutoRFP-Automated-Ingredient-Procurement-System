@@ -195,10 +195,21 @@ textarea {
 }
 
 @media (min-width: 761px) {
+  .public-site:has(> .public-header--sticky) {
+    padding-top: calc(4.75rem + 1px);
+  }
+
   .public-header--sticky {
-    position: sticky;
-    top: 0;
+    position: fixed;
+    inset: 0 0 auto;
     z-index: 30;
+    width: 100%;
+  }
+}
+
+@media (min-width: 761px) and (max-width: 900px) {
+  .public-site:has(> .public-header--sticky) {
+    padding-top: calc(6.45rem + 1px);
   }
 }
 

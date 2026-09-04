@@ -147,8 +147,17 @@ test.describe('public landing responsive contract', () => {
       await test.step(`${route} tablet`, async () => {
         await page.setViewportSize({ width: 900, height: 900 });
         await page.goto(route);
+        const header = page.getByRole('banner');
+        await expect(header).toHaveCSS('position', 'fixed');
+        const [headerBox, mainBox] = await Promise.all([
+          header.boundingBox(),
+          page.locator('main').boundingBox(),
+        ]);
+        expect(headerBox).not.toBeNull();
+        expect(mainBox).not.toBeNull();
+        expect(mainBox!.y).toBeGreaterThanOrEqual(headerBox!.height - 1);
         await page.evaluate(() => window.scrollTo(0, 700));
-        await expect.poll(() => page.getByRole('banner').evaluate((element) => (
+        await expect.poll(() => header.evaluate((element) => (
           element.getBoundingClientRect().top
         ))).toBeGreaterThanOrEqual(-1);
       });

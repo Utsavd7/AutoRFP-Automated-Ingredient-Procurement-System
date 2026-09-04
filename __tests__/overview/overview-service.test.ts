@@ -3,6 +3,7 @@ import { createOverviewOperations } from '@/lib/overview/overview-service';
 
 function fakeTransaction() {
   return {
+    $queryRaw: jest.fn().mockResolvedValue([{ waiting: BigInt(2), problems: BigInt(1) }]),
     user: {
       findFirst: jest.fn().mockResolvedValue({ id: 'member-a' }),
     },
@@ -141,6 +142,7 @@ describe('overview service', () => {
         requests: { draft: 1, open: 2, awarded: 4 },
         quotesReceivedForOpenRequests: 5,
       },
+      deliveryAttention: { waiting: 2, problems: 1 },
       deadlines: [
         {
           requestId: 'request-soon',
@@ -187,6 +189,7 @@ describe('overview service', () => {
       },
       deadlines: [],
       recentAwards: [],
+      deliveryAttention: { waiting: 2, problems: 1 },
     });
     expect(transaction.supplierRequest.groupBy).not.toHaveBeenCalled();
   });

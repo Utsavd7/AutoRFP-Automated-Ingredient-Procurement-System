@@ -8,6 +8,7 @@ import type { ProcurementUnit } from '@/lib/domain/quantity';
 import { formatScaledDecimal, MAX_DECIMAL_18_3_SCALED, parseUnsignedFixed } from '@/lib/domain/validation';
 import { prisma } from '@/lib/prisma';
 import { validateRequestItems } from '@/lib/procurement/request-document';
+import { buildReceivingSummary, validateStoredReceiving } from '@/lib/receiving/receiving-document';
 import {
   validateQuoteRevisionsDocument,
   validateStoredQuoteRevision,
@@ -218,6 +219,7 @@ const historyActivityLabels = {
       : 'Supplier sent a quote';
   },
   'request.awarded': () => 'Award recorded',
+  'delivery.checked': () => 'Delivery checked',
   'request.cancelled': () => 'Request cancelled',
   'request.repeated': () => 'Request copied into a new draft',
   'audit.export': () => 'Procurement record downloaded',
@@ -455,6 +457,7 @@ export async function listProcurementHistory(
             allocationLines: true,
             supplierSnapshots: true,
             deliverySnapshot: true,
+            receiving: true,
           },
         },
       },
@@ -520,6 +523,11 @@ export async function listProcurementHistory(
       requests: requests.map(({ items, award, ...request }) => {
         const requestItems = validateRequestItems(items).items;
         const awardDocuments = award ? validateAwardDocuments(award) : null;
+        const receiving = award && awardDocuments ? buildReceivingSummary({
+          allocationLines: awardDocuments.allocationLines,
+          supplierSnapshots: awardDocuments.supplierSnapshots,
+          receiving: validateStoredReceiving(award.receiving),
+        }) : null;
         const counts = responseCountsByRequest.get(request.id) ?? {
           respondingSupplierCount: 0,
           quoteRevisionCount: 0,
@@ -536,6 +544,12 @@ export async function listProcurementHistory(
             totalPaise: award.totalPaise.toString(),
             createdAt: award.createdAt,
             supplierCount: awardDocuments.supplierSnapshots.suppliers.length,
+            receiving: receiving ? {
+              checkedCount: receiving.checkedCount,
+              totalCount: receiving.totalCount,
+              complete: receiving.complete,
+              problemCount: receiving.problemCount,
+            } : null,
           } : null,
         };
       }),

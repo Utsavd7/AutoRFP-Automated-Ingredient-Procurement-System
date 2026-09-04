@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { ComponentType } from 'react';
 
-import { HistoryWorkspace } from '@/components/reporting/HistoryWorkspace';
+import { HistoryWorkspace, resolveRepeatSource } from '@/components/reporting/HistoryWorkspace';
 import { InsightsWorkspace } from '@/components/reporting/InsightsWorkspace';
 import { metadata as historyMetadata } from '@/app/(app)/history/page';
 import { metadata as insightsMetadata } from '@/app/(app)/insights/page';
@@ -71,6 +71,16 @@ async function renderAfterFailedInitialEffect(
 }
 
 describe('reporting workspaces', () => {
+  it('loads a completed repeat source directly when it is older than the visible history page', async () => {
+    const older = {
+      id: 'request-old', title: 'Older vegetable order', status: 'AWARDED' as const, version: 7,
+    };
+    const loadRequest = jest.fn().mockResolvedValue(older);
+
+    await expect(resolveRepeatSource('request-old', [], loadRequest)).resolves.toEqual(older);
+    expect(loadRequest).toHaveBeenCalledWith('request-old');
+  });
+
   it('labels observed supplier evidence without invented savings or forecasts', () => {
     const html = renderToStaticMarkup(<InsightsWorkspace initialData={{
       generatedAt: '2026-08-28T12:00:00.000Z', capped: false,
@@ -96,16 +106,19 @@ describe('reporting workspaces', () => {
   it('shows permanent history and offers an awarded request as a new draft', () => {
     const html = renderToStaticMarkup(<HistoryWorkspace initialPage={{
       nextCursor: null,
-      requests: [{ id: 'request-1', title: 'Fresh produce · Week 36', status: 'AWARDED', version: 3, deliveryDate: '2026-09-05', quoteDeadline: '2026-09-03T10:00:00.000Z', createdAt: '2026-08-28T08:00:00.000Z', openedAt: '2026-08-28T08:05:00.000Z', awardedAt: '2026-08-28T10:00:00.000Z', _count: { items: 8, supplierRequests: 3 }, respondingSupplierCount: 2, quoteRevisionCount: 5, award: { id: 'award-1', totalPaise: '9182949', createdAt: '2026-08-28T10:00:00.000Z', supplierCount: 1 } }],
+      requests: [{ id: 'request-1', title: 'Fresh produce · Week 36', status: 'AWARDED', version: 3, deliveryDate: '2026-09-05', quoteDeadline: '2026-09-03T10:00:00.000Z', createdAt: '2026-08-28T08:00:00.000Z', openedAt: '2026-08-28T08:05:00.000Z', awardedAt: '2026-08-28T10:00:00.000Z', _count: { items: 8, supplierRequests: 3 }, respondingSupplierCount: 2, quoteRevisionCount: 5, award: { id: 'award-1', totalPaise: '9182949', createdAt: '2026-08-28T10:00:00.000Z', supplierCount: 1, receiving: { checkedCount: 1, totalCount: 1, complete: true, problemCount: 1 } } }],
       recentQuoteRevisions: [{ id: 'quote-5', requestId: 'request-1', requestTitle: 'Fresh produce · Week 36', supplierName: 'GreenLeaf Foods', revision: 3, submittedAt: '2026-08-28T09:45:00.000Z', totalPaise: '7968000' }],
-      recentActivity: [{ id: 'audit-1', label: 'Award recorded', actorName: 'Neha Singh', createdAt: '2026-08-28T10:00:00.000Z' }],
+      recentActivity: [
+        { id: 'audit-2', label: 'Delivery checked', actorName: 'Neha Singh', createdAt: '2026-08-28T11:00:00.000Z' },
+        { id: 'audit-1', label: 'Award recorded', actorName: 'Neha Singh', createdAt: '2026-08-28T10:00:00.000Z' },
+      ],
     }} />);
     expect(html).toContain('Past purchases');
     expect(html).toContain('Find earlier requests and decisions, then repeat a purchase when needed.');
     expect(html).toContain('Ask suppliers for prices');
     expect(html).toContain('Fresh produce · Week 36');
     expect(html).toContain('₹91,829.49');
-    expect(html).toContain('Run again');
+    expect(html).toContain('Repeat order');
     expect(html).toContain('Supplier selected');
     expect(html).toContain('2 replied');
     expect(html).toContain('5');
@@ -114,6 +127,9 @@ describe('reporting workspaces', () => {
     expect(html).toContain('GreenLeaf Foods');
     expect(html).toContain('Recent activity');
     expect(html).toContain('Award recorded');
+    expect(html).toContain('Delivery 1 of 1 checked');
+    expect(html).toContain('1 problem');
+    expect(html).toContain('Delivery checked');
     expect(html).not.toContain('metadata');
   });
 

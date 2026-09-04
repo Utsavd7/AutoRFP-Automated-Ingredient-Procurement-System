@@ -101,6 +101,45 @@ async function renderedContrast(
 }
 
 test.describe('public landing responsive contract', () => {
+  test('keeps the shared account-page header pinned on laptop and tablet', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop-chromium', 'One project covers the viewport matrix');
+
+    for (const path of ['/signin', '/start']) {
+      for (const size of [{ width: 1440, height: 600 }, { width: 900, height: 600 }]) {
+        await page.setViewportSize(size);
+        await page.goto(path);
+        const header = page.locator('.public-header');
+        await expect(header).toBeVisible();
+        await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+        await expect.poll(async () => Math.round((await header.boundingBox())?.y ?? -1)).toBe(0);
+        await expectNoPageOverflow(page);
+      }
+    }
+  });
+
+  test('keeps all six restaurant benefits readable across screen sizes', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop-chromium', 'One project covers the viewport matrix');
+
+    for (const size of [
+      { width: 1440, height: 960, columns: 3 },
+      { width: 900, height: 1000, columns: 2 },
+      { width: 390, height: 844, columns: 1 },
+    ]) {
+      await page.setViewportSize(size);
+      await page.goto('/');
+      const section = page.locator('.restaurant-benefits');
+      await expect(section.getByRole('heading', {
+        name: 'Useful for every purchase, not just the first one.',
+      })).toBeVisible();
+      await expect(section.locator('.restaurant-benefit')).toHaveCount(6);
+      const columns = await section.locator('.restaurant-benefits__grid').evaluate((element) => (
+        getComputedStyle(element).gridTemplateColumns.split(' ').length
+      ));
+      expect(columns).toBe(size.columns);
+      await expectNoPageOverflow(page);
+    }
+  });
+
   test('pins the public header on home and product above phone width', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'desktop-chromium', 'Desktop viewport contract');
 

@@ -15,6 +15,39 @@ const proofPoints = [
   ['Human approval required', 'Product rule: the restaurant records the final choice.'],
 ];
 
+const restaurantBenefits = [
+  {
+    icon: 'list' as const,
+    title: 'Buy faster each week',
+    detail: 'Reuse checked menus and past requests instead of rebuilding the same list.',
+  },
+  {
+    icon: 'price' as const,
+    title: 'Compare the full cost',
+    detail: 'See item prices, GST, freight, delivery and missing items together before you choose.',
+  },
+  {
+    icon: 'approve' as const,
+    title: 'Check every delivery',
+    detail: 'Record what arrived as agreed, or note late, missing, wrong or poor quality items.',
+  },
+  {
+    icon: 'receipt' as const,
+    title: 'Catch invoice differences',
+    detail: 'Enter the invoice total and see any difference from the accepted supplier total.',
+  },
+  {
+    icon: 'history' as const,
+    title: 'Remember supplier performance',
+    detail: 'Keep delivery and buying history visible to your restaurant team.',
+  },
+  {
+    icon: 'suppliers' as const,
+    title: 'Repeat regular orders',
+    detail: 'Copy a completed purchase into a new draft and ask suppliers for fresh prices.',
+  },
+];
+
 export function PublicLandingPage() {
   return (
     <div className="public-site">
@@ -71,6 +104,26 @@ export function PublicLandingPage() {
         </section>
 
         <LandingJourney />
+
+        <section className="restaurant-benefits" aria-labelledby="restaurant-benefits-title">
+          <div className="public-container">
+            <header className="restaurant-benefits__header">
+              <p className="public-eyebrow">Why restaurants keep using it</p>
+              <h2 id="restaurant-benefits-title">Useful for every purchase, not just the first one.</h2>
+              <p>QuotePlate helps your team before, during and after each supplier order.</p>
+            </header>
+            <div className="restaurant-benefits__grid">
+              {restaurantBenefits.map((benefit, index) => (
+                <article className="restaurant-benefit" key={benefit.title}>
+                  <span className="restaurant-benefit__number">{String(index + 1).padStart(2, '0')}</span>
+                  <JourneyIcon name={benefit.icon} />
+                  <h3>{benefit.title}</h3>
+                  <p>{benefit.detail}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
 
         <section className="privacy-story" id="security" aria-labelledby="privacy-story-title">
           <div className="public-container privacy-story__grid">

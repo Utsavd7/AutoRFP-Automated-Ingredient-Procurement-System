@@ -39,6 +39,7 @@ import {
   type SplitAllocation,
 } from '@/lib/awards/award-preview';
 import { DraftRequestEditor } from './DraftRequestEditor';
+import { DeliveryCheckPanel, type DeliveryReceivingSummary } from './DeliveryCheckPanel';
 import styles from './request-detail.module.css';
 
 type Status = 'DRAFT' | 'OPEN' | 'AWARDED' | 'CANCELLED';
@@ -169,6 +170,7 @@ type AwardDetail = {
     gstPaise: string;
     totalPaise: string;
   }>;
+  receiving?: DeliveryReceivingSummary;
 };
 
 type QuoteComparison = {
@@ -769,6 +771,18 @@ export function RequestDetail({
         </div>
         {request.commercialTerms && <div className={styles.terms}><strong>Terms shared with suppliers</strong><p>{request.commercialTerms}</p></div>}
       </section>
+
+      {committedAward?.receiving && (
+        <DeliveryCheckPanel
+          awardId={committedAward.id}
+          requestId={request.id}
+          receiving={committedAward.receiving}
+          onSaved={async () => {
+            await loadComparison(true);
+            setNotice('Delivery check saved.');
+          }}
+        />
+      )}
 
       <section className={`${styles.panel} ${styles.exportPanel}`} aria-labelledby="request-downloads-heading">
         <header>

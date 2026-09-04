@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-import { Wordmark } from '@/components/brand/Wordmark';
+import { PublicHeader } from '@/components/public/PublicHeader';
 import { brand } from '@/config/brand';
 
 import { AuthForm } from './AuthForm';
@@ -37,21 +37,13 @@ export function AuthPageShell(props: AuthPageShellProps) {
   const page = content[props.mode];
 
   return (
-    <main className={styles.page} data-mode={props.mode} id="main-content">
-      <a className={styles.skipLink} href="#account-form">
+    <div className={`${styles.page} public-site`} data-mode={props.mode}>
+      <a className="skip-link" href="#account-form">
         Skip to account form
       </a>
+      <PublicHeader sticky />
 
-      <header className={styles.header}>
-        <Link className={styles.homeLink} href="/" aria-label={`${brand.productName} home`}>
-          <Wordmark />
-        </Link>
-        <Link className={styles.headerLink} href={props.mode === 'signin' ? '/start' : '/signin'}>
-          {props.mode === 'signin' ? 'Create a workspace' : 'I already have an account'}
-        </Link>
-      </header>
-
-      <div className={styles.layout}>
+      <main className={styles.layout} id="main-content">
         <aside className={styles.context} aria-labelledby="account-heading">
           <p className={styles.eyebrow}>{page.eyebrow}</p>
           <h1 id="account-heading">{page.title}</h1>
@@ -100,7 +92,7 @@ export function AuthPageShell(props: AuthPageShellProps) {
           )}
           <AuthForm {...props} />
         </section>
-      </div>
+      </main>
 
       <footer className={styles.footer}>
         <span>{brand.companyName}</span>
@@ -109,6 +101,6 @@ export function AuthPageShell(props: AuthPageShellProps) {
           <Link href="/terms">Terms</Link>
         </nav>
       </footer>
-    </main>
+    </div>
   );
 }

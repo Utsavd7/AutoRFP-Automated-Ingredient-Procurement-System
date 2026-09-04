@@ -105,10 +105,11 @@ describe('public website contract', () => {
     const heroRouteStart = markup.indexOf('<div class="hero-route"');
     const proofStart = markup.indexOf('<section class="proof-band');
     const journeyStart = markup.indexOf('<section class="landing-story');
+    const benefitsStart = markup.indexOf('<section class="restaurant-benefits');
     const privacyStart = markup.indexOf('<section class="privacy-story');
     const closingStart = markup.indexOf('<section class="public-cta');
     const mainEnd = markup.indexOf('</main>');
-    const orderedSections = [heroRouteStart, proofStart, journeyStart, privacyStart, closingStart];
+    const orderedSections = [heroRouteStart, proofStart, journeyStart, benefitsStart, privacyStart, closingStart];
 
     expect(heroStart).toBeGreaterThanOrEqual(0);
     expect(orderedSections.every((index) => index >= 0)).toBe(true);
@@ -146,6 +147,26 @@ describe('public website contract', () => {
     expect(closingMarkup.match(/href="\/product"/g)).toHaveLength(1);
     expect(closingMarkup.match(/href="\/start">Start free pilot /g)).toHaveLength(1);
     expect(closingMarkup.match(/href="\/product">See the product /g)).toHaveLength(1);
+  });
+
+  test('explains why restaurant teams keep using the product after the first purchase', () => {
+    const markup = renderToStaticMarkup(<PublicLandingPage />);
+    const benefitsStart = markup.indexOf('<section class="restaurant-benefits');
+    const privacyStart = markup.indexOf('<section class="privacy-story');
+    const benefits = markup.slice(benefitsStart, privacyStart);
+
+    expect(benefitsStart).toBeGreaterThanOrEqual(0);
+    expect(benefits).toContain('Useful for every purchase, not just the first one.');
+    for (const benefit of [
+      'Buy faster each week',
+      'Compare the full cost',
+      'Check every delivery',
+      'Catch invoice differences',
+      'Remember supplier performance',
+      'Repeat regular orders',
+    ]) expect(benefits).toContain(benefit);
+    expect(benefits.match(/class="restaurant-benefit"/g)).toHaveLength(6);
+    expect(benefits).not.toMatch(/guaranteed|save \d+%|recommended supplier/i);
   });
 
   test('presents the restaurant procurement story in the approved order', () => {
@@ -328,6 +349,10 @@ describe('public website contract', () => {
     );
 
     expect(markup).not.toContain('Controlled pilot terms');
+    expect(markup).toContain('class="public-header public-header--sticky"');
+    expect(markup).toContain('href="/product">Product</a>');
+    expect(markup).toContain('href="/#how-it-works">How it works</a>');
+    expect(markup).toContain('href="/#security">Security</a>');
     expect(markup).toContain('your browser stores only the session needed to keep you signed in');
     expect(markup).not.toContain('No supplier, quote, or workspace data is stored in this browser.');
   });

@@ -159,6 +159,19 @@ describe('procurement request detail', () => {
               totalPaise: '8366400', createdAt: '2026-08-28T10:00:00.000Z', splitAward: false,
               suppliers: [{ supplierId: 'supplier-1', supplierRequestId: 'grant-1', quoteRevision: 2, supplierName: 'GreenLeaf Fresh Foods', freightPaise: '0', deliveryDate: '2026-09-05', gstin: '27ABCDE1234F1Z5', commercialTerms: '15 days', lines: [{ requestItemId: 'item-1', itemName: 'Tomato' }] }],
               lines: [{ requestItemId: 'item-1', supplierRequestId: 'grant-1', supplierId: 'supplier-1', quoteRevision: 2, quantity: '100', unit: 'KILOGRAM', unitRatePaise: '79680', gstBasisPoints: 500, subtotalPaise: '7968000', gstPaise: '398400', totalPaise: '8366400' }],
+              receiving: {
+                checkedCount: 1, totalCount: 1, complete: true, problemCount: 1,
+                suppliers: [{
+                  supplierId: 'supplier-1', supplierName: 'GreenLeaf Fresh Foods',
+                  deliveryDate: '2026-09-05', expectedTotalPaise: '8366400',
+                  check: {
+                    supplierId: 'supplier-1', outcome: 'ISSUES', invoiceTotalPaise: '8370000',
+                    differencePaise: '3600', issueCodes: ['PRICE_DIFFERENCE'],
+                    note: 'Invoice total is higher.', checkedAt: '2026-09-05T10:00:00.000Z',
+                    hasProblem: true,
+                  },
+                }],
+              },
             },
           },
           quotes: [{ supplierRequestId: 'grant-1', supplierName: 'GreenLeaf Fresh Foods', supplierActive: true, revision: 2, subtotalPaise: '7968000', gstPaise: '398400', freightPaise: '0', totalPaise: '8366400', deliveryDate: '2026-09-05', validUntil: '2026-09-04', submittedAt: '2026-08-28T09:30:00.000Z', minimumOrder: null, commercialTerms: '15 days', notes: null, coveredItemCount: 1, totalItemCount: 1, fullCoverage: true, deliveryFit: 'ON_OR_BEFORE', expired: false, missingTerms: false, missingRequestItemIds: [], partialRequestItemIds: [], unitMismatchRequestItemIds: [], substitutions: [], items: [{ requestItemId: 'item-1', requestItemKey: 'tomato', requestItemName: 'Tomato', requestedQuantity: '100', requestUnit: 'KILOGRAM', requestedSpecification: { v: 1, category: 'VEGETABLES', description: null, preferredBrand: null, packSize: null, qualityGrade: null, notes: null, referenceUrl: null, thumbnailWebpBase64: null }, suppliedSpecification: { brand: null, packSize: null, qualityGrade: null }, quotedAvailableQuantity: '100', quotedUnit: 'KILOGRAM', normalizedAvailableQuantity: '100', normalizedUnitRatePaise: '79680', unitComparable: true, coverage: 'FULL', gstBasisPoints: 500, taxInclusive: false, substitution: null, subtotalPaise: '7968000', gstPaise: '398400', totalPaise: '8366400' }] }],
@@ -174,6 +187,10 @@ describe('procurement request detail', () => {
     expect(html).toContain('Award decision CSV');
     expect(html).toContain('Accounting CSV');
     expect(html).toContain('Purchase order · GreenLeaf Fresh Foods');
+    expect(html).toContain('Check delivery');
+    expect(html).toContain('Invoice difference');
+    expect(html).toContain('₹36.00 higher');
+    expect(html).toContain('Repeat this order');
   });
 
   it('offers an accessible QR download only while a fresh supplier link is visible', () => {

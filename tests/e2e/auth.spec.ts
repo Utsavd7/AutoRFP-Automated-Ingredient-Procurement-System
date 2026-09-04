@@ -76,7 +76,7 @@ test.describe('workspace creation layout', () => {
     await page.setViewportSize({ width: 900, height: 900 });
     await page.goto('/start');
     await page.evaluate(() => window.scrollTo(0, 700));
-    const header = page.locator('main > header');
+    const header = page.locator('.public-header');
     await expect.poll(() => header.evaluate((element) => (
       element.getBoundingClientRect().top
     ))).toBeGreaterThanOrEqual(-1);
@@ -84,7 +84,7 @@ test.describe('workspace creation layout', () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/start');
     await page.evaluate(() => window.scrollTo(0, 700));
-    expect(await page.locator('main > header').evaluate((element) => (
+    expect(await page.locator('.public-header').evaluate((element) => (
       element.getBoundingClientRect().bottom
     ))).toBeLessThan(0);
   });
@@ -95,7 +95,7 @@ test.describe('workspace creation layout', () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/start#account-form');
 
-    const header = page.locator('main > header');
+    const header = page.locator('.public-header');
     const sheet = page.locator('#account-form');
     await expect.poll(async () => {
       const [headerBox, sheetBox] = await Promise.all([

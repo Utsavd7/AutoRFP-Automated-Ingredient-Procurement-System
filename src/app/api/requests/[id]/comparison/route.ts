@@ -9,6 +9,7 @@ import {
   QuoteComparisonNotFoundError,
 } from '@/lib/comparison/compare-quotes';
 import { requireAccountContext } from '@/lib/server-account';
+import { ReceivingStorageCorruptionError } from '@/lib/receiving/receiving-document';
 
 type ComparisonRouteContext = { params: Promise<{ id: string }> };
 
@@ -39,7 +40,10 @@ export async function GET(_request: Request, context: ComparisonRouteContext) {
         problemResponse(403, 'Forbidden', 'You cannot access this comparison.'),
       );
     }
-    if (error instanceof AwardDocumentStorageCorruptionError) {
+    if (
+      error instanceof AwardDocumentStorageCorruptionError ||
+      error instanceof ReceivingStorageCorruptionError
+    ) {
       return privateResponse(
         problemResponse(
           503,

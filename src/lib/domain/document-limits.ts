@@ -38,6 +38,10 @@ export const DOCUMENT_LIMITS = {
   awardDeliverySnapshot: {
     jsonBytes: 16 * KIBIBYTE,
   },
+  awardReceiving: {
+    jsonBytes: 32 * KIBIBYTE,
+    suppliers: 20,
+  },
   thumbnails: {
     perDocument: 8,
     decodedBytesPerDocument: 256 * KIBIBYTE,

@@ -1,4 +1,4 @@
-import { type Prisma, type PrismaClient } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 
 import { AuthorizationError } from '@/lib/auth/guards';
 import { withTenant } from '@/lib/db/tenant-transaction';
@@ -17,6 +17,7 @@ export type OverviewData = {
     requests: { draft: number; open: number; awarded: number };
     quotesReceivedForOpenRequests: number;
   };
+  deliveryAttention: { waiting: number; problems: number };
   deadlines: Array<{
     requestId: string;
     title: string;
@@ -82,6 +83,14 @@ function groupedCount(
   return groups.find((group) => group.status === status)?._count._all ?? 0;
 }
 
+function databaseCount(value: bigint | undefined) {
+  const count = Number(value ?? BigInt(0));
+  if (!Number.isSafeInteger(count) || count < 0) {
+    throw new TypeError('Overview count is outside the supported range.');
+  }
+  return count;
+}
+
 const defaultDependencies: OverviewDependencies = {
   transact: (tenantId, callback) => withTenant(tenantId, callback, prisma),
   now: () => new Date(),
@@ -103,6 +112,7 @@ export function createOverviewOperations(
           quotesReceivedForOpenRequests,
           deadlines,
           recentAwards,
+          deliveryRows,
         ] = await Promise.all([
           transaction.supplier.count({
             where: { tenantId: actor.tenantId, isActive: true },
@@ -150,6 +160,25 @@ export function createOverviewOperations(
               request: { select: { title: true } },
             },
           }),
+          transaction.$queryRaw<Array<{ waiting: bigint; problems: bigint }>>(Prisma.sql`
+            SELECT
+              COALESCE(SUM(GREATEST(
+                jsonb_array_length(award."supplierSnapshots"->'suppliers')
+                - COALESCE(checks.checked, 0),
+                0
+              )), 0)::bigint AS "waiting",
+              COALESCE(SUM(COALESCE(checks.problems, 0)), 0)::bigint AS "problems"
+            FROM "Award" AS award
+            LEFT JOIN LATERAL (
+              SELECT
+                COUNT(*)::integer AS "checked",
+                COUNT(*) FILTER (WHERE entry->>'outcome' = 'ISSUES')::integer AS "problems"
+              FROM jsonb_array_elements(
+                COALESCE(award."receiving"->'suppliers', '[]'::jsonb)
+              ) AS entry
+            ) AS checks ON TRUE
+            WHERE award."tenantId" = ${actor.tenantId}
+          `),
         ]);
 
         const responseGroups = deadlines.length
@@ -181,6 +210,10 @@ export function createOverviewOperations(
               awarded: groupedCount(requestGroups, 'AWARDED'),
             },
             quotesReceivedForOpenRequests,
+          },
+          deliveryAttention: {
+            waiting: databaseCount(deliveryRows[0]?.waiting),
+            problems: databaseCount(deliveryRows[0]?.problems),
           },
           deadlines: deadlines.map((request) => ({
             requestId: request.id,

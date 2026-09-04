@@ -24,8 +24,21 @@ type HistoryRequest = {
   _count: { items: number; supplierRequests: number };
   respondingSupplierCount: number;
   quoteRevisionCount: number;
-  award: null | { id: string; totalPaise: string; createdAt: string; supplierCount: number };
+  award: null | {
+    id: string;
+    totalPaise: string;
+    createdAt: string;
+    supplierCount: number;
+    receiving: {
+      checkedCount: number;
+      totalCount: number;
+      complete: boolean;
+      problemCount: number;
+    } | null;
+  };
 };
+
+type RepeatSource = Pick<HistoryRequest, 'id' | 'title' | 'status' | 'version'>;
 
 type QuoteRevision = {
   id: string;
@@ -76,7 +89,7 @@ function indiaDeadlineIso(value: string) {
   return Number.isNaN(date.getTime()) ? '' : date.toISOString();
 }
 
-function defaultRepeat(request: HistoryRequest) {
+function defaultRepeat(request: RepeatSource) {
   const now = new Date();
   const india = new Date(now.getTime() + 330 * 60 * 1_000);
   const delivery = new Date(india);
@@ -90,6 +103,17 @@ function defaultRepeat(request: HistoryRequest) {
     deliveryDate,
     quoteDeadline: deadline.toISOString().slice(0, 16),
   };
+}
+
+export async function resolveRepeatSource(
+  requestId: string | null,
+  pageRequests: RepeatSource[],
+  loadRequest: (requestId: string) => Promise<RepeatSource | null>,
+) {
+  if (!requestId) return null;
+  const visible = pageRequests.find((request) => request.id === requestId);
+  const source = visible ?? await loadRequest(requestId);
+  return source?.id === requestId && source.status === 'AWARDED' ? source : null;
 }
 
 async function responseProblem(response: Response, fallback: string) {
@@ -106,10 +130,11 @@ export function HistoryWorkspace({ initialPage }: { initialPage?: HistoryPageDat
   const [loading, setLoading] = useState(!initialPage);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<HistoryError>(null);
-  const [repeatSource, setRepeatSource] = useState<HistoryRequest | null>(null);
+  const [repeatSource, setRepeatSource] = useState<RepeatSource | null>(null);
   const [repeatValues, setRepeatValues] = useState({ title: '', deliveryDate: '', quoteDeadline: '' });
   const [repeating, setRepeating] = useState(false);
   const started = useRef(false);
+  const repeatLinkHandled = useRef(false);
   const repeatDialog = useRef<HTMLFormElement>(null);
   const repeatingRef = useRef(false);
 
@@ -130,6 +155,46 @@ export function HistoryWorkspace({ initialPage }: { initialPage?: HistoryPageDat
       if (!cursor) {
         setRecentQuoteRevisions(page.recentQuoteRevisions);
         setRecentActivity(page.recentActivity);
+        if (!repeatLinkHandled.current) {
+          const requestId = new URLSearchParams(window.location.search).get('repeat');
+          repeatLinkHandled.current = true;
+          if (requestId) {
+            try {
+              const request = await resolveRepeatSource(
+                requestId,
+                page.requests,
+                async (id) => {
+                  const sourceResponse = await fetch(
+                    `/api/requests/${encodeURIComponent(id)}`,
+                    { cache: 'no-store' },
+                  );
+                  if (!sourceResponse.ok) return null;
+                  const result = (await sourceResponse.json()) as {
+                    request?: RepeatSource;
+                  };
+                  return result.request ?? null;
+                },
+              );
+              if (request) {
+                repeatingRef.current = false;
+                setRepeating(false);
+                setRepeatSource(request);
+                setRepeatValues(defaultRepeat(request));
+                setError(null);
+              } else {
+                setError({
+                  message: 'This completed order could not be prepared for repeating.',
+                  kind: 'operation',
+                });
+              }
+            } catch {
+              setError({
+                message: 'This completed order could not be prepared for repeating.',
+                kind: 'operation',
+              });
+            }
+          }
+        }
       }
     } catch (caught) {
       setError({
@@ -181,7 +246,7 @@ export function HistoryWorkspace({ initialPage }: { initialPage?: HistoryPageDat
     };
   }, [repeatSource]);
 
-  function openRepeat(request: HistoryRequest) {
+  function openRepeat(request: RepeatSource) {
     repeatingRef.current = false;
     setRepeating(false);
     setRepeatSource(request);
@@ -240,9 +305,16 @@ export function HistoryWorkspace({ initialPage }: { initialPage?: HistoryPageDat
               <span className={styles.historyDate}><CalendarDays aria-hidden="true" />{displayDate(request.deliveryDate)}</span>
               <span className={styles.historyCount}><strong>{request._count.supplierRequests}</strong><small>{request.respondingSupplierCount} replied</small></span>
               <span className={styles.historyRevisions}><strong>{request.quoteRevisionCount}</strong><small>quote versions</small></span>
-              <span className={styles.historyValue}>{request.award ? <><strong>{formatInr(request.award.totalPaise)}</strong><small>{request.award.supplierCount} winning {request.award.supplierCount === 1 ? 'supplier' : 'suppliers'}</small></> : 'Not available'}</span>
+              <span className={styles.historyValue}>{request.award ? <>
+                <strong>{formatInr(request.award.totalPaise)}</strong>
+                <small>{request.award.supplierCount} winning {request.award.supplierCount === 1 ? 'supplier' : 'suppliers'}</small>
+                {request.award.receiving && <small>
+                  Delivery {request.award.receiving.checkedCount} of {request.award.receiving.totalCount} checked
+                  {request.award.receiving.problemCount > 0 && ` · ${request.award.receiving.problemCount} ${request.award.receiving.problemCount === 1 ? 'problem' : 'problems'}`}
+                </small>}
+              </> : 'Not available'}</span>
               <i className={styles[`history${request.status}`]}>{statusLabel[request.status]}</i>
-              <span className={styles.historyActions}>{request.status === 'AWARDED' && <button type="button" onClick={() => openRepeat(request)}><CopyPlus aria-hidden="true" />Run again</button>}<ArrowRight aria-hidden="true" /></span>
+              <span className={styles.historyActions}>{request.status === 'AWARDED' && <button type="button" onClick={() => openRepeat(request)}><CopyPlus aria-hidden="true" />Repeat order</button>}<ArrowRight aria-hidden="true" /></span>
             </article>
           ))}
           {nextCursor && <button className={styles.loadMore} type="button" disabled={loadingMore} onClick={() => void load(nextCursor)}>{loadingMore ? 'Loading…' : 'Load more history'}</button>}
@@ -285,7 +357,7 @@ export function HistoryWorkspace({ initialPage }: { initialPage?: HistoryPageDat
       {repeatSource && (
         <div className={styles.dialogBackdrop} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !repeating) setRepeatSource(null); }}>
           <form className={styles.repeatDialog} onSubmit={repeat} ref={repeatDialog} role="dialog" aria-modal="true" aria-labelledby="repeat-title">
-            <header><div><p>Run again</p><h2 id="repeat-title">Create a new draft</h2></div><button type="button" aria-label="Close repeat request" disabled={repeating} onClick={() => setRepeatSource(null)}><X aria-hidden="true" /></button></header>
+            <header><div><p>Repeat order</p><h2 id="repeat-title">Create a new draft</h2></div><button type="button" aria-label="Close repeat request" disabled={repeating} onClick={() => setRepeatSource(null)}><X aria-hidden="true" /></button></header>
             <p>The items, supplier list, delivery address and terms will be copied. The completed record stays unchanged.</p>
             <label><span>Request title *</span><input maxLength={160} value={repeatValues.title} onChange={(event) => setRepeatValues((current) => ({ ...current, title: event.target.value }))} /></label>
             <div className={styles.repeatDates}>

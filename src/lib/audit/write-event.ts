@@ -30,6 +30,10 @@ const auditRules = {
     entityType: 'Award',
     metadata: ['lineCount', 'supplierCount', 'splitAward', 'reason'],
   },
+  'delivery.checked': {
+    entityType: 'Award',
+    metadata: ['supplierId', 'outcome', 'issueCodes', 'invoiceDifference'],
+  },
   'request.cancelled': {
     entityType: 'ProcurementRequest',
     metadata: ['reason'],

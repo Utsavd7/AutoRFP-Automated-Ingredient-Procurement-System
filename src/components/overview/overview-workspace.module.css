@@ -69,6 +69,19 @@
 .metricCard small { margin-top: auto; padding-top: .85rem; color: var(--overview-muted); font-size: .7rem; }
 .cardArrow { position: absolute; top: 1rem; right: 1rem; width: .9rem; color: #9f4e27; }
 
+.deliveryAttention { max-width: 82rem; min-height: 5rem; margin: 0 auto 1.15rem; padding: .8rem 1rem; display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 1rem; border: 1px solid var(--overview-line); border-radius: .55rem; background: var(--overview-paper); color: var(--overview-ink); text-decoration: none; transition: background-color 150ms ease, border-color 150ms ease; }
+.deliveryAttention:hover { border-color: #b9ad9d; background: #fffdf8; }
+.deliveryAttention > svg { width: 1rem; color: #9f4e27; }
+.deliveryAttentionIcon { width: 2.6rem; height: 2.6rem; display: grid; place-items: center; border: 1px solid #dfb69c; border-radius: .25rem; background: #f3dfd0; color: #9f4e27; }
+.deliveryAttentionIcon svg { width: 1.15rem; }
+.deliveryAttention > span:nth-child(2) { min-width: 0; display: grid; gap: .2rem; }
+.deliveryAttention > span:nth-child(2) strong { font-size: .83rem; }
+.deliveryAttention > span:nth-child(2) small { color: var(--overview-muted); font-size: .7rem; line-height: 1.45; }
+.deliveryAttentionCounts { display: flex; align-items: center; gap: .55rem; }
+.deliveryAttentionCounts b { padding: .35rem .55rem; border-radius: 999px; background: #ece6dc; font-size: .65rem; white-space: nowrap; }
+.deliveryAttentionCounts .deliveryProblem { display: inline-flex; align-items: center; gap: .3rem; color: #842d25; background: #fbdfd8; }
+.deliveryProblem svg { width: .75rem; height: .75rem; }
+
 .workflow { max-width: 82rem; min-height: 5.9rem; margin: 0 auto 1.15rem; padding: .9rem 1.1rem; display: grid; grid-template-columns: minmax(10rem, 1fr) minmax(24rem, 2fr) auto; align-items: center; gap: 1.5rem; border: 1px solid var(--overview-raised); border-radius: .55rem; background: var(--overview-raised); color: #fbf9f4; box-shadow: .35rem .35rem 0 rgba(216, 131, 78, .32); }
 .workflow h2, .panel h2 { margin: .15rem 0 0; font-family: var(--font-newsreader), Georgia, serif; font-size: 1.45rem; font-weight: 500; letter-spacing: -.025em; }
 .workflow .eyebrow { color: #e7a17a; }
@@ -118,6 +131,7 @@
 .primaryAction:focus-visible,
 .secondaryAction:focus-visible,
 .metricCard:focus-visible,
+.deliveryAttention:focus-visible,
 .workflow a:focus-visible,
 .deadlineList > a:focus-visible,
 .awardList > a:focus-visible,
@@ -156,6 +170,9 @@
   .workflow ol { grid-column: 1 / -1; grid-row: 2; }
   .workflow > a { grid-column: 2; grid-row: 1; }
   .detailGrid { grid-template-columns: 1fr; }
+  .deliveryAttention { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .deliveryAttentionCounts { grid-column: 2; justify-self: start; }
+  .deliveryAttention > svg { grid-column: 3; grid-row: 1; }
 }
 
 @media (max-width: 44rem) {
@@ -166,6 +183,10 @@
   .metricCard { min-height: 9.5rem; border-right: 0; border-bottom: 1px solid var(--overview-line); }
   .metricCard:last-child { border-bottom: 0; }
   .metricCard:nth-child(2) { border-right: 0; }
+  .deliveryAttention { grid-template-columns: auto minmax(0, 1fr); }
+  .deliveryAttentionIcon { align-self: start; }
+  .deliveryAttentionCounts { grid-column: 2; flex-wrap: wrap; }
+  .deliveryAttention > svg { display: none; }
   .workflow { grid-template-columns: 1fr; gap: .8rem; }
   .workflow ol, .workflow > a { grid-column: 1; grid-row: auto; }
   .workflow li { padding: .35rem .65rem; }
@@ -185,6 +206,7 @@
   .primaryAction,
   .secondaryAction,
   .metricCard,
+  .deliveryAttention,
   .deadlineList > a,
   .awardList > a { transition: none; }
   .loadingHeader span, .loadingCards span, .loadingPanels span { animation: none; }

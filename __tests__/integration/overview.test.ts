@@ -211,6 +211,7 @@ test('overview reads factual counts and records through tenant RLS without cross
         requests: { draft: 1, open: 1, awarded: 1 },
         quotesReceivedForOpenRequests: 1,
       });
+      expect(overview.deliveryAttention).toEqual({ waiting: 1, problems: 0 });
       expect(overview.deadlines).toEqual([
         expect.objectContaining({
           requestId: 'request-open-a',

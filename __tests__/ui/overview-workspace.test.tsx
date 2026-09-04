@@ -15,6 +15,7 @@ const overview: OverviewData = {
     requests: { draft: 1, open: 2, awarded: 4 },
     quotesReceivedForOpenRequests: 5,
   },
+  deliveryAttention: { waiting: 2, problems: 1 },
   deadlines: [
     {
       requestId: 'request-open',
@@ -47,6 +48,9 @@ describe('overview workspace', () => {
     expect(html).toContain('Menus ready');
     expect(html).toContain('Waiting for suppliers');
     expect(html).toContain('Quotes received');
+    expect(html).toContain('Deliveries to check');
+    expect(html).toContain('2 waiting');
+    expect(html).toContain('1 problem');
     expect(html).toContain('Fresh produce · Bandra');
     expect(html).toContain('3 of 4 responded');
     expect(html).toContain('Vegetables · Week 35');

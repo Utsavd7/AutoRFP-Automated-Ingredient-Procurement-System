@@ -7,8 +7,10 @@ import {
   CheckCircle2,
   ClipboardList,
   Clock3,
+  PackageCheck,
   RefreshCw,
   Send,
+  TriangleAlert,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -232,6 +234,21 @@ export function OverviewWorkspace({
               <ArrowRight className={styles.cardArrow} aria-hidden="true" />
             </Link>
           </section>
+
+          <Link className={styles.deliveryAttention} href="/procurement">
+            <span className={styles.deliveryAttentionIcon}><PackageCheck aria-hidden="true" /></span>
+            <span>
+              <strong>Deliveries to check</strong>
+              <small>Confirm what arrived and compare the invoice with the accepted total.</small>
+            </span>
+            <span className={styles.deliveryAttentionCounts}>
+              <b>{data.deliveryAttention.waiting} waiting</b>
+              {data.deliveryAttention.problems > 0 && (
+                <b className={styles.deliveryProblem}><TriangleAlert aria-hidden="true" />{data.deliveryAttention.problems} {data.deliveryAttention.problems === 1 ? 'problem' : 'problems'}</b>
+              )}
+            </span>
+            <ArrowRight aria-hidden="true" />
+          </Link>
 
           <section className={styles.workflow} aria-labelledby="workflow-title">
             <div>

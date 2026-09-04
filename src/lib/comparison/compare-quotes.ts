@@ -27,6 +27,10 @@ import {
   type QuoteRevisionV1,
   validateQuoteRevisionsDocument,
 } from '@/lib/quotes/quote-revisions';
+import {
+  buildReceivingSummary,
+  validateStoredReceiving,
+} from '@/lib/receiving/receiving-document';
 
 export class QuoteComparisonNotFoundError extends Error {
   readonly code = 'QUOTE_COMPARISON_NOT_FOUND';
@@ -406,6 +410,7 @@ export async function getQuoteComparison(
               allocationLines: true,
               supplierSnapshots: true,
               deliverySnapshot: true,
+              receiving: true,
               totalPaise: true,
               createdAt: true,
             },
@@ -511,6 +516,11 @@ export async function getQuoteComparison(
                 totalPaise: award!.totalPaise,
                 splitAward: award!.splitAward,
                 createdAt: request.award.createdAt.toISOString(),
+                receiving: buildReceivingSummary({
+                  allocationLines: award!.allocationLines,
+                  supplierSnapshots: award!.supplierSnapshots,
+                  receiving: validateStoredReceiving(request.award.receiving),
+                }),
               }
             : null,
         },

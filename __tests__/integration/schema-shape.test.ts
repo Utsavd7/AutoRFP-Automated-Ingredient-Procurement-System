@@ -23,7 +23,7 @@ const applicationTables =
   );
 const expectedColumns: Record<string, string> = {
   AuditEvent: 'id tenantId actorUserId action entityType entityId metadata createdAt',
-  Award: 'id tenantId requestId rationale allocationLines supplierSnapshots deliverySnapshot totalPaise awardedByUserId createdAt',
+  Award: 'id tenantId requestId rationale allocationLines supplierSnapshots deliverySnapshot receiving totalPaise awardedByUserId createdAt',
   Menu: 'id tenantId name sourceText status version approvedAt approvedByUserId createdByUserId createdAt updatedAt document',
   ProcurementRequest: 'id tenantId title status version menuId sourceRequestId deliveryDetails deliveryDate quoteDeadline commercialTerms openedAt awardedAt cancelledAt createdByUserId createdAt updatedAt items sourcing applicationTokenDigest applicationExpiresAt applicationRevokedAt',
   RateLimitBucket: 'keyDigest count resetAt',
@@ -41,6 +41,7 @@ const jsonConstraints = [
   ['Award_allocationLines_size_check', 'Award', 'allocationLines', '2097152'],
   ['Award_deliverySnapshot_size_check', 'Award', 'deliverySnapshot', '16384'],
   ['Award_supplierSnapshots_size_check', 'Award', 'supplierSnapshots', '2097152'],
+  ['Award_receiving_size_check', 'Award', 'receiving', '32768'],
   ['Menu_document_size_check', 'Menu', 'document', '524288'],
   ['ProcurementRequest_deliveryDetails_size_check', 'ProcurementRequest', 'deliveryDetails', '16384'],
   ['ProcurementRequest_items_size_check', 'ProcurementRequest', 'items', '524288'],
@@ -164,7 +165,7 @@ test('compact catalog keeps nine bounded tables and fixed digest grants', async 
         'Menu.document', 'Supplier.capabilities', 'ProcurementRequest.items',
         'ProcurementRequest.sourcing', 'ProcurementRequest.deliveryDetails',
         'SupplierRequest.quoteRevisions', 'Award.allocationLines',
-        'Award.supplierSnapshots', 'Award.deliverySnapshot', 'AuditEvent.metadata',
+        'Award.supplierSnapshots', 'Award.deliverySnapshot', 'Award.receiving', 'AuditEvent.metadata',
       ]) expect(byColumn.get(key)?.udt_name).toBe('jsonb');
       for (const [key, nullable] of [
         ['User.invitationTokenDigest', 'YES'],

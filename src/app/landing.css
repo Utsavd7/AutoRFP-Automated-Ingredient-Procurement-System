@@ -483,6 +483,90 @@
   transform: translateY(-50%) rotate(45deg);
 }
 
+.restaurant-benefits {
+  padding-block: clamp(5.5rem, 9vw, 8rem);
+  border-bottom: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
+  background: var(--stone);
+  color: var(--ink);
+}
+
+.restaurant-benefits__header {
+  max-width: 48rem;
+  margin-bottom: clamp(3rem, 6vw, 5rem);
+}
+
+.restaurant-benefits__header h2 {
+  max-width: 13ch;
+  margin: 0.55rem 0 0;
+  font-family: var(--font-display);
+  font-size: clamp(2.7rem, 5vw, 4.7rem);
+  font-weight: 460;
+  letter-spacing: -0.04em;
+  line-height: 0.98;
+  text-wrap: balance;
+}
+
+.restaurant-benefits__header > p:last-child {
+  max-width: 38rem;
+  margin: 1.4rem 0 0;
+  color: color-mix(in srgb, var(--ink) 72%, transparent);
+  font-size: 1rem;
+  line-height: 1.7;
+}
+
+.restaurant-benefits__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-top: 1px solid color-mix(in srgb, var(--ink) 22%, transparent);
+  border-left: 1px solid color-mix(in srgb, var(--ink) 22%, transparent);
+}
+
+.restaurant-benefit {
+  position: relative;
+  min-height: 18rem;
+  padding: 2rem;
+  border-right: 1px solid color-mix(in srgb, var(--ink) 22%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--ink) 22%, transparent);
+}
+
+.restaurant-benefit__number {
+  position: absolute;
+  top: 2rem;
+  right: 2rem;
+  color: var(--ink-label);
+  font-size: 0.68rem;
+  font-weight: 760;
+  letter-spacing: 0.12em;
+}
+
+.restaurant-benefit .journey-icon {
+  width: 3rem;
+  height: 3rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--copper-text);
+  border-radius: 50%;
+  color: var(--copper-text);
+}
+
+.restaurant-benefit h3 {
+  max-width: 11ch;
+  margin: 3rem 0 0;
+  font-family: var(--font-display);
+  font-size: 1.75rem;
+  font-weight: 520;
+  letter-spacing: -0.025em;
+  line-height: 1.05;
+}
+
+.restaurant-benefit p {
+  max-width: 28rem;
+  margin: 1rem 0 0;
+  color: color-mix(in srgb, var(--ink) 72%, transparent);
+  font-size: 0.82rem;
+  line-height: 1.65;
+}
+
 .privacy-story {
   border-block: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
   background: #FBF8F1;
@@ -637,6 +721,7 @@
   .request-route > div,
   .request-route li,
   .decision-route > div,
+  .restaurant-benefit,
   .privacy-map > div {
     animation: landing-detail-enter linear both;
     animation-timeline: view();
@@ -700,6 +785,10 @@
 
   .privacy-story__grid {
     min-height: auto;
+  }
+
+  .restaurant-benefits__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -890,6 +979,29 @@
     padding-block: 5rem;
   }
 
+  .restaurant-benefits {
+    padding-block: 5rem;
+  }
+
+  .restaurant-benefits__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .restaurant-benefit {
+    min-height: 0;
+    padding: 1.5rem;
+  }
+
+  .restaurant-benefit__number {
+    top: 1.5rem;
+    right: 1.5rem;
+  }
+
+  .restaurant-benefit h3 {
+    max-width: 16ch;
+    margin-top: 2rem;
+  }
+
   .privacy-story h2 {
     font-size: clamp(2.6rem, 13vw, 3.5rem);
   }
@@ -920,6 +1032,7 @@
   .story-scene--comparison .decision-preview,
   .decision-route,
   .decision-route > div,
+  .restaurant-benefit,
   .privacy-map,
   .privacy-map > div {
     animation: none !important;

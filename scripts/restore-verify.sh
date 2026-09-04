@@ -441,12 +441,20 @@ verification_result=$(psql \
       AND finished_at IS NOT NULL
       AND rolled_back_at IS NULL
   )
+  AND EXISTS (
+    SELECT 1
+    FROM public.\"_prisma_migrations\"
+    WHERE migration_name = '20260904000100_award_receiving'
+      AND finished_at IS NOT NULL
+      AND rolled_back_at IS NULL
+  )
   AND NOT EXISTS (
     SELECT 1
     FROM (VALUES
       ('AuditEvent_metadata_size_check', 'AuditEvent', 'metadata', '16384'),
       ('Award_allocationLines_size_check', 'Award', 'allocationLines', '2097152'),
       ('Award_deliverySnapshot_size_check', 'Award', 'deliverySnapshot', '16384'),
+      ('Award_receiving_size_check', 'Award', 'receiving', '32768'),
       ('Award_supplierSnapshots_size_check', 'Award', 'supplierSnapshots', '2097152'),
       ('Menu_document_size_check', 'Menu', 'document', '524288'),
       ('ProcurementRequest_deliveryDetails_size_check', 'ProcurementRequest', 'deliveryDetails', '16384'),
@@ -483,8 +491,12 @@ verification_result=$(psql \
           ),
           '::character varying',
           '::text'
-        ) = 'octet_length' || expected.column_name
-            || '::text<=' || expected.byte_cap
+        ) IN (
+          'octet_length' || expected.column_name
+            || '::text<=' || expected.byte_cap,
+          expected.column_name || 'ISNULLORoctet_length'
+            || expected.column_name || '::text<=' || expected.byte_cap
+        )
     )
   )
   AND (

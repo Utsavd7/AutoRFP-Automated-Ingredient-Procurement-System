@@ -95,6 +95,12 @@ describe('factual reporting', () => {
         createdAt: new Date('2026-08-28T11:00:00.000Z'),
         actor: { name: 'Hidden' }, metadata: { token: 'do-not-return' },
       },
+      {
+        id: 'audit-4', action: 'delivery.checked',
+        createdAt: new Date('2026-08-28T10:30:00.000Z'),
+        actor: { name: 'Ravi Kumar' },
+        metadata: { supplierId: 'supplier-a', outcome: 'MATCHED' },
+      },
     ]);
 
     expect(activity).toEqual([
@@ -105,6 +111,10 @@ describe('factual reporting', () => {
       {
         id: 'audit-2', label: 'Supplier sent quote version 3', actorName: 'Supplier',
         createdAt: '2026-08-28T11:30:00.000Z',
+      },
+      {
+        id: 'audit-4', label: 'Delivery checked', actorName: 'Ravi Kumar',
+        createdAt: '2026-08-28T10:30:00.000Z',
       },
     ]);
     expect(JSON.stringify(activity)).not.toMatch(/private internal note|do-not-return|SupplierQuote|Secret/);

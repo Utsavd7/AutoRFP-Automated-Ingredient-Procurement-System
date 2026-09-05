@@ -594,3 +594,23 @@ test('footer destinations share the public page frame', async ({ page }, testInf
     }
   }
 });
+
+test('Security links frame the section below the shared header', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop-chromium', 'One project covers both header layouts');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  for (const width of [1507, 900, 390]) {
+    await page.setViewportSize({ width, height: 751 });
+    for (const route of ['/', '/privacy']) {
+      await page.goto(route);
+      await page.getByRole('navigation', { name: 'Primary navigation' }).getByRole('link', { name: 'Security' }).click();
+      await expect.poll(() => page.locator('#security').evaluate((element) => (
+        element.getBoundingClientRect().top
+      ))).toBeCloseTo(width > 760 ? 128 : 0, 0);
+      await expect(page.locator('#privacy-story-title')).toBeInViewport();
+    }
+    await page.getByRole('navigation', { name: 'Footer navigation' }).getByRole('link', { name: 'Security' }).click();
+    await expect.poll(() => page.locator('#security').evaluate((element) => (
+      element.getBoundingClientRect().top
+    ))).toBeCloseTo(width > 760 ? 128 : 0, 0);
+  }
+});

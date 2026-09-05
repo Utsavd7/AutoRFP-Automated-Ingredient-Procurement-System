@@ -21,7 +21,6 @@ describe('bounded PostgreSQL JSON documents', () => {
       thumbnails: {
         perDocument: 8,
         decodedBytesPerDocument: 256 * 1024,
-        decodedBytesPerTenant: 4 * 1024 * 1024,
       },
     });
   });

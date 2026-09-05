@@ -81,5 +81,3 @@ export function supplierError(error: unknown): Response {
   }
   throw error;
 }
-
-export const privateSupplierResponse = privateNoStoreResponse;

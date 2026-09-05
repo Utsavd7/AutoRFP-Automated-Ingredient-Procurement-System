@@ -44,8 +44,6 @@ export function runExportWithTimeout<T>(
   });
 }
 
-export const withExportPrivacy = privateNoStoreResponse;
-
 export function exportResponse(output: ExportOutput) {
   if (output.bytes.byteLength < 1 || output.bytes.byteLength > MAX_EXPORT_BYTES) {
     throw new ExportTooLargeError();
@@ -53,7 +51,7 @@ export function exportResponse(output: ExportOutput) {
   if (!/^[a-z0-9][a-z0-9.-]{0,180}$/.test(output.filename)) {
     throw new TypeError('Export filename is unsafe.');
   }
-  return withExportPrivacy(new Response(Uint8Array.from(output.bytes).buffer, {
+  return privateNoStoreResponse(new Response(Uint8Array.from(output.bytes).buffer, {
     headers: {
       'Content-Type': output.mediaType,
       'Content-Disposition': `attachment; filename="${output.filename}"`,
@@ -63,32 +61,32 @@ export function exportResponse(output: ExportOutput) {
 
 export function exportErrorResponse(error: unknown) {
   if (error instanceof ExportNotFoundError) {
-    return withExportPrivacy(problemResponse(
+    return privateNoStoreResponse(problemResponse(
       404,
       'Export unavailable',
       'The requested record is unavailable.',
     ));
   }
   if (error instanceof ExportConflictError) {
-    return withExportPrivacy(problemResponse(409, 'Export unavailable', error.message));
+    return privateNoStoreResponse(problemResponse(409, 'Export unavailable', error.message));
   }
   if (error instanceof ExportValidationError) {
-    return withExportPrivacy(problemResponse(422, 'Invalid export', error.message));
+    return privateNoStoreResponse(problemResponse(422, 'Invalid export', error.message));
   }
   if (error instanceof ExportTooLargeError) {
-    return withExportPrivacy(problemResponse(413, 'Export too large', error.message));
+    return privateNoStoreResponse(problemResponse(413, 'Export too large', error.message));
   }
   if (error instanceof ExportTimeoutError) {
-    return withExportPrivacy(problemResponse(503, 'Export timed out', error.message));
+    return privateNoStoreResponse(problemResponse(503, 'Export timed out', error.message));
   }
   if (error instanceof AuthorizationError) {
-    return withExportPrivacy(problemResponse(
+    return privateNoStoreResponse(problemResponse(
       403,
       'Forbidden',
       'An active workspace member is required.',
     ));
   }
-  return withExportPrivacy(problemResponse(
+  return privateNoStoreResponse(problemResponse(
     503,
     'Export unavailable',
     'Unable to generate this export right now. Try again shortly.',
@@ -96,7 +94,7 @@ export function exportErrorResponse(error: unknown) {
 }
 
 export function unauthorizedExportResponse() {
-  return withExportPrivacy(
+  return privateNoStoreResponse(
     problemResponse(401, 'Unauthorized', 'Authentication is required.'),
   );
 }

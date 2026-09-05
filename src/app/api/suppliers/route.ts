@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { privateNoStoreResponse } from '@/lib/api/private-response';
 import { problemResponse } from '@/lib/api/problem';
 import { requireAccountContext } from '@/lib/server-account';
 import {
@@ -12,7 +13,6 @@ import {
 } from '@/lib/suppliers/supplier-service';
 import {
   isProblemResponse,
-  privateSupplierResponse,
   readSupplierJson,
   supplierActor,
   supplierError,
@@ -21,7 +21,7 @@ import {
 export async function GET(request: Request) {
   const account = await requireAccountContext();
   if (!account) {
-    return privateSupplierResponse(problemResponse(401, 'Unauthorized', 'Authentication is required.'));
+    return privateNoStoreResponse(problemResponse(401, 'Unauthorized', 'Authentication is required.'));
   }
   const url = new URL(request.url);
   try {
@@ -32,7 +32,7 @@ export async function GET(request: Request) {
       limit: url.searchParams.get('limit') ?? undefined,
       cursor: url.searchParams.get('cursor') ?? undefined,
     });
-    return privateSupplierResponse(NextResponse.json(result, {
+    return privateNoStoreResponse(NextResponse.json(result, {
       headers: { 'Cache-Control': 'private, no-store' },
     }));
   } catch (error) {

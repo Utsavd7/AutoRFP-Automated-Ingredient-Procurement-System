@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { Prisma, type PrismaClient } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 import { writeAuditEvent } from '@/lib/audit/write-event';
 import {
@@ -32,9 +32,6 @@ import {
 export const PUBLIC_SUPPLIER_APPLICATION_PENDING_CAP = 25;
 export const PUBLIC_SUPPLIER_APPLICATION_UNAVAILABLE_MESSAGE =
   'This supplier application link is invalid or no longer available.';
-
-type PublicApplicationClient = Pick<PrismaClient, '$queryRaw' | '$transaction'> &
-  TenantTransactionHost;
 
 type PublicApplicationOptions = {
   exchange?: typeof exchangeSupplierApplicationGrantToken;
@@ -308,7 +305,7 @@ async function hasDuplicateContact(
 
 export async function submitPublicSupplierApplication(
   input: { application: unknown; now: Date },
-  client: PublicApplicationClient = prisma,
+  client: TenantTransactionHost = prisma,
   options: PublicApplicationOptions = {},
 ) {
   const application = validatePublicSupplierApplicationInput(input.application);

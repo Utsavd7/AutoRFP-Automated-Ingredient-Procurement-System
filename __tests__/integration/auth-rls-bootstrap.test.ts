@@ -163,6 +163,19 @@ test('restricted runtime role bootstraps compact active users around forced RLS'
         accountState: 'ACTIVE',
         isActive: true,
       });
+      const currentUser = await loadCurrentUser(
+        { userId: emailOwner.userId, tenantId: emailOwner.tenantId },
+        currentUserStore,
+      );
+      expect(currentUser).toMatchObject({
+        id: emailOwner.userId, role: 'OWNER', accountState: 'ACTIVE', isActive: true,
+        tutorialVersion: 1, tutorialStep: 0,
+        tutorialSkippedAt: null, tutorialCompletedAt: null,
+        tenant: { id: emailOwner.tenantId, isActive: true },
+      });
+      expect(currentUser).not.toHaveProperty('passwordHash');
+      expect(currentUser).not.toHaveProperty('googleSubject');
+      expect(currentUser).not.toHaveProperty('invitationTokenDigest');
       await expect(
         authenticateCredentials(
           {

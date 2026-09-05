@@ -1,7 +1,5 @@
 import { randomUUID } from 'node:crypto';
 
-import type { PrismaClient } from '@prisma/client';
-
 import {
   withTenant,
   type TenantTransactionHost,
@@ -131,11 +129,8 @@ export async function createEmailWorkspace(
   }
 }
 
-type SignupClient = Pick<PrismaClient, '$queryRaw' | '$transaction'> &
-  TenantTransactionHost;
-
 export function createPrismaEmailSignupRepository(
-  client: SignupClient,
+  client: TenantTransactionHost,
 ): EmailSignupRepository {
   return {
     async createOwnerWorkspace(input) {

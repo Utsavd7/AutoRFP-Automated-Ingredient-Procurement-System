@@ -1,8 +1,8 @@
+import { privateNoStoreResponse } from '@/lib/api/private-response';
 import { problemResponse } from '@/lib/api/problem';
 import { requireAccountContext } from '@/lib/server-account';
 import { serializeSuppliersCsv } from '@/lib/suppliers/csv';
 import {
-  privateSupplierResponse,
   supplierActor,
   supplierError,
 } from '@/lib/suppliers/supplier-http';
@@ -11,7 +11,7 @@ import { listSuppliersForExport } from '@/lib/suppliers/supplier-service';
 export async function GET(request: Request) {
   const account = await requireAccountContext();
   if (!account) {
-    return privateSupplierResponse(problemResponse(401, 'Unauthorized', 'Authentication is required.'));
+    return privateNoStoreResponse(problemResponse(401, 'Unauthorized', 'Authentication is required.'));
   }
   const url = new URL(request.url);
   try {

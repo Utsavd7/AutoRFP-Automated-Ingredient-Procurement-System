@@ -1,4 +1,4 @@
-import { Prisma, type PrismaClient } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 import { validateAwardDocuments } from '@/lib/awards/award-document';
 import { AuthorizationError } from '@/lib/auth/guards';
@@ -37,7 +37,6 @@ export class ReportingValidationError extends Error {
 }
 
 type ReportingActor = { tenantId: string; userId: string };
-type ReportingClient = TenantTransactionHost & Pick<PrismaClient, '$queryRaw'>;
 
 type InsightRequest = {
   items: Array<{
@@ -261,7 +260,7 @@ async function requireActor(transaction: Parameters<Parameters<typeof withTenant
 
 export async function getFactualInsights(
   input: { actor: ReportingActor },
-  client: ReportingClient = prisma,
+  client: TenantTransactionHost = prisma,
 ) {
   const actor = validateActor(input.actor);
   return withTenant(actor.tenantId, async (transaction) => {
@@ -418,7 +417,7 @@ export function decodeHistoryCursor(value: string): HistoryCursor {
 
 export async function listProcurementHistory(
   input: { actor: ReportingActor; cursor?: string; limit?: number },
-  client: ReportingClient = prisma,
+  client: TenantTransactionHost = prisma,
 ) {
   const actor = validateActor(input.actor);
   const limit = input.limit ?? 25;

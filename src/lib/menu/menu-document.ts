@@ -416,25 +416,9 @@ const SYNONYM_MERGES: Readonly<Record<string, string>> = {
   coriander: 'Cilantro',
 };
 
-function cloneDocument(input: MenuDocumentV1): MenuDocumentV1 {
-  return {
-    v: input.v,
-    source: { ...input.source },
-    dishes: input.dishes.map((dish) => ({
-      ...dish,
-      ingredients: dish.ingredients.map((item) => ({
-        ...item,
-        specification: { ...item.specification },
-      })),
-    })),
-  };
-}
-
 export function proposeMenuCleanup(input: MenuDocumentV1): {
-  cleaned: MenuDocumentV1;
   proposals: MenuCleanupProposal[];
 } {
-  const cleaned = cloneDocument(input);
   const proposals: MenuCleanupProposal[] = [];
   const propose = (
     proposal: Omit<MenuCleanupProposal, 'id' | 'source' | 'applied'>,
@@ -546,7 +530,7 @@ export function proposeMenuCleanup(input: MenuDocumentV1): {
     }
   }
 
-  return { cleaned, proposals };
+  return { proposals };
 }
 
 type SuggestionSource =

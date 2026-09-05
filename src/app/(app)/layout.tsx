@@ -29,10 +29,17 @@ import {
   warmWorkspacePrefetch,
   WORKSPACE_FIRST_REQUESTS,
 } from '@/lib/client/workspace-prefetch';
-import type { RestaurantAccount } from '@/lib/tenant';
 import type { TutorialStateDto } from '@/lib/tutorial/tutorial-state';
 
 import styles from './app-shell.module.css';
+
+type RestaurantAccount = {
+  name: string;
+  addressLine: string;
+  city: string;
+  state: string;
+  pin: string;
+};
 
 const NAV = [
   { href: '/dashboard', icon: LayoutDashboard, label: 'Home' },

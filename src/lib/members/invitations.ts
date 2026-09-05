@@ -1,4 +1,4 @@
-import { Prisma, type PrismaClient, type UserRole } from '@prisma/client';
+import { Prisma, type UserRole } from '@prisma/client';
 
 import { writeAuditEvent } from '@/lib/audit/write-event';
 import { AuthorizationError, requireOwner } from '@/lib/auth/guards';
@@ -80,9 +80,6 @@ export type InvitationRepository = {
   }): Promise<void>;
 };
 
-type InvitationClient = Pick<PrismaClient, '$queryRaw' | '$transaction'> &
-  TenantTransactionHost;
-
 type LockedActor = {
   id: string;
   tenantId: string;
@@ -163,7 +160,7 @@ function userEmailUniqueConflict(error: unknown) {
 }
 
 export function createPrismaInvitationRepository(
-  client: InvitationClient,
+  client: TenantTransactionHost,
 ): InvitationRepository {
   return {
     async create(input) {

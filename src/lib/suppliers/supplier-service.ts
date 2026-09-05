@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 
 import {
   Prisma,
-  type PrismaClient,
   type SupplierRelationshipType,
   type SupplierVerificationStatus,
   type UserRole,
@@ -49,9 +48,6 @@ import {
   validateSupplierUpdateInput,
   validateSupplierVerificationDecision,
 } from '@/lib/suppliers/supplier-schema';
-
-type SupplierClient = Pick<PrismaClient, '$queryRaw' | '$transaction'> &
-  TenantTransactionHost;
 
 type SupplierActor = { tenantId: string; userId: string };
 
@@ -472,7 +468,7 @@ async function databaseClock(transaction: Prisma.TransactionClient) {
 
 export async function createSupplier(
   input: { actor: SupplierActor; supplier: unknown },
-  client: SupplierClient = prisma,
+  client: TenantTransactionHost = prisma,
 ) {
   const actor = validateActor(input.actor);
   const supplier = validateSupplierCreateInput(input.supplier);
@@ -531,7 +527,7 @@ export async function listSuppliers(
     cursor?: unknown;
     limit?: unknown;
   },
-  client: SupplierClient = prisma,
+  client: TenantTransactionHost = prisma,
 ) {
   const actor = validateActor(input.actor);
   const query = validateSupplierListInput({
@@ -570,7 +566,7 @@ export async function listSuppliersForExport(
     cursor?: unknown;
     limit?: unknown;
   },
-  client: SupplierClient = prisma,
+  client: TenantTransactionHost = prisma,
 ) {
   const actor = validateActor(input.actor);
   const boundedList = validateSupplierListInput({
@@ -608,7 +604,7 @@ export async function listSuppliersForExport(
 
 export async function getSupplier(
   input: { actor: SupplierActor; supplierId: string },
-  client: SupplierClient = prisma,
+  client: TenantTransactionHost = prisma,
 ) {
   const actor = validateActor(input.actor);
   const supplierId = validateSupplierId(input.supplierId);
@@ -629,7 +625,7 @@ export async function getSupplier(
 
 export async function updateSupplier(
   input: { actor: SupplierActor; supplierId: string; changes: unknown },
-  client: SupplierClient = prisma,
+  client: TenantTransactionHost = prisma,
 ) {
   const actor = validateActor(input.actor);
   const supplierId = validateSupplierId(input.supplierId);
@@ -715,7 +711,7 @@ export async function updateSupplier(
 
 export async function deactivateSupplier(
   input: { actor: SupplierActor; supplierId: string },
-  client: SupplierClient = prisma,
+  client: TenantTransactionHost = prisma,
 ) {
   return updateSupplier(
     { ...input, changes: { isActive: false } },
@@ -827,7 +823,7 @@ function conflictReport(
 
 export async function importSupplierRows(
   input: { actor: SupplierActor; rows: ParsedSupplierCsvRow[] },
-  client: SupplierClient = prisma,
+  client: TenantTransactionHost = prisma,
 ): Promise<{ importedCount: number }> {
   const actor = validateActor(input.actor);
   const rows = importValidation(input.rows);
@@ -972,7 +968,7 @@ export async function decideSupplierVerification(
     supplierId: string;
     decision: unknown;
   },
-  client: SupplierClient = prisma,
+  client: TenantTransactionHost = prisma,
   options: SupplierVerificationOptions = {},
 ) {
   const actor = validateActor(input.actor);

@@ -1,4 +1,4 @@
-import { Prisma, type PrismaClient } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 import { writeAuditEvent } from '@/lib/audit/write-event';
 import {
@@ -337,8 +337,6 @@ export function validateAwardInput(input: unknown): ValidAwardInput {
   throwIfInvalid(errors);
   throw new AwardValidationError(errors);
 }
-
-type AwardClient = TenantTransactionHost & Pick<PrismaClient, '$queryRaw'>;
 
 type LockedTenant = {
   id: string;
@@ -973,7 +971,7 @@ export async function createAward(input: {
   actor: { tenantId: string; userId: string };
   requestId: string;
   award: unknown;
-}, client: AwardClient = prisma) {
+}, client: TenantTransactionHost = prisma) {
   if (
     !validId(input.actor?.tenantId) ||
     !validId(input.actor?.userId) ||

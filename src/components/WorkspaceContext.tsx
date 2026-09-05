@@ -18,12 +18,6 @@ export function WorkspaceProvider({
   );
 }
 
-export function useWorkspaceId() {
-  const context = useContext(WorkspaceContext);
-  if (!context) throw new Error('Workspace context is unavailable.');
-  return context.workspaceId;
-}
-
 export function useWorkspaceIdOptional() {
   return useContext(WorkspaceContext)?.workspaceId;
 }

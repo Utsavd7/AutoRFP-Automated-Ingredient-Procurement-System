@@ -45,6 +45,5 @@ export const DOCUMENT_LIMITS = {
   thumbnails: {
     perDocument: 8,
     decodedBytesPerDocument: 256 * KIBIBYTE,
-    decodedBytesPerTenant: 4 * MEBIBYTE,
   },
 } as const;

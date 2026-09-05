@@ -35,10 +35,6 @@ type PublicQuoteDependencies = {
 
 const consumeSubmissionClientRateLimit = publicClientRateLimit('quote-submit');
 
-function privacyHeaders(response: NextResponse) {
-  return privateNoStoreResponse(response);
-}
-
 function sessionToken(request: Request) {
   const values = (request.headers.get('cookie') ?? '')
     .split(';')
@@ -66,7 +62,7 @@ function clearSession(response: NextResponse, production: boolean) {
 
 function unavailableResponse(production: boolean) {
   return clearSession(
-    privacyHeaders(
+    privateNoStoreResponse(
       problemResponse(
         410,
         'Supplier link unavailable',
@@ -82,7 +78,7 @@ function errorResponse(error: unknown, production: boolean) {
     return unavailableResponse(production);
   }
   if (error instanceof PublicQuoteValidationError) {
-    return privacyHeaders(
+    return privateNoStoreResponse(
       problemResponse(
         422,
         'Check your quote',
@@ -92,7 +88,7 @@ function errorResponse(error: unknown, production: boolean) {
     );
   }
   if (error instanceof PublicQuoteSubmissionLimitError) {
-    const response = privacyHeaders(
+    const response = privateNoStoreResponse(
       problemResponse(429, 'Too many quote submissions', error.message),
     );
     response.headers.set('Retry-After', String(error.retryAfterSeconds));
@@ -103,19 +99,19 @@ function errorResponse(error: unknown, production: boolean) {
     error instanceof PublicQuoteRevisionLimitError ||
     error instanceof PublicQuoteDocumentSizeError
   ) {
-    return privacyHeaders(
+    return privateNoStoreResponse(
       problemResponse(409, 'Quote changed', error.message),
     );
   }
   if (error instanceof RequestBodyTooLargeError) {
-    return privacyHeaders(
+    return privateNoStoreResponse(
       problemResponse(413, 'Request too large', error.message),
     );
   }
   if (error instanceof InvalidJsonBodyError) {
-    return privacyHeaders(problemResponse(400, 'Invalid request', error.message));
+    return privateNoStoreResponse(problemResponse(400, 'Invalid request', error.message));
   }
-  return privacyHeaders(
+  return privateNoStoreResponse(
     problemResponse(
       503,
       'Quote service unavailable',
@@ -142,7 +138,7 @@ export function createPublicQuoteHandlers(
       if (!token) return unavailableResponse(production);
       try {
         const result = await dependencies.load({ token });
-        return privacyHeaders(NextResponse.json(result));
+        return privateNoStoreResponse(NextResponse.json(result));
       } catch (error) {
         return errorResponse(error, production);
       }
@@ -152,7 +148,7 @@ export function createPublicQuoteHandlers(
       if (!token) return unavailableResponse(production);
       const rejected = browserJsonMutationRejection(request);
       if (rejected) {
-        return privacyHeaders(
+        return privateNoStoreResponse(
           rejected === 'CROSS_ORIGIN'
             ? problemResponse(
                 403,
@@ -173,7 +169,7 @@ export function createPublicQuoteHandlers(
           now: currentTime,
         });
         if (!clientAttempt.allowed) {
-          const response = privacyHeaders(
+          const response = privateNoStoreResponse(
             problemResponse(
               429,
               'Too many quote submissions',
@@ -188,7 +184,7 @@ export function createPublicQuoteHandlers(
         }
         const quote = await readBoundedJson(request, PUBLIC_QUOTE_BODY_BYTES);
         const result = await dependencies.submit({ token, quote });
-        return privacyHeaders(NextResponse.json(result, { status: 201 }));
+        return privateNoStoreResponse(NextResponse.json(result, { status: 201 }));
       } catch (error) {
         return errorResponse(error, production);
       }

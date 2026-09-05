@@ -2,7 +2,6 @@ import {
   clearWorkspacePrefetch,
   prefetchWorkspace,
   setWorkspacePrefetchScope,
-  warmWorkspacePrefetch,
   workspaceFetch,
   workspaceMutationFetch,
 } from '@/lib/client/workspace-prefetch';
@@ -504,43 +503,15 @@ describe('workspace prefetch', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
-  it('keeps at most two idle warm requests active and excludes the current route', async () => {
-    let active = 0;
-    let maximumActive = 0;
-    const requested: string[] = [];
-    jest.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-      requested.push(String(input));
-      active += 1;
-      maximumActive = Math.max(maximumActive, active);
-      await new Promise((resolve) => setTimeout(resolve, 5));
-      active -= 1;
-      return jsonResponse({ ok: true });
-    });
-
-    await warmWorkspacePrefetch('/dashboard');
-
-    expect(requested).toHaveLength(6);
-    expect(requested).not.toContain('/api/overview');
-    expect(maximumActive).toBe(2);
-  });
-
-  it('prefetches sidebar destinations on intent and warms them once while idle', () => {
+  it('prefetches sidebar destinations only on user intent', () => {
     const source = readFileSync(
       join(process.cwd(), 'src', 'app', '(app)', 'layout.tsx'),
       'utf8',
     );
-
     expect(source).toContain('onPointerEnter={() => void prefetchWorkspace');
     expect(source).toContain('onFocus={() => void prefetchWorkspace');
-    expect(source).toContain("document.visibilityState !== 'visible'");
-    expect(source).toContain("document.addEventListener('visibilitychange', onVisibilityChange)");
-    expect(source).toContain("document.removeEventListener('visibilitychange', onVisibilityChange)");
-    expect(source).toContain('if (warmed || scheduled || document.visibilityState');
-    expect(source).toContain('warmed = true');
-    expect(source).toContain('requestIdleCallback');
-    expect(source).toContain('cancelIdleCallback');
-    expect(source).toContain('warmWorkspacePrefetch(window.location.pathname)');
-    expect(source).not.toContain('Object.values(WORKSPACE_FIRST_REQUESTS).map');
+    expect(source).not.toContain('warmWorkspacePrefetch');
+    expect(source).not.toContain('requestIdleCallback');
   });
 
   it('sets and ends the private cache scope at account and sign-out boundaries', () => {

@@ -26,7 +26,6 @@ import { createSignInRedirect } from '@/lib/auth/callback-url';
 import {
   prefetchWorkspace,
   setWorkspacePrefetchScope,
-  warmWorkspacePrefetch,
   WORKSPACE_FIRST_REQUESTS,
 } from '@/lib/client/workspace-prefetch';
 import type { TutorialStateDto } from '@/lib/tutorial/tutorial-state';
@@ -180,56 +179,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       setWorkspacePrefetchScope(null);
     };
   }, [accountRetry, router]);
-
-  useEffect(() => {
-    if (!ready || !account) return;
-    let warmed = false;
-    let scheduled = false;
-    let idleId: number | null = null;
-    let timeoutId: ReturnType<typeof setTimeout> | null = null;
-
-    const cancelScheduledWarm = () => {
-      if (idleId !== null) window.cancelIdleCallback(idleId);
-      if (timeoutId !== null) clearTimeout(timeoutId);
-      idleId = null;
-      timeoutId = null;
-      scheduled = false;
-    };
-    const warmWorkspaceRoutes = () => {
-      idleId = null;
-      timeoutId = null;
-      scheduled = false;
-      if (document.visibilityState !== 'visible') return;
-      warmed = true;
-      document.removeEventListener('visibilitychange', onVisibilityChange);
-      void warmWorkspacePrefetch(window.location.pathname);
-    };
-
-    const scheduleWarm = () => {
-      if (warmed || scheduled || document.visibilityState !== 'visible') return;
-      scheduled = true;
-      if ('requestIdleCallback' in window) {
-        idleId = window.requestIdleCallback(warmWorkspaceRoutes, { timeout: 1_500 });
-        return;
-      }
-      timeoutId = setTimeout(warmWorkspaceRoutes, 150);
-    };
-
-    const onVisibilityChange = () => {
-      if (document.visibilityState !== 'visible') {
-        cancelScheduledWarm();
-        return;
-      }
-      scheduleWarm();
-    };
-
-    document.addEventListener('visibilitychange', onVisibilityChange);
-    scheduleWarm();
-    return () => {
-      document.removeEventListener('visibilitychange', onVisibilityChange);
-      cancelScheduledWarm();
-    };
-  }, [account, ready]);
 
   useEffect(() => {
     if (!mobileOpen) return;

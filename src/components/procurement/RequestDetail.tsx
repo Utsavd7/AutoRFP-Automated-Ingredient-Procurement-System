@@ -28,6 +28,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { workspaceMutationFetch } from '@/lib/client/workspace-prefetch';
+import { formatIndiaDate as displayDate } from '@/lib/domain/india-date';
 import { formatInr } from '@/lib/domain/money';
 import type {
   RequestItemsV1,
@@ -208,14 +209,6 @@ type RequestUiError = {
 } | null;
 
 const statusLabel: Record<Status, string> = { DRAFT: 'Not sent', OPEN: 'Waiting for suppliers', AWARDED: 'Supplier selected', CANCELLED: 'Cancelled' };
-
-function displayDate(value: string, withTime = false) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'Date unavailable';
-  return new Intl.DateTimeFormat('en-IN', withTime
-    ? { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' }
-    : { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }).format(date);
-}
 
 function unitLabel(unit: string) {
   return ({ KILOGRAM: 'kg', GRAM: 'g', LITRE: 'L', MILLILITRE: 'ml', PIECE: 'piece', PACK: 'pack', CASE: 'case', CRATE: 'crate' } as Record<string, string>)[unit] ?? unit.toLowerCase();

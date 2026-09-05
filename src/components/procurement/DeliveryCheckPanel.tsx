@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useState, type FormEvent } from 'react';
 
 import { workspaceMutationFetch } from '@/lib/client/workspace-prefetch';
+import { formatIndiaDate as displayDate } from '@/lib/domain/india-date';
 import { formatInr, parseInrToPaise } from '@/lib/domain/money';
 import styles from './request-detail.module.css';
 
@@ -49,14 +50,6 @@ function rupeesInput(paise: string) {
   const whole = value / BigInt(100);
   const fraction = (value % BigInt(100)).toString().padStart(2, '0');
   return fraction === '00' ? whole.toString() : `${whole}.${fraction}`;
-}
-
-function displayDate(value: string, withTime = false) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'Date unavailable';
-  return new Intl.DateTimeFormat('en-IN', withTime
-    ? { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' }
-    : { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }).format(date);
 }
 
 function differenceText(value: string) {

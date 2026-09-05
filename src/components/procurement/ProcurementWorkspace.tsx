@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { workspaceFetch } from '@/lib/client/workspace-prefetch';
+import { formatIndiaDate as shortDate, formatIndiaDeadline as deadlineText } from '@/lib/domain/india-date';
 import styles from './procurement-workspace.module.css';
 
 type RequestStatus = 'DRAFT' | 'OPEN' | 'AWARDED' | 'CANCELLED';
@@ -30,20 +31,6 @@ const statusLabel: Record<RequestStatus, string> = {
   AWARDED: 'Supplier selected',
   CANCELLED: 'Cancelled',
 };
-
-function shortDate(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'Date unavailable';
-  return new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }).format(date);
-}
-
-function deadlineText(value: string) {
-  const deadline = new Date(value);
-  if (Number.isNaN(deadline.getTime())) return 'Deadline unavailable';
-  return new Intl.DateTimeFormat('en-IN', {
-    day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true,
-  }).format(deadline);
-}
 
 async function responseMessage(response: Response, fallback: string) {
   const problem = (await response.json().catch(() => ({}))) as { detail?: string; error?: string };

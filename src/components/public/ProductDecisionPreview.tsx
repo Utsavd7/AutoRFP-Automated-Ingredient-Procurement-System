@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import {
   formatSampleInr,
   restaurantSampleQuotes,
@@ -86,7 +85,7 @@ export function ProductDecisionPreview({ headingLevel = 2 }: ProductDecisionPrev
 
               <footer className="decision-preview__footer">
                 <span>Human decision required</span>
-                <Link href="/product#compare">Review & award</Link>
+                <a href="#watch-demo">Watch demo</a>
               </footer>
             </section>
           </div>

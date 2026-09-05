@@ -5,7 +5,6 @@ import { PublicLandingPage } from '../../src/components/public/PublicLandingPage
 import { PublicHeader } from '../../src/components/public/PublicHeader';
 import { ProductDecisionPreview } from '../../src/components/public/ProductDecisionPreview';
 import { LandingJourney } from '../../src/components/public/LandingJourney';
-import { ProductTour } from '../../src/components/public/ProductTour';
 import { AuthPageShell } from '../../src/components/auth/AuthPageShell';
 import {
   formatSampleInr,
@@ -47,8 +46,7 @@ const publicFiles = [
   'src/components/public/PublicHeader.tsx',
   'src/components/public/PublicFooter.tsx',
   'src/components/public/LegalPageLayout.tsx',
-  'src/components/public/SampleQuoteComparison.tsx',
-  'src/components/public/ProductTour.tsx',
+  'src/components/public/JourneyStage.tsx',
   'src/components/public/ProductDecisionPreview.tsx',
   'src/components/public/JourneyIcon.tsx',
   'src/components/public/LandingJourney.tsx',
@@ -126,9 +124,9 @@ describe('public website contract', () => {
       expect(labelIndex).toBeGreaterThan(previousRouteLabel);
       previousRouteLabel = labelIndex;
     }
-    expect(heroMarkup.match(/href="\/product"/g)).toHaveLength(1);
+    expect(heroMarkup).not.toContain('href="/product"');
     expect(heroMarkup.match(/href="\/start"/g)).toHaveLength(1);
-    expect(heroMarkup.match(/href="\/product">See the product /g)).toHaveLength(1);
+    expect(heroMarkup).toContain('href="#watch-demo"');
     expect(heroMarkup.match(/href="\/start">Start free pilot /g)).toHaveLength(1);
 
     const journeyMarkup = markup.slice(journeyStart, privacyStart);
@@ -144,9 +142,8 @@ describe('public website contract', () => {
     const closingMarkup = markup.slice(closingStart, mainEnd);
     expect(closingMarkup).toContain('<div class="public-hero__actions">');
     expect(closingMarkup.match(/href="\/start"/g)).toHaveLength(1);
-    expect(closingMarkup.match(/href="\/product"/g)).toHaveLength(1);
+    expect(closingMarkup).not.toContain('href="/product"');
     expect(closingMarkup.match(/href="\/start">Start free pilot /g)).toHaveLength(1);
-    expect(closingMarkup.match(/href="\/product">See the product /g)).toHaveLength(1);
   });
 
   test('explains why restaurant teams keep using the product after the first purchase', () => {
@@ -158,14 +155,11 @@ describe('public website contract', () => {
     expect(benefitsStart).toBeGreaterThanOrEqual(0);
     expect(benefits).toContain('Useful for every purchase, not just the first one.');
     for (const benefit of [
-      'Buy faster each week',
-      'Compare the full cost',
-      'Check every delivery',
-      'Catch invoice differences',
-      'Remember supplier performance',
-      'Repeat regular orders',
+      'Reuse each buying cycle',
+      'Check the complete cost',
+      'Keep delivery history',
     ]) expect(benefits).toContain(benefit);
-    expect(benefits.match(/class="restaurant-benefit"/g)).toHaveLength(6);
+    expect(benefits.match(/class="restaurant-benefit"/g)).toHaveLength(3);
     expect(benefits).not.toMatch(/guaranteed|save \d+%|recommended supplier/i);
   });
 
@@ -215,9 +209,7 @@ describe('public website contract', () => {
     expect(landingCss).toContain('.landing-story');
     expect(landingCss).toContain('.privacy-story');
     expect(landingCss).toMatch(/@supports\s*\(\s*animation-timeline\s*:\s*view\(\s*\)\s*\)/);
-    expect(landingCss).toMatch(
-      /\.supplier-diagram\s*,\s*\.request-route\s*,\s*\.story-scene--comparison\s+\.decision-preview\s*,\s*\.decision-route\s*,\s*\.privacy-map\s*\{[^}]*animation-timeline\s*:\s*view\(\s*\)/,
-    );
+    expect(landingCss).toMatch(/\.privacy-map\s*\{[^}]*animation-timeline\s*:\s*view\(/);
     expect(landingCss).not.toMatch(/\binfinite\b/i);
     expect(globalCss).not.toContain('.hero-route');
     expect(globalCss).not.toContain('.landing-story');
@@ -253,7 +245,7 @@ describe('public website contract', () => {
     const markup = renderToStaticMarkup(<PublicHeader home />);
 
     expect(markup).toContain('aria-label="Primary navigation"');
-    expect(markup).toContain('<a href="/product">Product</a>');
+    expect(markup).not.toContain('href="/product"');
     expect(markup).toContain('<a href="#how-it-works">How it works</a>');
     expect(markup).toContain('<a href="#security">Security</a>');
     expect(markup).toContain('<a class="public-text-action" href="/signin">Sign in</a>');
@@ -264,47 +256,18 @@ describe('public website contract', () => {
     const markup = renderToStaticMarkup(<PublicLandingPage />);
     const allPublicSource = publicFiles.map(source).join('\n');
 
-    for (const destination of ['/product', '#how-it-works', '#security', '/privacy', '/terms', '/signin', '/start']) {
+    for (const destination of ['#watch-demo', '#how-it-works', '#security', '/privacy', '/terms', '/signin', '/start']) {
       expect(markup).toContain(`href="${destination}"`);
     }
 
-    expect(markup).toContain('See the product');
+    expect(markup).not.toContain('See the product');
     expect(markup).toContain('Start a pilot');
     expect(allPublicSource).not.toMatch(
       /\b(?:AI|artificial intelligence|automatic negotiation|market pricing|guaranteed savings|customer count|integrations?)\b/i,
     );
   });
 
-  test('labels every public quote record as sample data', () => {
-    const preview = source('src/components/public/SampleQuoteComparison.tsx');
-    const tour = source('src/components/public/ProductTour.tsx');
 
-    expect(preview).toMatch(/Sample data/);
-    expect(preview).toMatch(/Sample request/);
-    expect(tour).toMatch(/Sample (?:request|supplier view|comparison)/g);
-  });
-
-  test('presents each product-tour example as an illustrative working record', () => {
-    const markup = renderToStaticMarkup(<ProductTour />);
-    const supplierStart = markup.indexOf('Illustrative supplier response workspace');
-    const comparisonStart = markup.indexOf('Illustrative comparison workspace');
-    const requestMarkup = markup.slice(0, supplierStart);
-    const supplierMarkup = markup.slice(supplierStart, comparisonStart);
-
-    expect(markup).toContain('aria-label="Illustrative request workspace"');
-    expect(markup).toContain('aria-label="Illustrative supplier response workspace"');
-    expect(markup).toContain('aria-label="Illustrative comparison workspace"');
-    expect(markup.match(/Sample data · illustrative only/g)).toHaveLength(3);
-    expect(markup).toContain('aria-label="Sample request record"');
-    expect(markup).toContain('id="compare"');
-    expect(requestMarkup).toContain(restaurantSampleRequest.cadence);
-    expect(requestMarkup).toContain(`${restaurantSampleQuotes.length} sample supplier records`);
-    expect(requestMarkup).toContain('<th scope="col">Ingredient</th>');
-    expect(requestMarkup).toContain(`<th scope="row">${restaurantSampleRequest.items[0].name}</th>`);
-    expect(supplierMarkup).toContain(formatSampleInr(restaurantSampleQuotes[0].gstPaise));
-    expect(supplierMarkup).toContain(formatSampleInr(restaurantSampleQuotes[0].freightPaise));
-    expect(supplierMarkup).toContain(restaurantSampleQuotes[0].delivery);
-  });
 
   test('states the controlled-pilot terms before account onboarding', () => {
     const markup = renderToStaticMarkup(
@@ -350,7 +313,7 @@ describe('public website contract', () => {
 
     expect(markup).not.toContain('Controlled pilot terms');
     expect(markup).toContain('class="public-header public-header--sticky"');
-    expect(markup).toContain('href="/product">Product</a>');
+    expect(markup).not.toContain('href="/product"');
     expect(markup).toContain('href="/#how-it-works">How it works</a>');
     expect(markup).toContain('href="/#security">Security</a>');
     expect(markup).toContain('your browser stores only the session needed to keep you signed in');
@@ -363,8 +326,8 @@ describe('public website contract', () => {
     expect(markup).toContain('Sample data');
     expect(markup).toContain('Sample request');
     expect(markup).toContain('Human decision required');
-    expect(markup).toContain('href="/product#compare"');
-    expect(markup).toContain('Review &amp; award');
+    expect(markup).toContain('href="#watch-demo"');
+    expect(markup).toContain('Watch demo');
     expect(markup).toContain('Illustrative prices · not live market data');
     expect(markup).toContain('role="region"');
     expect(markup).toContain('tabindex="0"');
@@ -450,15 +413,6 @@ describe('public website contract', () => {
     expect(source('src/app/icon.svg')).toContain('<svg');
   });
 
-  test('contains wide quote comparisons inside the mobile product tour', () => {
-    const preview = source('src/components/public/SampleQuoteComparison.tsx');
-    const css = source('src/app/globals.css');
-
-    expect(preview).toContain('Scroll to compare all suppliers');
-    expect(css).toContain('.tour-step > *');
-    expect(css).toContain('min-width: 0');
-    expect(css).toContain('.sample-scroll-hint');
-  });
 
   test('keeps repeated wordmark symbols decorative without duplicate title ids', () => {
     const mark = source('src/components/brand/BrandMark.tsx');
@@ -479,7 +433,6 @@ describe('public website contract', () => {
 
   test('uses contrast-safe text tokens across light and dark public surfaces', () => {
     const css = source('src/app/globals.css');
-    const landingCss = source('src/app/landing.css');
     const copper = css.match(/--copper:\s*(#[\dA-F]{6})/i)?.[1];
     const copperText = css.match(/--copper-text:\s*(#[\dA-F]{6})/i)?.[1];
     const ink = css.match(/--ink:\s*(#[\dA-F]{6})/i)?.[1];
@@ -498,16 +451,14 @@ describe('public website contract', () => {
     expect(contrastRatio(mutedLabel!, '#F5F1E8')).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(mutedLabel!, '#EBE5D9')).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(mutedLabel!, '#FBF8F1')).toBeGreaterThanOrEqual(4.5);
-    expect(css).toMatch(/\.public-hero h1 em,[\s\S]*?\.product-hero h1 em[\s\S]*?color: var\(--copper-text\)/);
-    expect(landingCss).toMatch(/\.story-scene__number[\s\S]*?color: var\(--copper\)/);
-    expect(css).toMatch(/\.tour-index \{ color: var\(--copper-text\); \}/);
-    expect(css).toMatch(/\.sample-label,[\s\S]*?\.supplier-sheet header span[\s\S]*?color: var\(--ink-label\)/);
+    expect(css).toMatch(/\.public-hero h1 em[\s\S]*?color: var\(--copper-text\)/);
+    expect(css).toMatch(/\.sample-label[\s\S]*?color: var\(--ink-label\)/);
     expect(css).toMatch(/\.decision-preview__summary > span \{[\s\S]*?color: var\(--ink-label\)/);
     expect(css).toMatch(/\.decision-preview__footer > span \{[\s\S]*?color: var\(--success\)/);
   });
 
   test('lets the root title template add the product name exactly once', () => {
-    expect(source('src/app/product/page.tsx')).toContain("title: 'Product'");
+    expect(source('src/app/product/page.tsx')).toContain("permanentRedirect('/#how-it-works')");
     expect(source('src/app/privacy/page.tsx')).toContain("title: 'Privacy'");
     expect(source('src/app/terms/page.tsx')).toContain("title: 'Terms'");
     expect(publicFiles.map(source).join('\n')).not.toMatch(/title: `(?:Product|Privacy|Terms) \|/);
@@ -516,24 +467,20 @@ describe('public website contract', () => {
   test('keeps sample preview counts and launch units honest', () => {
     const landing = source('src/components/public/PublicLandingPage.tsx');
     const markup = renderToStaticMarkup(<PublicLandingPage />);
-    const tour = source('src/components/public/ProductTour.tsx');
     const sample = source('src/data/sample-procurement.ts');
 
     expect(markup).toContain(`${restaurantSampleQuotes.length} supplier replies`);
     expect(markup).toContain(`${restaurantSampleRequest.items.length} items requested`);
     expect(landing).toContain("from '@/data/sample-procurement'");
     expect(landing).not.toMatch(/\b(?:3 supplier replies|8 items requested)\b/);
-    expect(tour).toContain('items.slice(0, 4)');
-    expect(tour).toContain('items.slice(0, 2)');
     expect(sample).toContain("name: 'Coriander', quantity: 3, unit: 'kg'");
-    expect(`${tour}\n${sample}`).not.toContain("'bunch'");
+    expect(sample).not.toContain("'bunch'");
   });
 
   test('uses a coherent seven-day restaurant order instead of decorative demo numbers', () => {
     expect(restaurantSampleRequest.context).toMatch(/Bengaluru/i);
     expect(restaurantSampleRequest.context).toMatch(/100 covers/i);
     expect(restaurantSampleRequest.cadence).toBe('7-day kitchen order');
-    expect(restaurantSampleRequest.delivery).toBe('Next morning');
     expect(restaurantSampleRequest.items).toHaveLength(8);
 
     const submittedQuote = restaurantSampleQuotes[0];

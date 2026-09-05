@@ -18,34 +18,19 @@ const proofPoints = [
 
 const restaurantBenefits = [
   {
-    icon: 'list' as const,
-    title: 'Buy faster each week',
-    detail: 'Reuse checked menus and past requests instead of rebuilding the same list.',
-  },
-  {
-    icon: 'price' as const,
-    title: 'Compare the full cost',
-    detail: 'See item prices, GST, freight, delivery and missing items together before you choose.',
-  },
-  {
-    icon: 'approve' as const,
-    title: 'Check every delivery',
-    detail: 'Record what arrived as agreed, or note late, missing, wrong or poor quality items.',
+    icon: 'history' as const,
+    title: 'Reuse each buying cycle',
+    detail: 'Reuse checked menus and past requests. Repeat a completed purchase as a new draft and ask suppliers for fresh prices.',
   },
   {
     icon: 'receipt' as const,
-    title: 'Catch invoice differences',
-    detail: 'Enter the invoice total and see any difference from the accepted supplier total.',
+    title: 'Check the complete cost',
+    detail: 'Compare item prices, GST, freight, delivery and missing items. Check the entered invoice total against the accepted supplier total.',
   },
   {
-    icon: 'history' as const,
-    title: 'Remember supplier performance',
-    detail: 'Keep delivery and buying history visible to your restaurant team.',
-  },
-  {
-    icon: 'suppliers' as const,
-    title: 'Repeat regular orders',
-    detail: 'Copy a completed purchase into a new draft and ask suppliers for fresh prices.',
+    icon: 'approve' as const,
+    title: 'Keep delivery history',
+    detail: 'Record what arrived and any late, missing, wrong or poor quality items. Keep supplier performance and buying history visible to your team.',
   },
 ];
 
@@ -68,8 +53,7 @@ export function PublicLandingPage() {
               items, and payment terms before your restaurant chooses.
             </p>
             <div className="public-hero__actions">
-              <Link className="public-button" href="/product">See the product <span aria-hidden="true">→</span></Link>
-              <a className="public-inline-link" href="#watch-demo">Watch the demo <span aria-hidden="true">↓</span></a>
+              <a className="public-button" href="#watch-demo">Watch the demo <span aria-hidden="true">↓</span></a>
               <Link className="public-inline-link" href="/start">Start free pilot <span aria-hidden="true">↗</span></Link>
             </div>
             <p className="public-hero__note">No supplier commission. No card required.</p>
@@ -109,7 +93,7 @@ export function PublicLandingPage() {
 
         <LandingJourney />
 
-        <section className="restaurant-benefits" aria-labelledby="restaurant-benefits-title">
+        <section className="restaurant-benefits" id="benefits" aria-labelledby="restaurant-benefits-title">
           <div className="public-container">
             <header className="restaurant-benefits__header">
               <p className="public-eyebrow">Why restaurants keep using it</p>
@@ -117,9 +101,8 @@ export function PublicLandingPage() {
               <p>QuotePlate helps your team before, during and after each supplier order.</p>
             </header>
             <div className="restaurant-benefits__grid">
-              {restaurantBenefits.map((benefit, index) => (
+              {restaurantBenefits.map((benefit) => (
                 <article className="restaurant-benefit" key={benefit.title}>
-                  <span className="restaurant-benefit__number">{String(index + 1).padStart(2, '0')}</span>
                   <JourneyIcon name={benefit.icon} />
                   <h3>{benefit.title}</h3>
                   <p>{benefit.detail}</p>
@@ -176,7 +159,6 @@ export function PublicLandingPage() {
             </p>
             <div className="public-hero__actions">
               <Link className="public-button" href="/start">Start free pilot <span aria-hidden="true">→</span></Link>
-              <Link className="public-inline-link" href="/product">See the product <span aria-hidden="true">↗</span></Link>
             </div>
           </div>
         </section>

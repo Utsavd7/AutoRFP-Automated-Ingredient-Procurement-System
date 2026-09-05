@@ -1,6 +1,6 @@
-.section { padding-block: clamp(4rem, 8vw, 7rem); scroll-margin-top: 6rem; }
+.section { padding-block: clamp(3rem, 6vw, 5rem); scroll-margin-top: 6rem; }
 .header { display: grid; grid-template-columns: 1.2fr 1fr; gap: 3rem; align-items: end; margin-bottom: 2rem; }
-.header h2 { max-width: 14ch; margin: 0; font: 460 clamp(2.4rem, 4.5vw, 4rem)/1.04 var(--font-display); letter-spacing: -.035em; text-wrap: balance; }
+.header h2 { max-width: 22ch; margin: 0; font: 460 clamp(2.2rem, 3.8vw, 3.4rem)/1.04 var(--font-display); letter-spacing: -.035em; text-wrap: balance; }
 .header > p { max-width: 42ch; margin: 0; color: var(--muted); line-height: 1.75; }
 .player { border: 1px solid #c5c1b7; border-radius: 10px; overflow: hidden; background: var(--ink); }
 .player video { width: 100%; height: auto; aspect-ratio: 16 / 9; display: block; }

@@ -181,6 +181,10 @@
   color: var(--ink);
 }
 
+@media (min-width: 761px) {
+  .privacy-story { scroll-margin-top: 8rem; }
+}
+
 .privacy-story .public-eyebrow {
   color: var(--ink-label);
 }

@@ -15,7 +15,8 @@ export function PublicHeader({ home = false, sticky = false }: PublicHeaderProps
         </Link>
         <nav aria-label="Primary navigation" className="public-nav">
           <Link href={home ? '#how-it-works' : '/#how-it-works'}>How it works</Link>
-          <Link href={home ? '#security' : '/#security'}>Security</Link>
+          {/* Native anchors re-scroll when the same hash is already active. */}
+          <a href={home ? '#security' : '/#security'}>Security</a>
         </nav>
         <div className="public-header__actions">
           <Link className="public-text-action" href="/signin">Sign in</Link>

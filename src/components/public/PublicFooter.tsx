@@ -14,7 +14,8 @@ export function PublicFooter() {
         </div>
         <nav aria-label="Footer navigation" className="public-footer__links">
           <Link href="/#how-it-works">How it works</Link>
-          <Link href="/#security">Security</Link>
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- Native anchors re-scroll when the same hash is already active. */}
+          <a href="/#security">Security</a>
           <Link href="/privacy">Privacy</Link>
           <Link href="/terms">Terms</Link>
           <Link href="/signin">Sign in</Link>

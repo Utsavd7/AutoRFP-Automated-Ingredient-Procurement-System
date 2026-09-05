@@ -33,7 +33,7 @@
 }
 .pageHeader h1, .panelHeader h2, .dialogHeader h2, .loadError h1 {
   margin: .25rem 0 0;
-  font-family: var(--font-newsreader), Georgia, serif;
+  font-family: var(--font-display), Georgia, serif;
   font-weight: 500;
   letter-spacing: -.035em;
 }
@@ -112,7 +112,7 @@
 
 .peopleList { display: grid; }
 .person { min-height: 6.25rem; padding: 1rem 1.15rem; display: grid; grid-template-columns: 2.8rem minmax(11rem, 1fr) auto auto; align-items: center; gap: .8rem; border-bottom: 1px solid #e5ded3; }
-.avatar { width: 2.8rem; height: 2.8rem; display: grid; place-items: center; color: #713917; background: #efd1bd; font-family: var(--font-newsreader), Georgia, serif; font-size: 1.05rem; }
+.avatar { width: 2.8rem; height: 2.8rem; display: grid; place-items: center; color: #713917; background: #efd1bd; font-family: var(--font-display), Georgia, serif; font-size: 1.05rem; }
 .personIdentity { min-width: 0; }
 .personIdentity h3 { margin: 0; display: flex; align-items: center; gap: .45rem; font-size: .86rem; }
 .personIdentity h3 small { padding: .18rem .35rem; border-radius: 999px; color: #315d49; background: #e5efe8; font-size: .6rem; text-transform: uppercase; letter-spacing: .05em; }
@@ -162,7 +162,7 @@
 .inviteSuccess:focus { outline: 3px solid var(--settings-copper); outline-offset: -3px; }
 .successMark { width: 3.5rem; height: 3.5rem; margin: .2rem auto .9rem; display: grid; place-items: center; color: #285e4d; border: 1px solid #9ab9a5; background: #e7f1e9; }
 .successMark svg { width: 1.2rem; }
-.inviteSuccess h3 { margin: 0 0 .45rem; font-family: var(--font-newsreader), Georgia, serif; font-size: 1.65rem; font-weight: 500; }
+.inviteSuccess h3 { margin: 0 0 .45rem; font-family: var(--font-display), Georgia, serif; font-size: 1.65rem; font-weight: 500; }
 .inviteLink { margin: 1rem 0; display: grid; gap: .38rem; text-align: left; color: var(--settings-muted); font-size: .69rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
 .inviteLink textarea { width: 100%; min-height: 5.2rem; padding: .7rem .75rem; resize: vertical; overflow-wrap: anywhere; border: 1px solid var(--settings-line); border-radius: 0; outline: 0; background: #fffdf8; color: var(--settings-ink); font-family: var(--font-mono), monospace; font-size: .72rem; line-height: 1.5; letter-spacing: normal; text-transform: none; }
 .inviteLink textarea:focus { border-color: #9f4e27; box-shadow: 0 0 0 2px rgba(216, 131, 79, .17); }

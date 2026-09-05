@@ -11,8 +11,8 @@
   background: var(--stone);
 }
 .header { max-width: 82rem; margin: 0 auto 2rem; display: flex; align-items: end; justify-content: space-between; gap: 2rem; }
-.header h1, .empty h2, .dialog h2 { margin: .25rem 0 0; font-family: var(--font-newsreader), Georgia, serif; font-weight: 500; letter-spacing: -.035em; }
-.header h1 { font-size: clamp(2.35rem, 5vw, 4.4rem); line-height: .95; }
+.header h1, .empty h2, .dialog h2 { margin: .25rem 0 0; font-family: var(--font-display), Georgia, serif; font-weight: 500; letter-spacing: -.035em; }
+.header h1 { font-size: clamp(2.2rem, 3.6vw, 3.4rem); line-height: 1.08; }
 .intro { max-width: 40rem; margin: .75rem 0 0; color: var(--muted); font-size: .98rem; line-height: 1.55; }
 .eyebrow { margin: 0; color: #9f4e27; font-size: .7rem; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
 .primaryButton, .secondaryButton { min-height: 2.75rem; display: inline-flex; align-items: center; justify-content: center; gap: .5rem; border-radius: .55rem; padding: .68rem 1rem; border: 1px solid var(--ink); font: inherit; font-size: .82rem; font-weight: 750; cursor: pointer; }
@@ -28,7 +28,7 @@
 .error { max-width: 82rem; margin: 0 auto 1rem; padding: .72rem .9rem; display: flex; justify-content: space-between; gap: 1rem; border: 1px solid #dfb7ae; background: #fbefec; color: #842d25; font-size: .84rem; }
 .error button { border: 0; border-bottom: 1px solid currentColor; background: transparent; color: inherit; font-weight: 800; cursor: pointer; }
 .menuGrid { max-width: 82rem; margin: 0 auto; display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 1rem; }
-.menuCard { min-height: 14rem; padding: 1.25rem; display: flex; flex-direction: column; text-align: left; border: 1px solid var(--line); border-radius: 0; background: var(--paper); color: var(--ink); cursor: pointer; transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease; }
+.menuCard { min-height: 14rem; padding: 1.25rem; display: flex; flex-direction: column; text-align: left; border: 1px solid var(--line); border-radius: .65rem; background: var(--paper); color: var(--ink); cursor: pointer; transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease; }
 .menuCard:hover { transform: translateY(-2px); border-color: #bdae9d; box-shadow: 0 .8rem 2rem rgba(32,29,24,.07); }
 .cardTop, .cardBottom, .cardMeta { display: flex; align-items: center; }
 .cardTop { justify-content: space-between; color: var(--muted); font-size: .68rem; font-weight: 750; }
@@ -36,7 +36,7 @@
 .approved { color: #245839; background: #e5f1e8; }
 .draft { color: #82451f; background: #f4e1d3; }
 .approved svg, .draft svg { width: .75rem; height: .75rem; }
-.menuCard > strong { margin-top: 1.5rem; font-family: var(--font-newsreader), Georgia, serif; font-size: 1.7rem; font-weight: 500; letter-spacing: -.025em; }
+.menuCard > strong { margin-top: 1.5rem; font-family: var(--font-display), Georgia, serif; font-size: 1.7rem; font-weight: 500; letter-spacing: -.025em; }
 .cardMeta { gap: .55rem; margin-top: .5rem; color: var(--muted); font-size: .76rem; }
 .cardMeta i { width: 3px; height: 3px; border-radius: 50%; background: #aaa39a; }
 .cardBottom { justify-content: space-between; margin-top: auto; padding-top: 1rem; border-top: 1px solid #e6dfd5; color: var(--muted); font-size: .72rem; }
@@ -71,7 +71,7 @@
 .intakeChoices > button > svg:first-child { width: 2.8rem; height: 2.8rem; padding: .75rem; color: #8b4824; background: #f3ddcd; }
 .intakeChoices > button > svg:last-child { width: 1rem; color: #9f4e27; }
 .intakeChoices span, .permissionCheck span { display: flex; flex-direction: column; gap: .18rem; }
-.intakeChoices strong { font-family: var(--font-newsreader), Georgia, serif; font-size: 1.18rem; font-weight: 600; }
+.intakeChoices strong { font-family: var(--font-display), Georgia, serif; font-size: 1.18rem; font-weight: 600; }
 .intakeChoices small, .permissionCheck small { color: var(--muted); font-size: .74rem; line-height: 1.4; }
 .backButton { margin: 0 0 1rem; padding: 0 0 .2rem; display: inline-flex; align-items: center; gap: .35rem; border: 0; border-bottom: 1px solid #b8805d; background: transparent; color: #8b4824; font: inherit; font-size: .72rem; font-weight: 800; cursor: pointer; }
 .backButton svg { width: .85rem; }
@@ -83,7 +83,7 @@
 .privacyNote strong { display: block; margin-bottom: .08rem; }
 .photoPicker { min-height: 8.4rem; margin: 0 !important; padding: 1.25rem; display: flex !important; flex-direction: column; align-items: center; justify-content: center; gap: .32rem; border: 1px dashed #b18467; background: #fffaf1; color: var(--ink) !important; letter-spacing: 0 !important; text-align: center; text-transform: none !important; cursor: pointer; }
 .photoPicker svg { width: 1.5rem; height: 1.5rem; margin-bottom: .2rem; color: #9f4e27; }
-.photoPicker strong { font-family: var(--font-newsreader), Georgia, serif; font-size: 1.15rem; font-weight: 600; }
+.photoPicker strong { font-family: var(--font-display), Georgia, serif; font-size: 1.15rem; font-weight: 600; }
 .photoPicker span { color: var(--muted); font-size: .72rem; font-weight: 500; }
 .hiddenInput { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
 .photoStrip { margin: .85rem 0 1rem; display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: .45rem; }

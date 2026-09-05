@@ -2,12 +2,12 @@
 .phoneOption > button { width: 100%; display: grid; grid-template-columns: 2.4rem 1fr; align-items: center; gap: .7rem; padding: .8rem; border: 1px solid var(--line); background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
 .phoneOption > button > svg { width: 1.4rem; color: #9f4e27; }
 .phoneOption > button span { display: flex; flex-direction: column; gap: .18rem; }
-.phoneOption > button strong { font-family: var(--font-newsreader),Georgia,serif; font-size: 1.12rem; font-weight: 600; }
+.phoneOption > button strong { font-family: var(--font-display),Georgia,serif; font-size: 1.12rem; font-weight: 600; }
 .phoneOption > button small { color: var(--muted); font-size: .72rem; line-height: 1.45; }
 .panel { margin-top: .6rem; padding: 1rem; border: 1px solid var(--line); background: #fffdf8; }
 .panel > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
 .panel > header > div { display: flex; flex-direction: column; gap: .15rem; }
-.panel > header strong { font-family: var(--font-newsreader),Georgia,serif; font-size: 1.1rem; }
+.panel > header strong { font-family: var(--font-display),Georgia,serif; font-size: 1.1rem; }
 .panel > header span { color: var(--muted); font-size: .7rem; }
 .panel > header button { width: 2.2rem; height: 2.2rem; display: grid; place-items: center; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; }
 .panel > header button svg { width: .95rem; }
@@ -34,7 +34,7 @@
 .gallery { max-width: 82rem; margin: 2rem auto 0; padding-top: 1.25rem; border-top: 1px solid var(--line); }
 .gallery > header { display: flex; align-items: end; justify-content: space-between; gap: 1rem; }
 .gallery > header p { margin: 0 0 .25rem; color: #9f4e27; font-size: .62rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
-.gallery h2 { margin: 0; font-family: var(--font-newsreader),Georgia,serif; font-size: 1.45rem; font-weight: 550; letter-spacing: -.03em; }
+.gallery h2 { margin: 0; font-family: var(--font-display),Georgia,serif; font-size: 1.45rem; font-weight: 550; letter-spacing: -.03em; }
 .gallery > header > span { color: var(--muted); font-size: .68rem; }
 .galleryEmpty,.galleryError { margin: .75rem 0 0; color: var(--muted); font-size: .74rem; }
 .galleryError { color: #842d25; }

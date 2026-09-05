@@ -29,7 +29,7 @@
   padding: 1.15rem 1rem 1rem;
   border-right: 1px solid var(--shell-line);
   background: var(--shell-paper);
-  box-shadow: .7rem 0 2.4rem rgba(63, 44, 29, .07);
+  box-shadow: none;
 }
 
 .brand {
@@ -80,7 +80,7 @@
   border: 1px solid transparent;
   border-radius: .3rem;
   color: var(--shell-muted);
-  font-size: .78rem;
+  font-size: .84rem;
   font-weight: 750;
   text-decoration: none;
   transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease, transform 150ms ease;

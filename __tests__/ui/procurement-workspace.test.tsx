@@ -10,6 +10,22 @@ jest.mock('next/navigation', () => ({
 }));
 
 describe('procurement workspace', () => {
+  it('shows delivery dates and quote deadlines in India time across the UTC day boundary', () => {
+    const html = renderToStaticMarkup(
+      <ProcurementWorkspace initialRequests={[{
+        id: 'india-date-request', title: 'Morning delivery', status: 'OPEN', version: 1,
+        deliveryDate: '2026-09-06T00:00:00.000Z',
+        quoteDeadline: '2026-09-05T19:00:00.000Z',
+        openedAt: null, awardedAt: null,
+        createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z',
+        itemCount: 1, supplierCount: 1,
+      }]} />,
+    );
+
+    expect(html).toContain('6 Sept 2026');
+    expect(html).toContain('6 Sept, 12:30 am');
+  });
+
   it('shows real request state without fabricated savings', () => {
     const html = renderToStaticMarkup(
       <ProcurementWorkspace

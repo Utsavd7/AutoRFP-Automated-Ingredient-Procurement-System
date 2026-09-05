@@ -137,6 +137,11 @@
 .next:hover { background: #172521; }
 
 .resume {
+  position: static;
+  z-index: auto;
+  align-self: flex-end;
+  margin: 0 1.25rem 1.25rem;
+  box-shadow: none;
   width: min(31rem, calc(100vw - 2.5rem));
   min-height: 4.5rem;
   padding: .65rem;
@@ -173,7 +178,7 @@
   .guide { max-height: calc(100svh - 6.35rem); overflow-y: auto; }
   .heading { padding-inline: .85rem; }
   .body { padding-inline: 1rem; }
-  .resume { grid-template-columns: 2.5rem minmax(0, 1fr); }
+  .resume { margin: 0 .6rem 1rem; grid-template-columns: 2.5rem minmax(0, 1fr); }
   .resume button { grid-column: 1 / -1; width: 100%; }
 }
 

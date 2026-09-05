@@ -32,6 +32,7 @@ import {
 } from '@/lib/suppliers/supplier-capabilities';
 
 import styles from './supplier-workspace.module.css';
+import { SupplierDiscovery } from './SupplierDiscovery';
 
 type SupplierSummary = {
   id: string;
@@ -698,6 +699,8 @@ export function SupplierWorkspace({
       <aside aria-label="Restaurant data privacy" className={styles.notice}>
         <span>Your recipes, menus, supplier prices, and purchase records stay private to your restaurant. Other restaurants cannot see them, and suppliers see only the request you send to them.</span>
       </aside>
+
+      <SupplierDiscovery onAddSupplier={openCreate} />
 
       <section className={styles.toolbar} aria-label="Supplier tools">
         <form

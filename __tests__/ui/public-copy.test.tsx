@@ -433,7 +433,6 @@ describe('public website contract', () => {
 
   test('uses contrast-safe text tokens across light and dark public surfaces', () => {
     const css = source('src/app/globals.css');
-    const landingCss = source('src/app/landing.css');
     const copper = css.match(/--copper:\s*(#[\dA-F]{6})/i)?.[1];
     const copperText = css.match(/--copper-text:\s*(#[\dA-F]{6})/i)?.[1];
     const ink = css.match(/--ink:\s*(#[\dA-F]{6})/i)?.[1];
@@ -453,7 +452,6 @@ describe('public website contract', () => {
     expect(contrastRatio(mutedLabel!, '#EBE5D9')).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(mutedLabel!, '#FBF8F1')).toBeGreaterThanOrEqual(4.5);
     expect(css).toMatch(/\.public-hero h1 em[\s\S]*?color: var\(--copper-text\)/);
-    expect(landingCss).toMatch(/\.story-scene__number[\s\S]*?color: var\(--copper\)/);
     expect(css).toMatch(/\.sample-label[\s\S]*?color: var\(--ink-label\)/);
     expect(css).toMatch(/\.decision-preview__summary > span \{[\s\S]*?color: var\(--ink-label\)/);
     expect(css).toMatch(/\.decision-preview__footer > span \{[\s\S]*?color: var\(--success\)/);

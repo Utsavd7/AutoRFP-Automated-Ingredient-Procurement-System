@@ -101,9 +101,8 @@ export function PublicLandingPage() {
               <p>QuotePlate helps your team before, during and after each supplier order.</p>
             </header>
             <div className="restaurant-benefits__grid">
-              {restaurantBenefits.map((benefit, index) => (
+              {restaurantBenefits.map((benefit) => (
                 <article className="restaurant-benefit" key={benefit.title}>
-                  <span className="restaurant-benefit__number">{String(index + 1).padStart(2, '0')}</span>
                   <JourneyIcon name={benefit.icon} />
                   <h3>{benefit.title}</h3>
                   <p>{benefit.detail}</p>

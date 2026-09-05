@@ -421,36 +421,6 @@ test.describe('public landing responsive contract', () => {
     }
   });
 
-  test('keeps every scene number clear of its operational visual when scenes stack', async ({ page }) => {
-    for (const width of [768, 555]) {
-      await test.step(`${width}px`, async () => {
-        await page.setViewportSize({ width, height: 900 });
-        await page.goto('/');
-
-        const scenes = page.locator('.story-scene');
-        await expect(scenes).toHaveCount(5);
-        for (let index = 0; index < await scenes.count(); index += 1) {
-          const intersects = await scenes.nth(index).evaluate((scene) => {
-            const number = scene.querySelector('.story-scene__number');
-            const visual = [...scene.children].find((child) => (
-              !child.classList.contains('story-scene__copy')
-            ));
-            if (!(number instanceof HTMLElement) || !(visual instanceof HTMLElement)) {
-              throw new Error('Scene number or operational visual is missing');
-            }
-            const numberBox = number.getBoundingClientRect();
-            const visualBox = visual.getBoundingClientRect();
-            return numberBox.left < visualBox.right
-              && numberBox.right > visualBox.left
-              && numberBox.top < visualBox.bottom
-              && numberBox.bottom > visualBox.top;
-          });
-          expect(intersects, `scene ${index + 1} at ${width}px`).toBe(false);
-        }
-      });
-    }
-  });
-
   test('keeps the comparison title fully readable at 320px', async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 720 });
     await page.goto('/');

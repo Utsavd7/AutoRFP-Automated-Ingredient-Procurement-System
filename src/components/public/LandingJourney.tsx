@@ -3,10 +3,10 @@ import { ProductDecisionPreview } from './ProductDecisionPreview';
 import { JourneyIcon, type JourneyIconName } from './JourneyIcon';
 
 const intakeOptions = [
-  ['camera', 'Take menu photos'],
-  ['upload', 'Upload existing photos'],
-  ['list', 'Type dishes or ingredients'],
-] satisfies ReadonlyArray<readonly [JourneyIconName, string]>;
+  ['camera', 'Take menu photos', 'Start with the menu on your phone.'],
+  ['upload', 'Upload existing photos', 'Bring your menu photos together.'],
+  ['list', 'Type dishes or ingredients', 'Enter what your kitchen needs.'],
+] satisfies ReadonlyArray<readonly [JourneyIconName, string, string]>;
 
 const supplierCategories = [
   'Vegetables',
@@ -33,8 +33,7 @@ export function LandingJourney() {
         <p className="public-eyebrow">One buying journey</p>
         <h2 id="landing-story-title">From today&apos;s menu to tomorrow&apos;s order.</h2>
         <p>
-          See what happens at every step. Nothing is sent or selected without your restaurant
-          team.
+          Explore the workflow at your own pace. Your restaurant stays in control.
         </p>
       </header>
 
@@ -42,7 +41,6 @@ export function LandingJourney() {
         <ol className="landing-story__track" role="list">
           <li className="story-scene story-scene--intake" id="journey-step-1">
             <div className="story-scene__copy">
-              <span className="story-scene__number" aria-hidden="true">1</span>
               <h3>Tell us what your kitchen needs</h3>
               <p>
                 Start with a menu or enter the items yourself. QuotePlate turns the dishes into an
@@ -54,10 +52,11 @@ export function LandingJourney() {
               role="group"
               aria-label="Three ways to add a menu or ingredient list"
             >
-              {intakeOptions.map(([icon, label]) => (
+              <p className="journey-preview-label">Menu intake</p>
+              {intakeOptions.map(([icon, label, detail]) => (
                 <div key={label}>
                   <JourneyIcon name={icon} />
-                  <span>{label}</span>
+                  <div><strong>{label}</strong><p>{detail}</p></div>
                 </div>
               ))}
             </div>
@@ -65,7 +64,6 @@ export function LandingJourney() {
 
           <li className="story-scene story-scene--suppliers" id="journey-step-2">
             <div className="story-scene__copy">
-              <span className="story-scene__number" aria-hidden="true">2</span>
               <h3>Choose who should send prices</h3>
               <p>
                 Use your existing suppliers, select suppliers for specific items, or allow new
@@ -77,7 +75,7 @@ export function LandingJourney() {
               role="group"
               aria-label="Supplier categories selected by the restaurant"
             >
-              <div className="supplier-diagram__centre">
+              <div className="supplier-diagram__heading">
                 <JourneyIcon name="suppliers" />
                 <strong>Your suppliers</strong>
               </div>
@@ -89,7 +87,6 @@ export function LandingJourney() {
 
           <li className="story-scene story-scene--request" id="journey-step-3">
             <div className="story-scene__copy">
-              <span className="story-scene__number" aria-hidden="true">3</span>
               <h3>Send one clear request</h3>
               <p>
                 Each supplier receives only the items and quantities assigned to them through a
@@ -117,7 +114,6 @@ export function LandingJourney() {
 
           <li className="story-scene story-scene--comparison" id="journey-step-4">
             <div className="story-scene__copy">
-              <span className="story-scene__number" aria-hidden="true">4</span>
               <h3>Compare the complete cost</h3>
               <p>
                 Prices, GST, freight, delivery and missing items stay together. See the full request
@@ -130,7 +126,6 @@ export function LandingJourney() {
 
           <li className="story-scene story-scene--decision" id="journey-step-5">
             <div className="story-scene__copy">
-              <span className="story-scene__number" aria-hidden="true">5</span>
               <h3>Choose and save the decision</h3>
               <p>
                 Your restaurant makes the final choice. The saved order keeps the approval and

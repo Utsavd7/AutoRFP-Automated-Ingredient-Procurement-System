@@ -743,15 +743,15 @@ textarea {
 
 /* Public legal pages */
 .legal-page {
-  padding-block: clamp(4rem, 9vw, 7rem) clamp(7rem, 12vw, 10rem);
+  padding-block: clamp(2rem, 4vw, 3.5rem) 3rem;
 }
 
 .legal-page__back {
   min-height: 44px;
   display: inline-flex;
   align-items: center;
-  margin-bottom: 4rem;
-  font-size: 0.72rem;
+  margin-bottom: 1.5rem;
+  font-size: 0.8rem;
   font-weight: 700;
 }
 
@@ -761,12 +761,12 @@ textarea {
   border-bottom: 1px solid var(--ink);
 }
 
-.legal-page h1 { max-width: none; font-size: clamp(3.4rem, 7vw, 6rem); }
+.legal-page h1 { max-width: none; font-size: clamp(3.4rem, min(5.8vw, 7.2vh), 5.4rem); line-height: 0.96; }
 .legal-page > header > p:last-child { max-width: 45rem; margin: 2rem 0 0; font-size: 1rem; line-height: 1.7; }
 
 .legal-copy {
-  max-width: 48rem;
-  margin: 1rem 0 0 auto;
+  max-width: 54rem;
+  margin: 1rem 0 0;
 }
 
 .legal-copy section {
@@ -840,7 +840,7 @@ textarea {
   .public-footer__links { justify-content: flex-start; }
   .public-footer__legal { align-items: flex-start; flex-direction: column; justify-content: center; gap: 0.35rem; padding-block: 1rem; }
   .legal-copy section { grid-template-columns: 1fr; gap: 1rem; }
-  .legal-page__back { margin-bottom: 2.5rem; }
+  .legal-page h1 { font-size: clamp(3.2rem, 10vw, 3.4rem); }
 }
 
 @container (max-width: 31rem) {

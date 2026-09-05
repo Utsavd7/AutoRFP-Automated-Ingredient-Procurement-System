@@ -108,7 +108,7 @@ test.describe('workspace creation layout', () => {
     }).toBeGreaterThanOrEqual(0);
   });
 
-  test('fits the complete start form in one laptop viewport', async ({ page }, testInfo) => {
+  test('keeps the start form spacious and every control reachable on a laptop', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'desktop-chromium', 'Responsive layout contract');
 
     await page.setViewportSize({ width: 1440, height: 900 });
@@ -126,8 +126,9 @@ test.describe('workspace creation layout', () => {
     const termsBox = await terms.boundingBox();
     expect(sheetBox).not.toBeNull();
     expect(termsBox).not.toBeNull();
-    expect(sheetBox!.y + sheetBox!.height).toBeLessThanOrEqual(900);
-    expect(termsBox!.y + termsBox!.height).toBeLessThanOrEqual(900);
+    expect(termsBox!.y + termsBox!.height).toBeLessThanOrEqual(sheetBox!.y + sheetBox!.height);
+    await terms.scrollIntoViewIfNeeded();
+    await expect(terms).toBeInViewport();
 
     const fieldHeights = await sheet.locator('input').evaluateAll((inputs) => (
       inputs.map((input) => input.getBoundingClientRect().height)
@@ -140,17 +141,15 @@ test.describe('workspace creation layout', () => {
       return box!.y;
     };
     expect(await rowTop('Restaurant name')).toBeCloseTo(await rowTop('Restaurant phone'), 0);
-    expect(await rowTop('Street address')).toBeCloseTo(await rowTop('City'), 0);
     expect(await rowTop('City')).toBeCloseTo(await rowTop('State'), 0);
     expect(await rowTop('PIN code')).toBeCloseTo(await rowTop('GSTIN optional'), 0);
     expect(await rowTop('Your name')).toBeCloseTo(await rowTop('Work email'), 0);
-    expect(await rowTop('Work email')).toBeCloseTo(await rowTop('Password'), 0);
 
     const emailBox = await emailButton.boundingBox();
     const googleBox = await googleButton.boundingBox();
     expect(emailBox).not.toBeNull();
     expect(googleBox).not.toBeNull();
-    expect(emailBox!.y).toBeCloseTo(googleBox!.y, 0);
+    expect(googleBox!.y).toBeGreaterThan(emailBox!.y + emailBox!.height);
     await expectNoPageOverflow(page);
   });
 

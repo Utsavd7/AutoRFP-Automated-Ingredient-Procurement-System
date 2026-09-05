@@ -1,9 +1,6 @@
-import Link from 'next/link';
-
 import { JourneyIcon } from '@/components/public/JourneyIcon';
 import { PublicFooter } from '@/components/public/PublicFooter';
 import { PublicHeader } from '@/components/public/PublicHeader';
-import { brand } from '@/config/brand';
 
 import { AuthForm } from './AuthForm';
 import styles from './AuthExperience.module.css';
@@ -58,15 +55,11 @@ export function AuthPageShell(props: AuthPageShellProps) {
           <p className={styles.introduction}>{page.description}</p>
 
           <dl className={styles.assurances}>
-            {assurances.map((assurance, index) => (
+            {assurances.map((assurance) => (
               <div key={assurance.icon}>
                 <dt>
-                  {props.mode === 'signin' ? (
-                    <>
-                      <JourneyIcon name={assurance.icon} />
-                      <span className="sr-only">{assurance.label}</span>
-                    </>
-                  ) : `0${index + 1}`}
+                  <JourneyIcon name={assurance.icon} />
+                  <span className="sr-only">{assurance.label}</span>
                 </dt>
                 <dd>{assurance.text}</dd>
               </div>
@@ -87,7 +80,6 @@ export function AuthPageShell(props: AuthPageShellProps) {
               <span>QuotePlate / {page.document}</span>
               <strong>{props.mode === 'signin' ? 'Existing user' : 'Workspace owner'}</strong>
             </div>
-            {props.mode === 'start' && <span aria-hidden="true">IN · 01</span>}
           </div>
           {props.mode === 'start' && (
             <aside className={styles.pilotNotice} aria-label="Controlled pilot terms">
@@ -103,15 +95,7 @@ export function AuthPageShell(props: AuthPageShellProps) {
         </section>
       </main>
 
-      {props.mode === 'signin' ? <PublicFooter /> : (
-        <footer className={styles.footer}>
-          <span>{brand.companyName}</span>
-          <nav aria-label="Account page legal links">
-            <Link href="/privacy">Privacy</Link>
-            <Link href="/terms">Terms</Link>
-          </nav>
-        </footer>
-      )}
+      <PublicFooter />
     </div>
   );
 }

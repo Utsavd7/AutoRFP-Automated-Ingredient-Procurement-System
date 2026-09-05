@@ -10,3 +10,24 @@
   .header { grid-template-columns: 1fr; gap: 1.3rem; }
   .header h2 { max-width: 18ch; }
 }
+
+.section:target {
+  --demo-header-height: calc(4.75rem + 1px);
+  min-height: calc(100svh - var(--demo-header-height));
+  padding-block: 1rem;
+  scroll-margin-top: var(--demo-header-height);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.section:target .header { display: none; }
+.section:target .player {
+  width: min(100%, calc((100svh - var(--demo-header-height) - 2rem) * 16 / 9));
+  margin-inline: auto;
+}
+@media (min-width: 761px) and (max-width: 900px) {
+  .section:target { --demo-header-height: calc(6.45rem + 1px); }
+}
+@media (max-width: 760px) {
+  .section:target { --demo-header-height: 0px; }
+}

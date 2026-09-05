@@ -167,10 +167,12 @@ test.describe('public landing responsive contract', () => {
 
     await page.setViewportSize({ width: 900, height: 900 });
     await page.goto('/privacy');
+    const legalHeader = page.getByRole('banner');
+    await expect(legalHeader).toHaveCSS('position', 'fixed');
     await page.evaluate(() => window.scrollTo(0, 700));
-    expect(await page.getByRole('banner').evaluate((element) => (
-      element.getBoundingClientRect().bottom
-    ))).toBeLessThan(0);
+    await expect.poll(() => legalHeader.evaluate((element) => (
+      element.getBoundingClientRect().top
+    ))).toBeGreaterThanOrEqual(-1);
   });
 
   test('keeps home story scenes naturally sized on short desktops', async ({ page }, testInfo) => {
@@ -566,4 +568,29 @@ test.describe('public landing responsive contract', () => {
     await expect(page.getByText('Human decision required', { exact: true })).toBeVisible();
     await expect(page.getByLabel('Sample decision facts')).toBeVisible();
   });
+});
+
+test('footer destinations share the public page frame', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop-chromium', 'One project covers the viewport matrix');
+  for (const width of [1440, 900, 620, 390]) {
+    await page.setViewportSize({ width, height: 960 });
+    for (const route of ['/signin', '/start', '/privacy', '/terms']) {
+      await page.goto(route);
+      const frame = await page.evaluate(() => {
+        const bounds = (selector: string) => {
+          const box = document.querySelector(selector)!.getBoundingClientRect();
+          return { left: box.left, right: box.right };
+        };
+        return {
+          header: bounds('.public-header__inner'),
+          main: bounds('main'),
+          footer: bounds('.public-footer__main'),
+        };
+      });
+      expect(frame.main).toEqual(frame.header);
+      expect(frame.footer).toEqual(frame.header);
+      await expect(page.getByRole('navigation', { name: 'Footer navigation' }).getByRole('link')).toHaveCount(6);
+      await expectNoPageOverflow(page);
+    }
+  }
 });

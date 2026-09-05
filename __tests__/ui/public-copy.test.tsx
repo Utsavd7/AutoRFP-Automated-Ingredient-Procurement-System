@@ -287,7 +287,7 @@ describe('public website contract', () => {
     );
   });
 
-  test('fills the owner row when production uses Google-only registration', () => {
+  test('shows owner fields without a password for Google-only registration', () => {
     const markup = renderToStaticMarkup(
       <AuthPageShell
         callbackUrl="/dashboard"
@@ -297,8 +297,8 @@ describe('public website contract', () => {
       />,
     );
 
-    expect(markup).toContain('<label class="fieldHalf"><span>Your name</span>');
-    expect(markup).toContain('<label class="fieldHalf"><span>Work email</span>');
+    expect(markup).toContain('<label><span>Your name</span>');
+    expect(markup).toContain('<label><span>Work email</span>');
     expect(markup).not.toContain('<span>Password</span>');
   });
 

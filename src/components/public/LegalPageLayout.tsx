@@ -14,7 +14,7 @@ export function LegalPageLayout({ title, intro, children }: LegalPageLayoutProps
   return (
     <div className="public-site">
       <a className="skip-link" href="#main-content">Skip to main content</a>
-      <PublicHeader />
+      <PublicHeader sticky />
       <main className="legal-page public-container" id="main-content">
         <Link className="legal-page__back" href="/">← Back to {brand.productName}</Link>
         <header>

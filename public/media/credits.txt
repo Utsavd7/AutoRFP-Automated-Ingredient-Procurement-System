@@ -1,5 +1,5 @@
 QuotePlate product film — final media credits
-121 seconds · 2560 × 1440 · 30 fps
+150 seconds · 2560 × 1440 · 30 fps
 
 Working-application footage: QuotePlate, recorded in an isolated local environment with fictional Monsoon Table restaurant, supplier and purchasing data. Routine actions are condensed and selectively accelerated; the film makes no execution-speed claim. Native interface capture is 2560 × 1352, scaled down inside the branded QHD frame. No spatial upscaling. No production records or real supplier messages were used.
 
@@ -12,7 +12,7 @@ Music: Relax Beat, Arulo (Mixkit 292), Stock Music Free License.
 https://mixkit.co/free-stock-music/ambient/
 https://mixkit.co/license/#musicFree
 
-Voice: the previously approved Kokoro af_heart stock synthetic American-English narration, reused at natural speed. No human voice clone or new voice generation.
+Voice: Kokoro af_heart stock synthetic American-English narration at natural speed, using the previously approved voice with locally generated explanations of the available workflow choices. The original opening and closing lines are reused. No human voice clone.
 https://github.com/hexgrad/kokoro
 
 Original quiet click effects follow recorded clicks.

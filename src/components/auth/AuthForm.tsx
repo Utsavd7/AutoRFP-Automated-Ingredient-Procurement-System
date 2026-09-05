@@ -187,31 +187,31 @@ export function AuthForm({
         <fieldset className={styles.fieldset}>
           <legend>Restaurant</legend>
           <div className={styles.fieldGrid}>
-            <label className={styles.fieldHalf}>
+            <label>
               <span>Restaurant name</span>
               <input name="restaurantName" autoComplete="organization" maxLength={200} required />
             </label>
-            <label className={styles.fieldHalf}>
+            <label>
               <span>Restaurant phone</span>
               <input name="phone" autoComplete="tel" inputMode="tel" maxLength={32} required />
             </label>
-            <label className={`${styles.fieldWide} ${styles.fieldHalf}`}>
+            <label className={styles.fieldWide}>
               <span>Street address</span>
               <input name="addressLine" autoComplete="street-address" maxLength={500} required />
             </label>
-            <label className={styles.fieldQuarter}>
+            <label>
               <span>City</span>
               <input name="city" autoComplete="address-level2" maxLength={120} required />
             </label>
-            <label className={styles.fieldQuarter}>
+            <label>
               <span>State</span>
               <input name="state" autoComplete="address-level1" maxLength={120} required />
             </label>
-            <label className={styles.fieldQuarter}>
+            <label>
               <span>PIN code</span>
               <input name="pin" autoComplete="postal-code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required />
             </label>
-            <label className={styles.fieldThreeQuarter}>
+            <label>
               <span>GSTIN <em>optional</em></span>
               <input
                 name="gstin"
@@ -230,25 +230,17 @@ export function AuthForm({
         <legend>{mode === 'signin' ? 'Account' : 'Owner account'}</legend>
         <div className={styles.fieldGrid}>
           {mode === 'start' && (
-            <label className={emailOwnerSignupAvailable ? styles.fieldThird : styles.fieldHalf}>
+            <label>
               <span>Your name</span>
               <input name="ownerName" autoComplete="name" maxLength={200} required />
             </label>
           )}
-          <label
-            className={
-              mode === 'signin'
-                ? styles.fieldWide
-                : emailOwnerSignupAvailable
-                  ? styles.fieldThird
-                  : styles.fieldHalf
-            }
-          >
+          <label className={mode === 'signin' ? styles.fieldWide : undefined}>
             <span>Work email</span>
             <input name="email" type="email" autoComplete="email" maxLength={320} required />
           </label>
           {(mode === 'signin' || emailOwnerSignupAvailable) && (
-            <label className={`${styles.fieldWide} ${mode === 'start' ? styles.fieldThird : ''}`}>
+            <label className={styles.fieldWide}>
               <span>Password</span>
               <input
                 name="password"
@@ -268,11 +260,7 @@ export function AuthForm({
       {error && <p className={styles.error} role="alert">{error}</p>}
       <p className={styles.progress} aria-live="polite">{busyMessage}</p>
 
-      <div
-        className={`${styles.actions} ${
-          mode === 'signin' || emailOwnerSignupAvailable ? styles.actionsSplit : ''
-        }`}
-      >
+      <div className={styles.actions}>
         {(mode === 'signin' || emailOwnerSignupAvailable) && (
           <>
             <button className={styles.primaryButton} disabled={pending !== null} type="submit">

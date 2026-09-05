@@ -10,6 +10,11 @@ test('demo loads on demand, plays with captions, and fits the viewport', async (
   const section = page.locator('#watch-demo');
   const video = section.locator('video');
   await expect(video).toBeVisible();
+  await expect(page.locator('#demo-title')).toBeHidden();
+  await expect.poll(async () => {
+    const box = await video.boundingBox();
+    return !!box && box.y >= 0 && box.y + box.height <= page.viewportSize()!.height + 1;
+  }).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('demo-player.png'), animations: 'disabled' });
   await expect(video).toHaveAttribute('preload', 'none');
   expect(mediaRequests).toEqual([]);
@@ -17,7 +22,7 @@ test('demo loads on demand, plays with captions, and fits the viewport', async (
 
   await video.evaluate((el: HTMLVideoElement) => el.play());
   await expect.poll(() => video.evaluate((el: HTMLVideoElement) => el.currentTime)).toBeGreaterThan(0);
-  await expect.poll(() => video.evaluate((el: HTMLVideoElement) => el.duration)).toBeCloseTo(121, 0);
+  await expect.poll(() => video.evaluate((el: HTMLVideoElement) => el.duration)).toBeCloseTo(150, 0);
   await video.evaluate((el: HTMLVideoElement) => { el.textTracks[0].mode = 'showing'; });
   await expect.poll(() => video.evaluate((el: HTMLVideoElement) => el.textTracks[0].cues?.length ?? 0)).toBeGreaterThan(0);
 

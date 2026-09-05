@@ -8,11 +8,11 @@ Built by [Utsav Doshi](https://github.com/Utsavd7).
 
 ## Product demo
 
-[![Watch the QuotePlate product demo — 2 minutes](public/media/quoteplate-product-film.jpg)](https://quoteplate.netlify.app/#watch-demo)
+[![Watch the QuotePlate product demo — 2 minutes 30 seconds](public/media/quoteplate-product-film.jpg)](https://quoteplate.netlify.app/#watch-demo)
 
-[Watch the video on the website](https://quoteplate.netlify.app/#watch-demo) · 2:01 · 2560 × 1440 QHD
+[Watch the video on the website](https://quoteplate.netlify.app/#watch-demo) · 2:30 · 2560 × 1440 QHD
 
-Follow a fictional restaurant in Pune from a menu photo through supplier discovery, private quotes, cost comparison, a purchase decision, delivery checks and repeat ordering. The film uses recordings of the actual app, with routine actions condensed.
+Follow a fictional restaurant in Pune from a menu photo through supplier discovery, private quotes, cost comparison, a purchase decision, delivery checks and repeat ordering. The film explains menu input, supplier sourcing, purchasing and delivery options, then follows one example through recordings of the actual app, with routine actions condensed.
 
 [Transcript](public/media/quoteplate-product-film.txt) · [English captions](public/media/quoteplate-product-film.vtt) · [Media credits](public/media/credits.txt)
 
@@ -36,7 +36,7 @@ The current release supports:
 - manage restaurant details, roles, invitations, Google sign in, sign out, and an optional six step setup guide;
 - use the public site and product workspace on phones, tablets, and laptops.
 
-The landing page includes a two-minute product film with captions and a transcript. It uses condensed recordings of the actual app with fictional restaurant data in an isolated environment. Media is served from `public/media` and the video loads only when played; no external video service is required. The buying journey uses compact, manually selected stages on desktop and phones, with one step counter and no automatic movement. Old `/product` bookmarks redirect to this journey on the homepage.
+The landing page includes a two-and-a-half-minute product film with captions and a transcript. It uses condensed recordings of the actual app with fictional restaurant data in an isolated environment. Media is served from `public/media` and the video loads only when played; no external video service is required. The buying journey uses compact, manually selected stages on desktop and phones, with one step counter and no automatic movement. Old `/product` bookmarks redirect to this journey on the homepage.
 
 The product does not introduce suppliers and then disappear from the workflow. Its value is the reusable request, quote, decision, purchase order, and price history for every buying cycle.
 

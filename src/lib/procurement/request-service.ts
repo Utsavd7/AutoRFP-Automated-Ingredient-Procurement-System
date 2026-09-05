@@ -1,4 +1,4 @@
-import { Prisma, type PrismaClient } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 import { writeAuditEvent } from '@/lib/audit/write-event';
 import { AuthorizationError } from '@/lib/auth/guards';
@@ -580,7 +580,6 @@ export function decodeRequestCursor(value: string): RequestCursor {
 }
 
 type RequestActor = { tenantId: string; userId: string };
-type RequestClient = Pick<PrismaClient, '$queryRaw' | '$transaction'> & TenantTransactionHost;
 export type IssuedToken = { raw: string; digest: string };
 
 export type RequestServiceOptions = {
@@ -1082,7 +1081,7 @@ type RequestListRow = {
 
 export async function listProcurementRequests(
   input: { actor: RequestActor; cursor?: string; limit?: number },
-  client: RequestClient = prisma,
+  client: TenantTransactionHost = prisma,
 ) {
   const actor = validateActor(input.actor);
   const limit = input.limit ?? 25;
@@ -1181,7 +1180,7 @@ function placeholderGrant(
 
 export async function createProcurementRequestDraft(
   input: { actor: RequestActor; draft: unknown },
-  client: RequestClient = prisma,
+  client: TenantTransactionHost = prisma,
   options?: RequestServiceOptions,
 ) {
   const actor = validateActor(input.actor);
@@ -1250,7 +1249,7 @@ export async function createProcurementRequestDraft(
 
 export async function getProcurementRequest(
   input: { actor: RequestActor; requestId: string },
-  client: RequestClient = prisma,
+  client: TenantTransactionHost = prisma,
 ) {
   const actor = validateActor(input.actor);
   const requestId = validateRequestId(input.requestId);
@@ -1267,7 +1266,7 @@ export async function updateProcurementRequestDraft(
     expectedVersion: unknown;
     patch: unknown;
   },
-  client: RequestClient = prisma,
+  client: TenantTransactionHost = prisma,
   options?: RequestServiceOptions,
 ) {
   const actor = validateActor(input.actor);
@@ -1351,7 +1350,7 @@ export async function updateProcurementRequestDraft(
 
 export async function openProcurementRequest(
   input: { actor: RequestActor; requestId: string; expectedVersion: unknown },
-  client: RequestClient = prisma,
+  client: TenantTransactionHost = prisma,
   options?: RequestServiceOptions,
 ) {
   const actor = validateActor(input.actor);
@@ -1471,7 +1470,7 @@ export async function changeSupplierRequestLink(
     expectedVersion: unknown;
     action: unknown;
   },
-  client: RequestClient = prisma,
+  client: TenantTransactionHost = prisma,
   options?: RequestServiceOptions,
 ) {
   const actor = validateActor(input.actor);
@@ -1573,7 +1572,7 @@ export async function changeSupplierRequestLink(
 
 export async function repeatProcurementRequest(
   input: { actor: RequestActor; sourceRequestId: string; repeat: unknown },
-  client: RequestClient = prisma,
+  client: TenantTransactionHost = prisma,
   options?: RequestServiceOptions,
 ) {
   const actor = validateActor(input.actor);

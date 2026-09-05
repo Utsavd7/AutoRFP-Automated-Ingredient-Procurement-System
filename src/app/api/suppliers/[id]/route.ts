@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { privateNoStoreResponse } from '@/lib/api/private-response';
 import { problemResponse } from '@/lib/api/problem';
 import { requireAccountContext } from '@/lib/server-account';
 import {
@@ -14,7 +15,6 @@ import {
 } from '@/lib/suppliers/supplier-service';
 import {
   isProblemResponse,
-  privateSupplierResponse,
   readSupplierJson,
   supplierActor,
   supplierError,
@@ -25,7 +25,7 @@ type SupplierRouteContext = { params: Promise<{ id: string }> };
 export async function GET(_request: Request, context: SupplierRouteContext) {
   const account = await requireAccountContext();
   if (!account) {
-    return privateSupplierResponse(problemResponse(401, 'Unauthorized', 'Authentication is required.'));
+    return privateNoStoreResponse(problemResponse(401, 'Unauthorized', 'Authentication is required.'));
   }
   const { id } = await context.params;
   try {
@@ -33,7 +33,7 @@ export async function GET(_request: Request, context: SupplierRouteContext) {
       actor: supplierActor(account),
       supplierId: id,
     });
-    return privateSupplierResponse(NextResponse.json(
+    return privateNoStoreResponse(NextResponse.json(
       { supplier },
       { headers: { 'Cache-Control': 'private, no-store' } },
     ));

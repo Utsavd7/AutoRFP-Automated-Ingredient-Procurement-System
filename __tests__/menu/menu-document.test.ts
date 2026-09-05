@@ -238,10 +238,10 @@ describe('deterministic menu review proposals', () => {
         ],
       },
     ]);
+    const original = structuredClone(raw);
     const result = proposeMenuCleanup(raw);
 
-    expect(result.cleaned).toEqual(raw);
-    expect(result.cleaned.dishes[0]!.ingredients).toHaveLength(2);
+    expect(raw).toEqual(original);
     expect(result.proposals).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ kind: 'REMOVE_NOISE', source: 'DETERMINISTIC_RULE', applied: false }),

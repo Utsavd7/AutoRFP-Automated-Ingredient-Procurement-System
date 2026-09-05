@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 
 import {
   withTenant,
@@ -11,17 +11,27 @@ export type StableSessionClaims = {
   tenantId?: string;
 };
 
-export type CurrentUser = Prisma.UserGetPayload<{ include: { tenant: true } }>;
+const currentUserSelect = {
+  id: true,
+  tenantId: true,
+  role: true,
+  accountState: true,
+  isActive: true,
+  tutorialVersion: true,
+  tutorialStep: true,
+  tutorialSkippedAt: true,
+  tutorialCompletedAt: true,
+  tenant: true,
+} satisfies Prisma.UserSelect;
+
+export type CurrentUser = Prisma.UserGetPayload<{ select: typeof currentUserSelect }>;
 
 export type CurrentUserStore = {
   findCurrent(userId: string, tenantId: string): Promise<CurrentUser | null>;
 };
 
-type CurrentUserClient = Pick<PrismaClient, '$queryRaw' | '$transaction'> &
-  TenantTransactionHost;
-
 export function createPrismaCurrentUserStore(
-  client: CurrentUserClient,
+  client: TenantTransactionHost,
 ): CurrentUserStore {
   return {
     findCurrent(userId, tenantId) {
@@ -36,7 +46,7 @@ export function createPrismaCurrentUserStore(
               isActive: true,
               tenant: { isActive: true },
             },
-            include: { tenant: true },
+            select: currentUserSelect,
           }),
         client,
       );
@@ -44,7 +54,7 @@ export function createPrismaCurrentUserStore(
   };
 }
 
-export const prismaCurrentUserStore = createPrismaCurrentUserStore(prisma);
+const prismaCurrentUserStore = createPrismaCurrentUserStore(prisma);
 
 export async function loadCurrentUser(
   claims: StableSessionClaims,

@@ -1,5 +1,3 @@
-import type { PrismaClient } from '@prisma/client';
-
 import { validateAwardDocuments } from '@/lib/awards/award-document';
 import { AuthorizationError } from '@/lib/auth/guards';
 import {
@@ -22,7 +20,6 @@ export const SUPPLIER_SUGGESTION_LIMITS = {
 } as const;
 
 type SuggestionActor = { tenantId: string; userId: string };
-type SuggestionClient = TenantTransactionHost & Pick<PrismaClient, '$queryRaw'>;
 type SuggestionItem = { id: string; itemKey: string; category: ProcurementCategory };
 type CandidateSupplier = {
   id: string;
@@ -148,7 +145,7 @@ function priorSupplierIds(awards: Array<{
 
 export async function getSupplierSuggestions(
   input: { actor: SuggestionActor; requestId: string },
-  client: SuggestionClient = prisma,
+  client: TenantTransactionHost = prisma,
 ) {
   if (!validId(input.actor?.tenantId) || !validId(input.actor?.userId)) {
     throw new AuthorizationError();

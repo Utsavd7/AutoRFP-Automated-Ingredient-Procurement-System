@@ -1,5 +1,3 @@
-import type { PrismaClient } from '@prisma/client';
-
 import { AuthorizationError } from '@/lib/auth/guards';
 import { validateAwardDocuments } from '@/lib/awards/award-document';
 import {
@@ -337,9 +335,6 @@ export function compareLatestQuotes(
   return { request: requestDto(request), quotes: quoteDtos };
 }
 
-type ComparisonClient = TenantTransactionHost &
-  Pick<PrismaClient, '$queryRaw' | '$transaction'>;
-
 function validId(value: unknown) {
   return (
     typeof value === 'string' &&
@@ -366,7 +361,7 @@ export async function getQuoteComparison(
     actor: { tenantId: string; userId: string };
     requestId: string;
   },
-  client: ComparisonClient = prisma,
+  client: TenantTransactionHost = prisma,
 ) {
   if (
     !validId(input.actor?.tenantId) ||

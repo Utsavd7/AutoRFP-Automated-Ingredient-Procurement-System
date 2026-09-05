@@ -1,9 +1,9 @@
-import { Prisma, type PrismaClient } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 import { writeAuditEvent } from '@/lib/audit/write-event';
 import { validateAwardDocuments } from '@/lib/awards/award-document';
 import { AuthorizationError } from '@/lib/auth/guards';
-import { type TenantTransactionHost, withTenant } from '@/lib/db/tenant-transaction';
+import { withTenant } from '@/lib/db/tenant-transaction';
 import { assertBoundedJson } from '@/lib/domain/postgres-json';
 import { MAX_SIGNED_BIGINT } from '@/lib/domain/validation';
 import { prisma } from '@/lib/prisma';
@@ -61,8 +61,6 @@ type ReceivingDependencies = {
   ) => Promise<T>;
   now: () => Date;
 };
-
-type ReceivingClient = TenantTransactionHost & Pick<PrismaClient, '$queryRaw'>;
 
 const defaultDependencies: ReceivingDependencies = {
   transact: (tenantId, callback) => withTenant(tenantId, callback, prisma),
@@ -216,11 +214,4 @@ export function recordDeliveryCheck(input: {
   check: unknown;
 }) {
   return receivingOperations.record(input);
-}
-
-export function createPrismaReceivingOperations(client: ReceivingClient) {
-  return createReceivingOperations({
-    transact: (tenantId, callback) => withTenant(tenantId, callback, client),
-    now: () => new Date(),
-  });
 }

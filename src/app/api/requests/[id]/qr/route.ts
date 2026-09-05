@@ -1,3 +1,4 @@
+import { privateNoStoreResponse } from '@/lib/api/private-response';
 import { resolveSiteMetadataUrls } from '@/config/site-url';
 import { problemResponse } from '@/lib/api/problem';
 import {
@@ -10,7 +11,6 @@ import {
   exportResponse,
   runExportWithTimeout,
   unauthorizedExportResponse,
-  withExportPrivacy,
 } from '@/lib/exports/export-http';
 import { exportOperations, QR_BODY_BYTES } from '@/lib/exports/export-service';
 import { requireAccountContext } from '@/lib/server-account';
@@ -23,7 +23,7 @@ export const maxDuration = 10;
 function qrMutationError(request: Request) {
   const rejected = browserJsonMutationRejection(request);
   if (!rejected) return null;
-  return withExportPrivacy(
+  return privateNoStoreResponse(
     rejected === 'CROSS_ORIGIN'
       ? problemResponse(403, 'Request not allowed', 'Open QuotePlate on its original page.')
       : problemResponse(415, 'Unsupported media type', 'Send this request as application/json.'),
@@ -67,13 +67,13 @@ export async function POST(request: Request, context: QrRouteContext) {
     return exportResponse(output);
   } catch (error) {
     if (error instanceof RequestBodyTooLargeError) {
-      return withExportPrivacy(problemResponse(413, 'Request too large', error.message));
+      return privateNoStoreResponse(problemResponse(413, 'Request too large', error.message));
     }
     if (error instanceof InvalidJsonBodyError) {
-      return withExportPrivacy(problemResponse(400, 'Invalid request', error.message));
+      return privateNoStoreResponse(problemResponse(400, 'Invalid request', error.message));
     }
     if (error instanceof ExportBodyError) {
-      return withExportPrivacy(problemResponse(
+      return privateNoStoreResponse(problemResponse(
         422,
         'Invalid QR request',
         'Provide only the supplier quote URL.',

@@ -1,4 +1,4 @@
-import { Prisma, type PrismaClient } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 import { writeAuditEvent } from '@/lib/audit/write-event';
 import {
@@ -102,9 +102,6 @@ export function eligibleQuoteRequestItems(input: {
   });
 }
 
-type PublicQuoteClient = Pick<PrismaClient, '$queryRaw' | '$transaction'> &
-  TenantTransactionHost;
-
 type ResolvedGrant = {
   tenantId: string;
   supplierRequestId: string;
@@ -137,7 +134,7 @@ function unavailable(): never {
 
 async function resolveGrant(
   token: unknown,
-  client: PublicQuoteClient,
+  client: TenantTransactionHost,
 ): Promise<ResolvedGrant> {
   if (typeof token !== 'string') unavailable();
   let tokenDigest: string;
@@ -389,7 +386,7 @@ function quoteEnvelope(value: unknown) {
 
 export async function getPublicQuoteRequest(
   input: { token: unknown },
-  client: PublicQuoteClient = prisma,
+  client: TenantTransactionHost = prisma,
 ) {
   const resolved = await resolveGrant(input.token, client);
   return withTenant(
@@ -409,7 +406,7 @@ export async function getPublicQuoteRequest(
 
 export async function submitPublicSupplierQuote(
   input: { token: unknown; quote: unknown },
-  client: PublicQuoteClient = prisma,
+  client: TenantTransactionHost = prisma,
 ) {
   const resolved = await resolveGrant(input.token, client);
   const submissionAttempt = await consumeDigestRateLimit(

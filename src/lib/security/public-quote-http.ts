@@ -29,10 +29,6 @@ type AccessDependencies = {
 
 const consumeAccessClientRateLimit = publicClientRateLimit('quote-access');
 
-function privacyHeaders(response: NextResponse) {
-  return privateNoStoreResponse(response);
-}
-
 function clearSupplierSession(response: NextResponse, production: boolean) {
   response.cookies.set(SUPPLIER_SESSION_COOKIE, '', {
     httpOnly: true,
@@ -55,12 +51,12 @@ function parseAccessBody(body: unknown) {
 
 function safeError(error: unknown, production: boolean) {
   if (error instanceof RequestBodyTooLargeError) {
-    return privacyHeaders(
+    return privateNoStoreResponse(
       problemResponse(413, 'Request too large', error.message),
     );
   }
   if (error instanceof InvalidJsonBodyError) {
-    return privacyHeaders(problemResponse(400, 'Invalid request', error.message));
+    return privateNoStoreResponse(problemResponse(400, 'Invalid request', error.message));
   }
   if (error instanceof PublicSupplierGrantError) {
     const response = problemResponse(
@@ -73,9 +69,9 @@ function safeError(error: unknown, production: boolean) {
     if (error.retryAfterSeconds) {
       response.headers.set('Retry-After', String(error.retryAfterSeconds));
     }
-    return clearSupplierSession(privacyHeaders(response), production);
+    return clearSupplierSession(privateNoStoreResponse(response), production);
   }
-  return privacyHeaders(
+  return privateNoStoreResponse(
     problemResponse(
       503,
       'Supplier link service unavailable',
@@ -96,7 +92,7 @@ export function createPublicQuoteAccessHandler(
     try {
       const rejected = browserJsonMutationRejection(request);
       if (rejected) {
-        return privacyHeaders(
+        return privateNoStoreResponse(
           rejected === 'CROSS_ORIGIN'
             ? problemResponse(
                 403,
@@ -114,7 +110,7 @@ export function createPublicQuoteAccessHandler(
         await readBoundedJson(request, ACCESS_BODY_BYTES),
       );
       if (!body) {
-        return privacyHeaders(
+        return privateNoStoreResponse(
           problemResponse(
             400,
             'Invalid request',
@@ -129,7 +125,7 @@ export function createPublicQuoteAccessHandler(
         now: currentTime,
       });
       if (!clientAttempt.allowed) {
-        const response = privacyHeaders(
+        const response = privateNoStoreResponse(
           problemResponse(
             429,
             'Too many attempts',
@@ -144,7 +140,7 @@ export function createPublicQuoteAccessHandler(
       }
 
       await dependencies.exchange({ token: body.token, now: currentTime });
-      const response = privacyHeaders(
+      const response = privateNoStoreResponse(
         NextResponse.json({ ok: true }, { status: 201 }),
       );
       response.cookies.set(SUPPLIER_SESSION_COOKIE, body.token, {

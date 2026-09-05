@@ -1,7 +1,5 @@
 # QuotePlate
 
-![QuotePlate, restaurant procurement made accountable](public/brand/social-card.png)
-
 QuotePlate is a procurement workspace for restaurants in India. It turns menus into ingredient requests, collects private supplier quotes, compares landed cost, records the restaurant's choice, checks each delivery and entered invoice total, and starts the next buying cycle from saved history.
 
 Live product: [quoteplate.netlify.app](https://quoteplate.netlify.app)
@@ -10,9 +8,9 @@ Built by [Utsav Doshi](https://github.com/Utsavd7).
 
 ## Product demo
 
-[![Watch the QuotePlate product demo — 1 minute 45 seconds](public/media/quoteplate-product-film.jpg)](public/media/quoteplate-product-film.mp4?raw=true)
+[![Watch the QuotePlate product demo — 1 minute 45 seconds](public/media/quoteplate-product-film.jpg)](https://quoteplate.netlify.app/#watch-demo)
 
-[Watch the video](public/media/quoteplate-product-film.mp4?raw=true) · 1:45 · 2560 × 1440 QHD
+[Watch the video on the website](https://quoteplate.netlify.app/#watch-demo) · 1:45 · 2560 × 1440 QHD
 
 Follow a fictional restaurant in Pune from a menu photo through supplier discovery, private quotes, cost comparison, a purchase decision, delivery checks and repeat ordering. The film uses recordings of the actual app, with routine actions condensed.
 

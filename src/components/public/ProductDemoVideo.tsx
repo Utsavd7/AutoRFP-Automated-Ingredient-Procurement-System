@@ -13,7 +13,7 @@ export function ProductDemoVideo() {
     <section id="watch-demo" className={`${styles.section} public-container`} aria-labelledby="demo-title">
       <header className={styles.header}>
         <div>
-          <p className="public-eyebrow">The buying journey · 1 min 45 sec</p>
+          <p className="public-eyebrow">The buying journey</p>
           <h2 id="demo-title">From your kitchen to a clearer purchase.</h2>
         </div>
         <p>Follow Monsoon Table, our fictional restaurant in Pune, from a menu photo to supplier prices, a purchasing decision and a checked delivery.</p>

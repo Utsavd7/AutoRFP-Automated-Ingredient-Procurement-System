@@ -1,5 +1,7 @@
 import Link from 'next/link';
 
+import { JourneyIcon } from '@/components/public/JourneyIcon';
+import { PublicFooter } from '@/components/public/PublicFooter';
 import { PublicHeader } from '@/components/public/PublicHeader';
 import { brand } from '@/config/brand';
 
@@ -33,6 +35,12 @@ const content = {
   },
 } as const;
 
+const assurances = [
+  { icon: 'privacy', label: 'Restaurant privacy', text: 'One workspace, isolated from every other restaurant.' },
+  { icon: 'link', label: 'Sign-in security', text: 'Google stores identity only; QuotePlate stores no Google access tokens.' },
+  { icon: 'approve', label: 'Purchasing decisions', text: 'A human reviews and records every supplier award.' },
+] as const;
+
 export function AuthPageShell(props: AuthPageShellProps) {
   const page = content[props.mode];
 
@@ -50,18 +58,19 @@ export function AuthPageShell(props: AuthPageShellProps) {
           <p className={styles.introduction}>{page.description}</p>
 
           <dl className={styles.assurances}>
-            <div>
-              <dt>01</dt>
-              <dd>One workspace, isolated from every other restaurant.</dd>
-            </div>
-            <div>
-              <dt>02</dt>
-              <dd>Google stores identity only; QuotePlate stores no Google access tokens.</dd>
-            </div>
-            <div>
-              <dt>03</dt>
-              <dd>A human reviews and records every supplier award.</dd>
-            </div>
+            {assurances.map((assurance, index) => (
+              <div key={assurance.icon}>
+                <dt>
+                  {props.mode === 'signin' ? (
+                    <>
+                      <JourneyIcon name={assurance.icon} />
+                      <span className="sr-only">{assurance.label}</span>
+                    </>
+                  ) : `0${index + 1}`}
+                </dt>
+                <dd>{assurance.text}</dd>
+              </div>
+            ))}
           </dl>
 
           <p className={styles.contextNote}>{page.note}</p>
@@ -78,7 +87,7 @@ export function AuthPageShell(props: AuthPageShellProps) {
               <span>QuotePlate / {page.document}</span>
               <strong>{props.mode === 'signin' ? 'Existing user' : 'Workspace owner'}</strong>
             </div>
-            <span aria-hidden="true">IN · 01</span>
+            {props.mode === 'start' && <span aria-hidden="true">IN · 01</span>}
           </div>
           {props.mode === 'start' && (
             <aside className={styles.pilotNotice} aria-label="Controlled pilot terms">
@@ -94,13 +103,15 @@ export function AuthPageShell(props: AuthPageShellProps) {
         </section>
       </main>
 
-      <footer className={styles.footer}>
-        <span>{brand.companyName}</span>
-        <nav aria-label="Account page legal links">
-          <Link href="/privacy">Privacy</Link>
-          <Link href="/terms">Terms</Link>
-        </nav>
-      </footer>
+      {props.mode === 'signin' ? <PublicFooter /> : (
+        <footer className={styles.footer}>
+          <span>{brand.companyName}</span>
+          <nav aria-label="Account page legal links">
+            <Link href="/privacy">Privacy</Link>
+            <Link href="/terms">Terms</Link>
+          </nav>
+        </footer>
+      )}
     </div>
   );
 }

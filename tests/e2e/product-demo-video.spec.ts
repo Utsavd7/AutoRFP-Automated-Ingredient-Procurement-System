@@ -17,7 +17,7 @@ test('demo loads on demand, plays with captions, and fits the viewport', async (
 
   await video.evaluate((el: HTMLVideoElement) => el.play());
   await expect.poll(() => video.evaluate((el: HTMLVideoElement) => el.currentTime)).toBeGreaterThan(0);
-  await expect.poll(() => video.evaluate((el: HTMLVideoElement) => el.duration)).toBeCloseTo(105, 0);
+  await expect.poll(() => video.evaluate((el: HTMLVideoElement) => el.duration)).toBeCloseTo(120, 0);
   await video.evaluate((el: HTMLVideoElement) => { el.textTracks[0].mode = 'showing'; });
   await expect.poll(() => video.evaluate((el: HTMLVideoElement) => el.textTracks[0].cues?.length ?? 0)).toBeGreaterThan(0);
 

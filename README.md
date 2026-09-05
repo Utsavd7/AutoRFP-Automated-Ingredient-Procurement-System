@@ -10,7 +10,7 @@ Built by [Utsav Doshi](https://github.com/Utsavd7).
 
 [![Watch the QuotePlate product demo — 2 minutes](public/media/quoteplate-product-film.jpg)](https://quoteplate.netlify.app/#watch-demo)
 
-[Watch the video on the website](https://quoteplate.netlify.app/#watch-demo) · 2:00 · 2560 × 1440 QHD
+[Watch the video on the website](https://quoteplate.netlify.app/#watch-demo) · 2:01 · 2560 × 1440 QHD
 
 Follow a fictional restaurant in Pune from a menu photo through supplier discovery, private quotes, cost comparison, a purchase decision, delivery checks and repeat ordering. The film uses recordings of the actual app, with routine actions condensed.
 

@@ -7,6 +7,7 @@ import { PublicHeader } from './PublicHeader';
 import { PublicFooter } from './PublicFooter';
 import { JourneyIcon } from './JourneyIcon';
 import { LandingJourney } from './LandingJourney';
+import { ProductDemoVideo } from './ProductDemoVideo';
 
 const proofPoints = [
   [`${restaurantSampleQuotes.length} supplier replies`, 'Labelled sample replies, not customer activity.'],
@@ -68,6 +69,7 @@ export function PublicLandingPage() {
             </p>
             <div className="public-hero__actions">
               <Link className="public-button" href="/product">See the product <span aria-hidden="true">→</span></Link>
+              <a className="public-inline-link" href="#watch-demo">Watch the demo <span aria-hidden="true">↓</span></a>
               <Link className="public-inline-link" href="/start">Start free pilot <span aria-hidden="true">↗</span></Link>
             </div>
             <p className="public-hero__note">No supplier commission. No card required.</p>
@@ -102,6 +104,8 @@ export function PublicLandingPage() {
             ))}
           </div>
         </section>
+
+        <ProductDemoVideo />
 
         <LandingJourney />
 

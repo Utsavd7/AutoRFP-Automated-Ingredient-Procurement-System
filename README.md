@@ -8,6 +8,16 @@ Live product: [quoteplate.netlify.app](https://quoteplate.netlify.app)
 
 Built by [Utsav Doshi](https://github.com/Utsavd7).
 
+## Product demo
+
+[![Watch the QuotePlate product demo — 1 minute 45 seconds](public/media/quoteplate-product-film.jpg)](public/media/quoteplate-product-film.mp4?raw=true)
+
+[Watch the video](public/media/quoteplate-product-film.mp4?raw=true) · 1:45 · 2560 × 1440 QHD
+
+Follow a fictional restaurant in Pune from a menu photo through supplier discovery, private quotes, cost comparison, a purchase decision, delivery checks and repeat ordering. The film uses recordings of the actual app, with routine actions condensed.
+
+[Transcript](public/media/quoteplate-product-film.txt) · [English captions](public/media/quoteplate-product-film.vtt) · [Media credits](public/media/credits.txt)
+
 ## Product
 
 The current release supports:
@@ -15,6 +25,7 @@ The current release supports:
 - create a menu by typing dish names, uploading up to ten photos from the current device, scanning a QR code to send up to ten original phone photos at a time, or importing a menu page you have permission to use;
 - scan menu photos in the browser, review the detected text, remove unwanted dishes together, delete unused menus, and approve the final dishes and ingredients;
 - organise ingredients using categories familiar to Indian restaurants;
+- find potential suppliers by ingredient and area using external Google Maps, Google, Justdial, IndiaMART, TradeIndia, ExportersIndia, Kompass and go4WorldBusiness searches, then review and add them manually without a search API or billing account;
 - keep existing suppliers, choose more than one sourcing route, or accept applications from new suppliers and then approve or reject them;
 - send each supplier a private quote link with no supplier account required;
 - collect quantities, rates, GST, freight, availability, delivery, substitutions, and payment terms;
@@ -26,6 +37,8 @@ The current release supports:
 - keep delivery check totals and problem counts in history, repeat a completed awarded request into a new draft, and use prior buying facts as guidance;
 - manage restaurant details, roles, invitations, Google sign in, sign out, and an optional six step setup guide;
 - use the public site and product workspace on phones, tablets, and laptops.
+
+The landing page includes a 1-minute-45-second product film with captions and a transcript. It uses condensed recordings of the actual app with fictional restaurant data in an isolated environment. Media is served from `public/media` and the video loads only when played; no external video service is required.
 
 The product does not introduce suppliers and then disappear from the workflow. Its value is the reusable request, quote, decision, purchase order, and price history for every buying cycle.
 
@@ -53,6 +66,8 @@ npm run dev
 ```
 
 Replace the placeholders in `.env` with your own values and never commit that file. The application accepts up to twenty approved pilot owner emails.
+
+For optional combined supplier results, create a free ad-supported [Google Programmable Search Engine](https://programmablesearchengine.google.com/controlpanel/all) using **Sites to search**: `justdial.com`, `indiamart.com`, `tradeindia.com`, `exportersindia.com`, `in.kompass.com`, and `go4worldbusiness.com`. Set its public `cx` ID as `NEXT_PUBLIC_SUPPLIER_SEARCH_ENGINE_ID` before building, then rebuild when it changes. Use the Search Element, not the paid JSON API or an ad-free plan; no API key or billing account is needed. Google supports [up to 50 configured domains](https://programmablesearchengine.googleblog.com/2026/01/updates-to-our-web-search-products.html) on this free option. Results load only after the user submits a search, in an isolated frame without access to restaurant data or QuotePlate browser storage. Search terms go to Google, ads may appear, and Google controls index coverage. Google Maps and individual website searches remain available externally; without a configured engine, only those external searches are shown.
 
 ## Production setup
 

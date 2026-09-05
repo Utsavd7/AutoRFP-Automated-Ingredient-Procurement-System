@@ -14,7 +14,6 @@ export function PublicHeader({ home = false, sticky = false }: PublicHeaderProps
           <Wordmark />
         </Link>
         <nav aria-label="Primary navigation" className="public-nav">
-          <Link href="/product">Product</Link>
           <Link href={home ? '#how-it-works' : '/#how-it-works'}>How it works</Link>
           <Link href={home ? '#security' : '/#security'}>Security</Link>
         </nav>

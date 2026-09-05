@@ -13,7 +13,6 @@ export function PublicFooter() {
           <p>{brand.tagline}</p>
         </div>
         <nav aria-label="Footer navigation" className="public-footer__links">
-          <Link href="/product">Product</Link>
           <Link href="/#how-it-works">How it works</Link>
           <Link href="/#security">Security</Link>
           <Link href="/privacy">Privacy</Link>

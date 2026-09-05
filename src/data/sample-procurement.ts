@@ -1,27 +1,24 @@
-export type RestaurantSampleItem = {
+type RestaurantSampleItem = {
   name: string;
   quantity: number;
   unit: 'kg' | 'L';
   sampleRatePaise: number;
 };
 
-export type RestaurantSampleQuote = {
+type RestaurantSampleQuote = {
   supplierName: string;
   subtotalPaise: number;
   gstPaise: number;
   freightPaise: number;
   totalPaise: number;
   coverageCount: number;
-  delivery: string;
   terms: string;
-  status: 'Submitted';
 };
 
 export const restaurantSampleRequest = {
   id: 'QP-1042',
   context: 'Indiranagar, Bengaluru · ~100 covers/day',
   cadence: '7-day kitchen order',
-  delivery: 'Next morning',
   items: [
     { name: 'Tomato, red', quantity: 38, unit: 'kg', sampleRatePaise: 4_200 },
     { name: 'Onion, red', quantity: 24, unit: 'kg', sampleRatePaise: 3_650 },
@@ -42,9 +39,7 @@ export const restaurantSampleQuotes = [
     freightPaise: 45_000,
     totalPaise: 3_033_150,
     coverageCount: 8,
-    delivery: 'Next day · 7:00 AM',
     terms: '15 days',
-    status: 'Submitted',
   },
   {
     supplierName: 'City Fresh Trading Co.',
@@ -53,9 +48,7 @@ export const restaurantSampleQuotes = [
     freightPaise: 42_500,
     totalPaise: 2_994_700,
     coverageCount: 7,
-    delivery: 'Next day · 9:00 AM',
     terms: '7 days',
-    status: 'Submitted',
   },
   {
     supplierName: 'Deccan Kitchen Supply',
@@ -64,9 +57,7 @@ export const restaurantSampleQuotes = [
     freightPaise: 60_000,
     totalPaise: 3_128_625,
     coverageCount: 8,
-    delivery: 'Next day · 7:30 AM',
     terms: '30 days',
-    status: 'Submitted',
   },
 ] satisfies RestaurantSampleQuote[];
 

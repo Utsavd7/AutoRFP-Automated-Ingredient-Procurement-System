@@ -25,11 +25,6 @@ const publicJourneyHeadings = [
 ] as const;
 
 const landingMotionSelectors = [
-  '.intake-diagram',
-  '.supplier-diagram',
-  '.request-route',
-  '.story-scene--comparison .decision-preview',
-  '.decision-route',
   '.privacy-map',
 ] as const;
 
@@ -117,12 +112,12 @@ test.describe('public landing responsive contract', () => {
     }
   });
 
-  test('keeps all six restaurant benefits readable across screen sizes', async ({ page }, testInfo) => {
+  test('keeps all three restaurant benefits readable across screen sizes', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'desktop-chromium', 'One project covers the viewport matrix');
 
     for (const size of [
       { width: 1440, height: 960, columns: 3 },
-      { width: 900, height: 1000, columns: 2 },
+      { width: 900, height: 1000, columns: 1 },
       { width: 390, height: 844, columns: 1 },
     ]) {
       await page.setViewportSize(size);
@@ -131,7 +126,7 @@ test.describe('public landing responsive contract', () => {
       await expect(section.getByRole('heading', {
         name: 'Useful for every purchase, not just the first one.',
       })).toBeVisible();
-      await expect(section.locator('.restaurant-benefit')).toHaveCount(6);
+      await expect(section.locator('.restaurant-benefit')).toHaveCount(3);
       const columns = await section.locator('.restaurant-benefits__grid').evaluate((element) => (
         getComputedStyle(element).gridTemplateColumns.split(' ').length
       ));
@@ -140,10 +135,10 @@ test.describe('public landing responsive contract', () => {
     }
   });
 
-  test('pins the public header on home and product above phone width', async ({ page }, testInfo) => {
+  test('pins the public header on home above phone width', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'desktop-chromium', 'Desktop viewport contract');
 
-    for (const route of ['/', '/product']) {
+    for (const route of ['/']) {
       await test.step(`${route} tablet`, async () => {
         await page.setViewportSize({ width: 900, height: 900 });
         await page.goto(route);
@@ -176,59 +171,6 @@ test.describe('public landing responsive contract', () => {
     expect(await page.getByRole('banner').evaluate((element) => (
       element.getBoundingClientRect().bottom
     ))).toBeLessThan(0);
-  });
-
-  test('gives every home story scene one measured desktop frame', async ({ page }, testInfo) => {
-    test.skip(testInfo.project.name !== 'desktop-chromium', 'Desktop viewport contract');
-
-    for (const size of firstFoldSizes) {
-      await test.step(size.name, async () => {
-        await page.setViewportSize({ width: size.width, height: size.height });
-        await page.goto('/');
-
-        const frames = page.locator([
-          '.landing-story__intro',
-          '.story-scene',
-          '.privacy-story__grid',
-        ].join(', '));
-        await expect(frames).toHaveCount(7);
-
-        const measurements = await frames.evaluateAll((elements) => elements.map((element) => {
-          const box = element.getBoundingClientRect();
-          return {
-            name: element.className,
-            height: box.height,
-            verticalOverflow: element.scrollHeight - element.clientHeight,
-            horizontalOverflow: element.scrollWidth - element.clientWidth,
-          };
-        }));
-        for (const measurement of measurements) {
-          expect(measurement.height, `${measurement.name} height`).toBeGreaterThanOrEqual(
-            size.height - 2,
-          );
-          expect(measurement.verticalOverflow, `${measurement.name} vertical clipping`).toBeLessThanOrEqual(1);
-          expect(measurement.horizontalOverflow, `${measurement.name} horizontal clipping`).toBeLessThanOrEqual(1);
-        }
-
-        const heroSize = await page.locator('.public-hero h1').evaluate((element) => (
-          Number.parseFloat(getComputedStyle(element).fontSize)
-        ));
-        const introSize = await page.locator('.landing-story__intro h2').evaluate((element) => (
-          Number.parseFloat(getComputedStyle(element).fontSize)
-        ));
-        const privacySize = await page.locator('.privacy-story h2').evaluate((element) => (
-          Number.parseFloat(getComputedStyle(element).fontSize)
-        ));
-        const stepSizes = await page.locator('.story-scene__copy h3').evaluateAll((headings) => (
-          headings.map((heading) => Number.parseFloat(getComputedStyle(heading).fontSize))
-        ));
-
-        expect(introSize).toBeLessThanOrEqual(heroSize * 1.05);
-        expect(privacySize).toBeLessThanOrEqual(heroSize * 0.9);
-        for (const stepSize of stepSizes) expect(stepSize).toBeLessThanOrEqual(heroSize * 0.85);
-        await expectNoPageOverflow(page);
-      });
-    }
   });
 
   test('keeps home story scenes naturally sized on short desktops', async ({ page }, testInfo) => {
@@ -330,7 +272,7 @@ test.describe('public landing responsive contract', () => {
         const header = page.getByRole('banner');
         const hero = page.locator('.public-hero');
         const closingCta = page.locator('.public-cta');
-        const productCta = hero.getByRole('link', { name: 'See the product', exact: true });
+        const demoCta = hero.getByRole('link', { name: 'Watch the demo', exact: true });
         const story = page.locator('.landing-story');
         const firstScene = page.locator('.story-scene').first();
         const heroRoute = page.getByRole('group', { name: 'QuotePlate buying journey' });
@@ -340,9 +282,11 @@ test.describe('public landing responsive contract', () => {
           level: 2,
           name: "From today's menu to tomorrow's order.",
         })).toBeVisible();
-        for (const heading of publicJourneyHeadings) {
+        for (const [index, heading] of publicJourneyHeadings.entries()) {
+          await page.getByRole('navigation', { name: 'Buying journey steps' }).getByRole('button').nth(index).click();
           await expect(page.getByRole('heading', { level: 3, name: heading })).toBeVisible();
         }
+        await page.getByRole('navigation', { name: 'Buying journey steps' }).getByRole('button').nth(3).click();
         await expect(page.getByRole('heading', { level: 4, name: 'Quote comparison' })).toBeVisible();
         await expect(page.getByText('Human decision required', { exact: true })).toBeVisible();
         await expect(page.getByLabel('Sample decision facts')).toBeVisible();
@@ -356,22 +300,17 @@ test.describe('public landing responsive contract', () => {
         )).toBeGreaterThanOrEqual(4.5);
         await expect(header.getByRole('link', { name: 'Sign in' })).toBeVisible();
         await expect(header.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/signin');
-        await expect(productCta).toBeVisible();
-        await expect(productCta).toHaveAttribute('href', '/product');
+        await expect(demoCta).toBeVisible();
+        await expect(demoCta).toHaveAttribute('href', '#watch-demo');
         await expect(
           closingCta.getByRole('link', { name: 'Start free pilot', exact: true }),
         ).toHaveAttribute('href', '/start');
-        await expect(
-          closingCta.getByRole('link', { name: 'See the product', exact: true }),
-        ).toHaveAttribute('href', '/product');
-        await expect(page.getByRole('link', { name: /Review & award/i })).toHaveAttribute(
-          'href',
-          '/product#compare',
-        );
+        await expect(page.locator('a[href^="/product"]')).toHaveCount(0);
 
         expect(await story.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(
           'rgb(23, 37, 33)',
         );
+        await page.getByRole('navigation', { name: 'Buying journey steps' }).getByRole('button').first().click();
         const sceneColumnCount = await firstScene.evaluate((element) => (
           getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/).length
         ));
@@ -396,8 +335,6 @@ test.describe('public landing responsive contract', () => {
 
         if (size.name === 'laptop') {
           await expect(header.getByRole('navigation', { name: 'Primary navigation' })).toBeVisible();
-          await expect(header.getByRole('link', { name: 'Product' })).toBeVisible();
-          await expect(header.getByRole('link', { name: 'Product' })).toHaveAttribute('href', '/product');
           await expect(header.getByRole('link', { name: 'How it works' })).toBeVisible();
           await expect(header.getByRole('link', { name: 'How it works' })).toHaveAttribute('href', '#how-it-works');
           await expect(header.getByRole('link', { name: 'Security' })).toBeVisible();
@@ -411,18 +348,8 @@ test.describe('public landing responsive contract', () => {
 
         await expectNoPageOverflow(page);
 
-        await productCta.click();
-        await expect(page).toHaveURL(/\/product$/);
-        await expect(page.getByRole('heading', { level: 1, name: /A clean path from/i })).toBeVisible();
-        await expect(page.getByRole('group', { name: 'Illustrative request workspace' })).toBeVisible();
-        await expect(page.getByText('Sample data · illustrative only', { exact: true }).first()).toBeVisible();
-
-        const comparisonHeading = page.getByRole('heading', {
-          level: 2,
-          name: 'Compare the facts before you award.',
-        });
-        await expect(comparisonHeading).toBeVisible();
-        expect(await comparisonHeading.evaluate((heading) => heading.closest('section')?.id)).toBe('compare');
+        await demoCta.click();
+        await expect(page).toHaveURL(/#watch-demo$/);
         await expectNoPageOverflow(page);
       });
     }
@@ -452,6 +379,7 @@ test.describe('public landing responsive contract', () => {
     for (const width of [721, 720, 621, 620, 560, 559, 558, 557, 556, 555, 521, 520, 390, 320]) {
       await page.setViewportSize({ width, height: 900 });
       await page.goto('/');
+      await page.getByRole('navigation', { name: 'Buying journey steps' }).getByRole('button').nth(3).click();
 
       const comparison = page.getByRole('region', {
         name: 'Sample supplier quote comparison',
@@ -470,6 +398,7 @@ test.describe('public landing responsive contract', () => {
   test('keeps the central comparison proof readable on its light surfaces', async ({ page }) => {
     await page.setViewportSize({ width: 1024, height: 900 });
     await page.goto('/');
+    await page.getByRole('navigation', { name: 'Buying journey steps' }).getByRole('button').nth(3).click();
 
     const checks = [
       {
@@ -525,6 +454,7 @@ test.describe('public landing responsive contract', () => {
   test('keeps the comparison title fully readable at 320px', async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 720 });
     await page.goto('/');
+    await page.getByRole('navigation', { name: 'Buying journey steps' }).getByRole('button').nth(3).click();
 
     const heading = page.getByRole('heading', { level: 4, name: 'Quote comparison' });
     await expect(heading).toBeVisible();
@@ -637,7 +567,8 @@ test.describe('public landing responsive contract', () => {
         transform: 'none',
       });
     }
-    for (const heading of publicJourneyHeadings) {
+    for (const [index, heading] of publicJourneyHeadings.entries()) {
+      await page.getByRole('navigation', { name: 'Buying journey steps' }).getByRole('button').nth(index).click();
       await expect(page.getByRole('heading', { level: 3, name: heading })).toBeVisible();
     }
   });
@@ -645,6 +576,7 @@ test.describe('public landing responsive contract', () => {
   test('keeps sample decision facts readable without page overflow on mobile', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/');
+    await page.getByRole('navigation', { name: 'Buying journey steps' }).getByRole('button').nth(3).click();
 
     const pageHasNoHorizontalOverflow = await page.evaluate(() => (
       document.documentElement.scrollWidth <= document.documentElement.clientWidth
@@ -663,170 +595,5 @@ test.describe('public landing responsive contract', () => {
 
     await expect(page.getByText('Human decision required', { exact: true })).toBeVisible();
     await expect(page.getByLabel('Sample decision facts')).toBeVisible();
-  });
-});
-
-test.describe('public product tour responsive contract', () => {
-  test('gives every guided product scene one measured desktop frame', async ({ page }, testInfo) => {
-    test.skip(testInfo.project.name !== 'desktop-chromium', 'Desktop viewport contract');
-
-    for (const size of firstFoldSizes) {
-      await test.step(size.name, async () => {
-        await page.setViewportSize({ width: size.width, height: size.height });
-        await page.goto('/product');
-
-        const frames = page.locator('.tour-step, .product-principles');
-        await expect(frames).toHaveCount(4);
-        const measurements = await frames.evaluateAll((elements) => elements.map((element) => ({
-          name: element.className,
-          height: element.getBoundingClientRect().height,
-          verticalOverflow: element.scrollHeight - element.clientHeight,
-          horizontalOverflow: element.scrollWidth - element.clientWidth,
-        })));
-        for (const measurement of measurements) {
-          expect(measurement.height, `${measurement.name} height`).toBeGreaterThanOrEqual(
-            size.height - 2,
-          );
-          expect(measurement.verticalOverflow, `${measurement.name} vertical clipping`).toBeLessThanOrEqual(1);
-          expect(measurement.horizontalOverflow, `${measurement.name} horizontal clipping`).toBeLessThanOrEqual(1);
-        }
-
-        const heroSize = await page.locator('.product-hero h1').evaluate((element) => (
-          Number.parseFloat(getComputedStyle(element).fontSize)
-        ));
-        const stepSizes = await page.locator('.tour-step__copy h2').evaluateAll((headings) => (
-          headings.map((heading) => Number.parseFloat(getComputedStyle(heading).fontSize))
-        ));
-        const principlesSize = await page.locator('.product-principles h2').evaluate((element) => (
-          Number.parseFloat(getComputedStyle(element).fontSize)
-        ));
-        for (const stepSize of stepSizes) expect(stepSize).toBeLessThanOrEqual(heroSize * 0.65);
-        expect(principlesSize).toBeLessThanOrEqual(heroSize * 0.72);
-        await expectNoPageOverflow(page);
-      });
-    }
-  });
-
-  test('keeps guided product scenes naturally sized on short desktops', async ({ page }, testInfo) => {
-    test.skip(testInfo.project.name !== 'desktop-chromium', 'Desktop viewport contract');
-
-    await page.setViewportSize({ width: 1024, height: 650 });
-    await page.goto('/product');
-    const frames = page.locator('.tour-step, .product-principles');
-    const minHeights = await frames.evaluateAll((elements) => (
-      elements.map((element) => getComputedStyle(element).minHeight)
-    ));
-
-    expect(minHeights).not.toContain('650px');
-    await expectNoPageOverflow(page);
-  });
-
-  test('shows every comparison column and readable supplier facts at 1280px', async ({ page }) => {
-    await page.setViewportSize({ width: 1280, height: 900 });
-    await page.goto('/product');
-
-    const comparisonWorkspace = page.getByRole('group', {
-      name: 'Illustrative comparison workspace',
-    });
-    const comparison = page.getByRole('region', {
-      name: 'Sample supplier quote comparison',
-    });
-    const finalSupplier = comparison.getByRole('columnheader', {
-      name: 'Deccan Kitchen Supply',
-    });
-    const supplierWorkspace = page.getByRole('group', {
-      name: 'Illustrative supplier response workspace',
-    });
-    await expect(comparison).toBeVisible();
-    await expect(finalSupplier).toBeVisible();
-    await expect(
-      comparisonWorkspace.getByText('Scroll to compare all suppliers'),
-    ).toBeHidden();
-
-    const geometry = await comparison.evaluate((element) => {
-      const finalHeader = element.querySelector('thead th:last-child');
-      if (!(finalHeader instanceof HTMLElement)) throw new Error('Final supplier header is missing');
-      const viewport = element.getBoundingClientRect();
-      const finalColumn = finalHeader.getBoundingClientRect();
-      return {
-        comparisonOverflow: element.scrollWidth - element.clientWidth,
-        documentOverflow:
-          document.documentElement.scrollWidth - document.documentElement.clientWidth,
-        finalColumnVisible:
-          finalColumn.left >= viewport.left - 1 && finalColumn.right <= viewport.right + 1,
-      };
-    });
-    expect(geometry.comparisonOverflow).toBeLessThanOrEqual(1);
-    expect(geometry.documentOverflow).toBeLessThanOrEqual(1);
-    expect(geometry.finalColumnVisible).toBe(true);
-
-    const labelFontSize = await supplierWorkspace.getByText('GST', { exact: true }).evaluate(
-      (element) => Number.parseFloat(getComputedStyle(element).fontSize),
-    );
-    const valueFontSize = await supplierWorkspace.getByText('₹759.50', { exact: true }).evaluate(
-      (element) => Number.parseFloat(getComputedStyle(element).fontSize),
-    );
-    expect(labelFontSize).toBeGreaterThanOrEqual(11.15);
-    expect(valueFontSize).toBeGreaterThanOrEqual(12.1);
-  });
-
-  test('contains the comparison scroll and keeps every supplier reachable at 375px', async ({ page }) => {
-    await page.setViewportSize({ width: 375, height: 812 });
-    await page.goto('/product');
-
-    const comparisonWorkspace = page.getByRole('group', {
-      name: 'Illustrative comparison workspace',
-    });
-    const comparison = page.getByRole('region', {
-      name: 'Sample supplier quote comparison',
-    });
-    const finalSupplier = comparison.getByRole('columnheader', {
-      name: 'Deccan Kitchen Supply',
-    });
-    const supplierWorkspace = page.getByRole('group', {
-      name: 'Illustrative supplier response workspace',
-    });
-    const supplierFooter = page.getByRole('article', {
-      name: 'Sample supplier response',
-    }).locator('footer');
-
-    await expect(comparison).toBeVisible();
-    await expect(
-      comparisonWorkspace.getByText('Scroll to compare all suppliers'),
-    ).toBeVisible();
-
-    const initialGeometry = await comparison.evaluate((element) => ({
-      comparisonOverflow: element.scrollWidth - element.clientWidth,
-      documentOverflow:
-        document.documentElement.scrollWidth - document.documentElement.clientWidth,
-    }));
-    expect(initialGeometry.comparisonOverflow).toBeGreaterThan(1);
-    expect(initialGeometry.documentOverflow).toBeLessThanOrEqual(1);
-
-    await comparison.evaluate((element) => {
-      element.scrollLeft = element.scrollWidth;
-    });
-    const finalColumnVisible = await finalSupplier.evaluate((element) => {
-      const viewport = element.closest('[role="region"]')?.getBoundingClientRect();
-      if (!viewport) throw new Error('Comparison viewport is missing');
-      const finalColumn = element.getBoundingClientRect();
-      return finalColumn.left >= viewport.left - 1 && finalColumn.right <= viewport.right + 1;
-    });
-    expect(finalColumnVisible).toBe(true);
-
-    const labelFontSize = await supplierWorkspace.getByText('GST', { exact: true }).evaluate(
-      (element) => Number.parseFloat(getComputedStyle(element).fontSize),
-    );
-    const valueFontSize = await supplierWorkspace.getByText('₹759.50', { exact: true }).evaluate(
-      (element) => Number.parseFloat(getComputedStyle(element).fontSize),
-    );
-    expect(labelFontSize).toBeGreaterThanOrEqual(11.15);
-    expect(valueFontSize).toBeGreaterThanOrEqual(12.1);
-
-    const footerLayout = await supplierFooter.evaluate((element) => {
-      const style = getComputedStyle(element);
-      return { alignItems: style.alignItems, flexDirection: style.flexDirection };
-    });
-    expect(footerLayout).toEqual({ alignItems: 'flex-start', flexDirection: 'column' });
   });
 });

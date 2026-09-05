@@ -1,0 +1,29 @@
+.root { width: min(100% - 2rem, 76rem); margin: 0 auto; padding-bottom: 3rem; }
+.stage { background: var(--raised-ink); }
+.steps, .footer { display: none; }
+.root[data-enhanced="true"] .steps { display: flex; gap: .4rem; flex-wrap: wrap; padding: 0 0 1rem; border-bottom: 1px solid #4b5550; }
+.steps button { min-height: 2.75rem; display: flex; align-items: center; gap: .5rem; padding: .6rem 1rem; border: 1px solid transparent; border-radius: .4rem; background: transparent; color: var(--stone); font: inherit; font-size: .85rem; cursor: pointer; }
+.steps button > span { color: var(--copper); font-size: .7rem; }
+.steps button[aria-current="step"] { background: var(--stone); color: var(--ink); }
+.steps button[aria-current="step"] > span { color: var(--copper-text); }
+.steps button:focus-visible, .footer a:focus-visible { outline: 2px solid var(--copper); outline-offset: 3px; }
+.root[data-enhanced="true"] .viewport { overflow: clip; }
+.root[data-enhanced="true"] :global(.landing-story__track) { display: flex; width: 100%; padding: 0; transform: translate3d(calc(var(--active-step) * -100%), 0, 0); transition: transform 240ms cubic-bezier(.23, 1, .32, 1); }
+.root[data-enhanced="true"] :global(.story-scene) { flex: 0 0 100%; min-width: 0; border: 0; }
+.root[data-enhanced="true"] :global(.story-scene[aria-hidden="true"]) { pointer-events: none; }
+.root[data-enhanced="true"] .footer { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 3rem; border-top: 1px solid #4b5550; color: #c0c9c2; font-size: .78rem; }
+.footer a { display: inline-flex; align-items: center; min-height: 2.75rem; color: var(--stone); text-underline-offset: .2em; }
+.root[data-pinned="true"] { height: calc(var(--stage-height) + var(--scroll-travel)); padding-bottom: 0; }
+.root[data-pinned="true"] .stage { position: sticky; top: var(--stage-top); }
+.root[data-input="keyboard"] :global(.landing-story__track) { transition: none; }
+@media (max-width: 620px) {
+  .root { width: min(100% - 2rem, 76rem); padding-bottom: 2rem; }
+  .steps button { padding: .5rem .7rem; font-size: .8rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .root :global(.landing-story__track) { transition: none !important; }
+}
+@media (max-width: 999px), (max-height: 759px), (hover: none), (pointer: coarse), (prefers-reduced-motion: reduce) {
+  .root[data-enhanced="true"] :global(.landing-story__track) { display: block; transform: none; transition: none; }
+  .root[data-enhanced="true"] :global(.story-scene[aria-hidden="true"]) { display: none; }
+}
